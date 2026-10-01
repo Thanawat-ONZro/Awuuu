@@ -1,0 +1,18 @@
+# Build artefacts
+target/
+**/target/
+dist/
+**/dist/
+node_modules/
+**/node_modules/
+release/
+**/release/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Local only (never published)
+.claude/
+_prive/
+*.log
