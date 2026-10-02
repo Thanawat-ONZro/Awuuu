@@ -233,7 +233,7 @@ function buildOverview(actions: ViewActions): ViewHost {
 // ── Agents Hub ───────────────────────────────────────────────────────────────
 
 /** Agents a prompt can be sent to from a session card (Rust agents::send). */
-const SENDABLE_SOURCES = new Set(["agy"]);
+const SENDABLE_SOURCES = new Set(["agy", "hermes"]);
 
 function buildAgentsHub(actions: ViewActions): ViewHost {
   // One full-width column: sessions on top, what the focused one is doing,
@@ -260,13 +260,50 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
   }) as HTMLInputElement;
   const promptSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
   const promptBar = h("div", { class: "chat-bar hub-prompt" }, promptInput, promptSend);
+  // Hermes sessions live on the Hermes server: list them on request and pick
+  // one to keep it going from here.
+  const hermesList = h("div", { class: "hub-hermes-list" });
+  const hermesBtn = h("button", { class: "hub-hermes-btn", text: "Hermes sessions…", title: "Continue a recent Hermes session" });
+  hermesBtn.addEventListener("click", () => void toggleHermes());
+  async function toggleHermes() {
+    if (hermesList.childElementCount > 0) {
+      clear(hermesList);
+      return;
+    }
+    hermesList.append(h("div", { class: "hub-step dim", text: "Loading…" }));
+    let list: { id: string; title: string; source: string }[] | null = null;
+    let error = "";
+    try {
+      list = await Bridge.hermesSessions();
+    } catch (err) {
+      error = String(err).replace(/^Error:\s*/, "");
+    }
+    clear(hermesList);
+    if (!list || list.length === 0) {
+      hermesList.append(h("div", { class: "hub-step dim", text: error || "No Hermes sessions found." }));
+      return;
+    }
+    for (const s of list.slice(0, 10)) {
+      hermesList.append(h("button", {
+        class: "hub-hermes-item",
+        text: `${s.title}${s.source ? ` · ${s.source}` : ""}`,
+        onclick: () => {
+          const task = State.getOrCreateSession(s.id, "", "hermes");
+          task.name = s.title.slice(0, 40);
+          clear(hermesList);
+          actions.setAgentFocus(task.id);
+        },
+      }));
+    }
+  }
   const empty = h("div", { class: "hub-empty" },
     h("div", { class: "title", text: "No active agent sessions." }),
-    h("div", { class: "sub", text: "Start Claude Code, AGY or another agent and it shows up here." }),
+    h("div", { class: "sub", text: "Start Claude Code, AGY, Hermes or OpenCode and it shows up here." }),
   );
   // A request waiting for an answer is never hidden behind the hub.
   const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
-  const body = h("div", { class: "hub" }, pills, waiting, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
+  const pillRow = h("div", { class: "hub-pill-row" }, pills, hermesBtn);
+  const body = h("div", { class: "hub" }, pillRow, hermesList, waiting, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
   const el = h("div", { class: "view hub-view" }, card(null, body));
   let sending = false;
 
@@ -343,6 +380,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
       for (const part of [pills, who.parentElement!, steps, promptBar]) part.style.display = none ? "none" : "";
+      hermesBtn.style.display = State.settings.model?.startsWith("claude-") ? "none" : "";
       if (none) {
         pillKey = stepsKey = "";
         clear(pills);

@@ -41,10 +41,10 @@ function renderDiff(text: string): HTMLElement {
   return box;
 }
 
-// ── Multi-Agent Hooks section (Claude, AGY) ────────────────────────────
+// ── Multi-Agent Hooks section (Claude, AGY, Hermes, OpenCode) ──────────
 
 function agentHooksSection(
-  agent: "claude" | "agy",
+  agent: "claude" | "agy" | "hermes" | "opencode",
   title: string,
   fileName: string,
   descInstalled: string,
@@ -816,6 +816,12 @@ async function main() {
   const agyStatus = (await Bridge.agentHooksStatus("agy")) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
+  const hermesHooks = (await Bridge.agentHooksStatus("hermes")) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
+  const opencodeHooks = (await Bridge.agentHooksStatus("opencode")) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
 
@@ -844,6 +850,22 @@ async function main() {
       "Awuuu is hooked into your Antigravity CLI sessions (~/.gemini/config/hooks.json). Tool executions appear in the island.",
       "Install the hooks to see your Antigravity CLI sessions in the island and approve tool calls with 1-click.",
       agyStatus,
+    ),
+    agentHooksSection(
+      "hermes",
+      "Hermes Agent",
+      "config.yaml",
+      "Awuuu follows your Hermes sessions (CLI, Desktop, gateway) through shell hooks in config.yaml. Hermes asks for approvals in its own window; the island tells you when it does. Hermes asks once to trust new hooks — or run `hermes hooks list`.",
+      "Install the shell hooks to see Hermes sessions (CLI, Desktop, Discord…) in the island: what it runs, what it says, and when it waits for your approval.",
+      hermesHooks,
+    ),
+    agentHooksSection(
+      "opencode",
+      "OpenCode",
+      "awuuu.js plugin",
+      "Awuuu's plugin is in OpenCode's plugin folder. Sessions show in the island and permission requests can be answered there. Restart OpenCode after installing.",
+      "Install the plugin to see OpenCode sessions in the island and answer its permission requests with 1-click.",
+      opencodeHooks,
     ),
     apiAgentsOverviewSection(),
     alwaysAllowSection(),

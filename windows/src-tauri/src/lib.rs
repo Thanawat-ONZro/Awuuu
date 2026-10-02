@@ -14,6 +14,7 @@ mod updater;
 mod settings;
 mod tray;
 mod transcript;
+mod hermes;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -305,7 +306,22 @@ fn approval_decision(
     answers: Option<serde_json::Value>,
     reason: Option<String>,
 ) {
+    if request_id.starts_with(hermes::APPROVAL_PREFIX) {
+        // A Hermes run waits on its own approval endpoint, not on a hook.
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = hermes::answer(&request_id, &decision).await {
+                log::line(format!("hermes approval {request_id}: {e}"));
+            }
+        });
+        return;
+    }
     pipe::answer(&app, &request_id, &decision, answers, reason);
+}
+
+/// Recent Hermes sessions for the Agents hub (fetched only when asked).
+#[tauri::command]
+async fn hermes_sessions() -> Result<Vec<hermes::SessionInfo>, String> {
+    hermes::sessions().await
 }
 
 /// The island has the card on screen, so the long wait for a human may begin.
@@ -314,13 +330,14 @@ fn approval_decision(
 /// The prompt box on a session card: send text into a running agent session.
 #[tauri::command]
 fn agent_send(
+    app: AppHandle,
     agent: String,
     session: String,
     text: String,
     cwd: Option<String>,
     busy: bool,
 ) -> Result<agents::Sent, String> {
-    agents::send(&agent, &session, &text, cwd.as_deref(), busy)
+    agents::send(&app, &agent, &session, &text, cwd.as_deref(), busy)
 }
 
 /// What the agent said or thought since the last look at its transcript.
@@ -331,6 +348,9 @@ fn transcript_tail(agent: String, path: String) -> Vec<transcript::Step> {
 
 #[tauri::command]
 fn approval_ack(app: AppHandle, request_id: String) {
+    if request_id.starts_with(hermes::APPROVAL_PREFIX) {
+        return;
+    }
     pipe::acknowledge(&app, &request_id);
 }
 
@@ -338,6 +358,9 @@ fn approval_ack(app: AppHandle, request_id: String) {
 /// already up. Claude Code falls back to asking in the terminal immediately.
 #[tauri::command]
 fn approval_decline(app: AppHandle, request_id: String) {
+    if request_id.starts_with(hermes::APPROVAL_PREFIX) {
+        return; // the run keeps waiting; Hermes' own UI can still answer
+    }
     pipe::decline(&app, &request_id);
 }
 
@@ -354,10 +377,11 @@ async fn chat_send(
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
     let model = shared.settings.lock().unwrap().model.clone();
+    let handle = app.clone();
     let on_delta = move |text: &str| {
         let _ = app.emit_to(island::WINDOW_LABEL, "chat-delta", text.to_string());
     };
-    claude::send(&chat, &model, query, context, &on_delta).await
+    claude::send(&handle, &chat, &model, query, context, &on_delta).await
 }
 
 /// Settings → "Check for updates…" (the tray item calls the same thing).
@@ -523,6 +547,7 @@ pub fn run() {
             agent_hooks_apply,
             approval_decision,
             agent_send,
+            hermes_sessions,
             transcript_tail,
             approval_ack,
             approval_decline,

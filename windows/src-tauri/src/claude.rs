@@ -38,11 +38,29 @@ const MAX_INLINE_IMAGE: u64 = 5_000_000;
 pub struct Chat {
     /// Full multi-turn history.
     messages: Mutex<Vec<Value>>,
+    /// The Hermes session the island chat lives in (Runs API); a new one after
+    /// a reset.
+    hermes_session: Mutex<Option<String>>,
 }
 
 impl Chat {
     pub fn reset(&self) {
         self.messages.lock().unwrap().clear();
+        *self.hermes_session.lock().unwrap() = None;
+    }
+
+    fn hermes_session(&self) -> String {
+        self.hermes_session
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| {
+                let t = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0);
+                format!("awuuu-chat-{t}")
+            })
+            .clone()
     }
 
     fn is_empty(&self) -> bool {
@@ -175,6 +193,7 @@ pub async fn hermes_models() -> Result<Vec<String>, String> {
 /// One chat turn. Returns the assistant's text, or a message the island shows
 /// in the note view.
 pub async fn send(
+    app: &tauri::AppHandle,
     chat: &Chat,
     model: &str,
     query: String,
@@ -184,7 +203,50 @@ pub async fn send(
     if model.starts_with("claude-") {
         return send_claude(chat, model, query, context).await;
     }
+    // A real Hermes session through the Runs API (tools, approvals and steps
+    // show in the island). Images still go through chat completions, which
+    // takes them inline; so does an older Hermes without /v1/runs.
+    let has_image = matches!(&context, Some(ChatContext::File { path, .. }) if image_part(path).is_some());
+    if !has_image {
+        let input = with_context(chat.is_empty() && chat.hermes_session.lock().unwrap().is_none(), &context, &query);
+        let session = chat.hermes_session();
+        match crate::hermes::run_turn(app, &session, &input, Some(HERMES_SYSTEM), on_delta).await {
+            Ok(reply) => return Ok(reply),
+            Err(crate::hermes::RunError::Failed(e)) => return Err(e),
+            Err(crate::hermes::RunError::Unsupported) => {
+                *chat.hermes_session.lock().unwrap() = None;
+            }
+        }
+    }
     send_hermes(chat, model, query, context, on_delta).await
+}
+
+/// The first message of a chat carries the dropped file or the window it was
+/// opened from.
+fn with_context(first: bool, context: &Option<ChatContext>, query: &str) -> String {
+    let mut prompt = String::new();
+    if first {
+        match context {
+            Some(ChatContext::File { name, path }) => {
+                prompt.push_str(&format!("File: {name} ({path})\n"));
+                if std::fs::metadata(path).map(|m| m.len() <= MAX_INLINE_TEXT).unwrap_or(false) {
+                    if let Ok(text) = std::fs::read_to_string(path) {
+                        prompt.push_str(&format!("File contents:\n{text}\n\n"));
+                    }
+                }
+            }
+            Some(ChatContext::Window { app_name, title, url }) => {
+                prompt.push_str(&format!("Context — App: {app_name}, Window: {title}"));
+                if let Some(u) = url {
+                    prompt.push_str(&format!(", URL: {u}"));
+                }
+                prompt.push_str("\n\n");
+            }
+            None => {}
+        }
+    }
+    prompt.push_str(query);
+    prompt
 }
 
 /// An image as an OpenAI `image_url` part (data URL), when the file is one.

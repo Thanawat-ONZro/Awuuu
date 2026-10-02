@@ -30,12 +30,28 @@ pub enum Sent {
 }
 
 /// Sends `text` to the conversation `session` of `agent`.
-pub fn send(agent: &str, session: &str, text: &str, cwd: Option<&str>, busy: bool) -> Result<Sent, String> {
+pub fn send(app: &tauri::AppHandle, agent: &str, session: &str, text: &str, cwd: Option<&str>, busy: bool) -> Result<Sent, String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("Nothing to send.".into());
     }
     match agent {
+        // Hermes: a run in that session (the Runs API loads its history); the
+        // run's steps and answer come back through the island's hook events.
+        "hermes" => {
+            let (app, session, text) = (app.clone(), session.to_string(), text.to_string());
+            tauri::async_runtime::spawn(async move {
+                let on_delta = |_: &str| {};
+                match crate::hermes::run_turn(&app, &session, &text, None, &on_delta).await {
+                    Ok(_) => {}
+                    Err(crate::hermes::RunError::Failed(e)) => crate::log::line(format!("hermes send {session}: {e}")),
+                    Err(crate::hermes::RunError::Unsupported) => {
+                        crate::log::line("hermes send: this Hermes has no Runs API".to_string())
+                    }
+                }
+            });
+            Ok(Sent::Started)
+        }
         "agy" => {
             if busy {
                 let mut q = QUEUE.lock().unwrap();

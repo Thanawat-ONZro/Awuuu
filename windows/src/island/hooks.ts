@@ -54,6 +54,13 @@ const TOOL_VERBS: Record<string, string> = {
   WebFetch: "Fetch", read_url_content: "Fetch",
   TodoWrite: "Plan", Task: "Agent", Agent: "Agent",
   AskUserQuestion: "Ask", ask_question: "Ask", Skill: "Skill",
+  // Hermes
+  terminal: "Run", execute_code: "Run code", read_file: "Read", write_file: "Write", patch: "Edit",
+  search_files: "Search", web_search: "Web search", web_extract: "Fetch", delegate_task: "Agent",
+  todo: "Plan", memory: "Memory", skill_view: "Skill", browser_navigate: "Browse",
+  // OpenCode
+  bash: "Run", read: "Read", write: "Write", edit: "Edit", glob: "Find", grep: "Search",
+  list: "List", webfetch: "Fetch", todowrite: "Plan", task: "Agent",
 };
 
 /** Case-insensitive field lookup: AGY says `AbsolutePath`, Claude `file_path`. */
@@ -427,6 +434,35 @@ function handleHook(island: Island, payload: HookPayload) {
 
     case "SubagentStop":
       State.appendStep(taskId, "Subagent done", "info");
+      break;
+
+    // Hermes asks for approval in its own UI; a hook can't answer it.
+    case "HermesApproval":
+      session.state = "approval";
+      session.pillBadge = "approval";
+      State.appendStep(taskId, `Waiting for your approval in Hermes · ${payload.message ?? ""}`, "info");
+      Sound.play("approval");
+      island.toast("agents", 8);
+      break;
+
+    case "HermesApprovalDone":
+      session.state = "working";
+      session.pillBadge = null;
+      State.appendStep(taskId, `Approval: ${(payload as { choice?: string }).choice ?? "answered"}`, "info");
+      break;
+
+    // Hermes runs stream the model's reasoning.
+    case "AgentThought":
+      if (payload.message) State.appendStep(taskId, plainText(payload.message).slice(0, 600), "think");
+      break;
+
+    case "TurnInterrupted":
+      session.state = "idle";
+      State.appendStep(taskId, "Interrupted", "info");
+      break;
+
+    case "TurnEnd":
+      if (session.state !== "finished") session.state = "idle";
       break;
 
     case "PermissionRequest": {

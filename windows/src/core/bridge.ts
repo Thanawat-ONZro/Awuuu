@@ -8,6 +8,9 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
 import type { IslandLayout } from "./layout";
 
+/** Agents whose hooks Awuuu installs (Rust hooks::HookAgent). */
+export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex";
+
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -67,16 +70,16 @@ export const Bridge = {
   log: (message: string) => call<void>("log_line", { message }),
 
   // ── Agent hooks (Claude, AGY) ───────────────────────────────────────
-  agentHooksStatus: (agent: "claude" | "agy") =>
+  agentHooksStatus: (agent: HookAgentId) =>
     call<HookStatus>("agent_hooks_status", { agent }),
   /** Diff to show before anything is written. `install: false` previews removal. */
-  agentHooksPreview: (agent: "claude" | "agy", install: boolean) =>
+  agentHooksPreview: (agent: HookAgentId, install: boolean) =>
     callOrThrow<HookPreview>("agent_hooks_preview", { agent, install }),
   /**
    * Writes the agent's config — only ever after an explicit click, and only when
    * the file still matches the preview the user looked at.
    */
-  agentHooksApply: (agent: "claude" | "agy", install: boolean, fingerprint: string) =>
+  agentHooksApply: (agent: HookAgentId, install: boolean, fingerprint: string) =>
     callOrThrow<string>("agent_hooks_apply", { agent, install, fingerprint }),
 
   /** `answers` are keyed by question text; `reason` goes back with a deny. */
@@ -90,6 +93,8 @@ export const Bridge = {
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
   agentSend: (agent: string, session: string, text: string, cwd: string | null, busy: boolean) =>
     call<"queued" | "started">("agent_send", { agent, session, text, cwd, busy }),
+  /** Recent Hermes sessions (Runs API host), only when the user asks. */
+  hermesSessions: () => call<{ id: string; title: string; source: string }[]>("hermes_sessions"),
   /** New things the agent said/thought, from its transcript (only new lines). */
   transcriptTail: (agent: string, path: string) =>
     call<{ kind: "prompt" | "say" | "think"; text: string }[]>("transcript_tail", { agent, path }),

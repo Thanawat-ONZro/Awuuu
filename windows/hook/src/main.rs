@@ -272,6 +272,13 @@ fn output_json(
         return Some(v.to_string());
     }
 
+    if agent == Agent::OpenCode {
+        // The plugin sets permission.ask's output.status; nothing printed
+        // leaves OpenCode's own prompt in place.
+        let a = answer?;
+        return Some(json!({"status": if a.allow { "allow" } else { "deny" }}).to_string());
+    }
+
     let a = answer?;
     let decision = if a.allow {
         match (&a.answers, tool_input) {
@@ -302,6 +309,81 @@ fn answers_reason(answers: &serde_json::Map<String, serde_json::Value>) -> Strin
         "The user already answered this question in Awuuu (do not ask it again). {}",
         lines.join("; ")
     )
+}
+
+/// Hermes shell hooks speak in their own event names and keep the details in
+/// `extra`. The island understands Claude Code's shape, so translate:
+/// on_session_start → SessionStart, pre_llm_call → UserPromptSubmit (the
+/// user's message), pre/post_tool_call → Pre/PostToolUse, post_llm_call → Stop
+/// (the final answer), approval prompts → HermesApproval / HermesApprovalDone.
+fn hermes_to_island(map: &mut serde_json::Map<String, serde_json::Value>) {
+    use serde_json::Value;
+    let mut extra = match map.remove("extra") {
+        Some(Value::Object(o)) => o,
+        _ => serde_json::Map::new(),
+    };
+    // Whole conversations: never needed, can be huge.
+    extra.remove("conversation_history");
+    extra.remove("tool_call_history");
+    let take = |extra: &serde_json::Map<String, Value>, k: &str| {
+        extra.get(k).and_then(Value::as_str).map(str::to_string).filter(|s| !s.is_empty())
+    };
+    let event = map.get("hook_event_name").and_then(Value::as_str).unwrap_or_default().to_string();
+    let island = match event.as_str() {
+        "on_session_start" => "SessionStart",
+        "pre_llm_call" => {
+            if let Some(m) = take(&extra, "user_message") {
+                map.insert("prompt".into(), Value::String(m));
+            }
+            "UserPromptSubmit"
+        }
+        "pre_tool_call" => "PreToolUse",
+        "post_tool_call" => "PostToolUse",
+        "post_llm_call" => {
+            if let Some(m) = take(&extra, "assistant_response") {
+                map.insert("last_assistant_message".into(), Value::String(m));
+            }
+            "Stop"
+        }
+        "on_session_end" => {
+            let interrupted = extra.get("interrupted").and_then(Value::as_bool).unwrap_or(false);
+            if interrupted { "TurnInterrupted" } else { "TurnEnd" }
+        }
+        "pre_approval_request" | "post_approval_response" => {
+            let what = [take(&extra, "description"), take(&extra, "command")]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ");
+            map.insert("message".into(), Value::String(what));
+            if let Some(c) = take(&extra, "choice") {
+                map.insert("choice".into(), Value::String(c));
+            }
+            if let Some(k) = take(&extra, "session_key") {
+                extra.insert("session_id".into(), Value::String(k));
+            }
+            if event == "pre_approval_request" { "HermesApproval" } else { "HermesApprovalDone" }
+        }
+        "subagent_stop" => {
+            if let Some(k) = take(&extra, "parent_session_id") {
+                extra.insert("session_id".into(), Value::String(k));
+            }
+            "SubagentStop"
+        }
+        other => return {
+            map.insert("hook_event_name".into(), Value::String(other.to_string()));
+        },
+    };
+    if let Some(id) = take(&extra, "tool_call_id") {
+        map.insert("tool_use_id".into(), Value::String(id));
+    }
+    // Hermes calls its sessions tasks in some events.
+    if map.get("session_id").and_then(Value::as_str).map_or(true, str::is_empty) {
+        if let Some(t) = take(&extra, "session_id").or_else(|| take(&extra, "task_id")) {
+            map.insert("session_id".into(), Value::String(t));
+        }
+    }
+    map.insert("hook_event_name".into(), Value::String(island.into()));
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
@@ -363,6 +445,10 @@ fn read_event(args: &Args) -> Option<HookEvent> {
                         map.insert("tool_input".into(), args);
                     }
                 }
+    }
+
+    if agent == Agent::Hermes {
+        hermes_to_island(map);
     }
 
     // The event name is passed on the command line by the hook command; the JSON
@@ -480,6 +566,35 @@ mod tests {
 
     fn val(s: &str) -> serde_json::Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn hermes_events_become_island_events() {
+        let mut m = serde_json::json!({
+            "hook_event_name": "post_llm_call",
+            "session_id": "s1",
+            "extra": {"assistant_response": "Done.", "conversation_history": [1, 2]}
+        });
+        hermes_to_island(m.as_object_mut().unwrap());
+        assert_eq!(m["hook_event_name"], "Stop");
+        assert_eq!(m["last_assistant_message"], "Done.");
+        assert!(m.get("extra").is_none());
+
+        let mut m = serde_json::json!({
+            "hook_event_name": "pre_approval_request",
+            "extra": {"description": "recursive delete", "command": "rm -rf x", "session_key": "k9"}
+        });
+        hermes_to_island(m.as_object_mut().unwrap());
+        assert_eq!(m["hook_event_name"], "HermesApproval");
+        assert_eq!(m["session_id"], "k9");
+        assert_eq!(m["message"], "recursive delete · rm -rf x");
+    }
+
+    #[test]
+    fn opencode_gets_a_status() {
+        let a = Answer { allow: true, ..Default::default() };
+        assert_eq!(output_json(Agent::OpenCode, Some(&a), None, true).unwrap(), r#"{"status":"allow"}"#);
+        assert!(output_json(Agent::OpenCode, None, None, true).is_none());
     }
 
     #[test]

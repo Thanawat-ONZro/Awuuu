@@ -80,6 +80,10 @@ fn home() -> PathBuf {
 pub enum HookAgent {
     Claude,
     Agy,
+    /// Shell hooks in Hermes' config.yaml, between our markers.
+    Hermes,
+    /// A plugin file of our own in OpenCode's plugin folder.
+    OpenCode,
 }
 
 impl HookAgent {
@@ -87,6 +91,8 @@ impl HookAgent {
         match s.to_lowercase().as_str() {
             "claude" | "claude-code" => Some(Self::Claude),
             "agy" | "antigravity" => Some(Self::Agy),
+            "hermes" => Some(Self::Hermes),
+            "opencode" => Some(Self::OpenCode),
             _ => None,
         }
     }
@@ -95,7 +101,134 @@ impl HookAgent {
         match self {
             Self::Claude => home().join(".claude").join("settings.json"),
             Self::Agy => home().join(".gemini").join("config").join("hooks.json"),
+            Self::Hermes => hermes_home().join("config.yaml"),
+            Self::OpenCode => home().join(".config").join("opencode").join("plugin").join("awuuu.js"),
         }
+    }
+
+    /// JSON settings are merged key by key; the others are edited as text.
+    fn is_json(&self) -> bool {
+        matches!(self, Self::Claude | Self::Agy)
+    }
+}
+
+/// Hermes keeps its profile in HERMES_HOME; the Windows installer puts it in
+/// %LOCALAPPDATA%\hermes, older setups in ~/.hermes.
+pub fn hermes_home() -> PathBuf {
+    if let Some(h) = std::env::var_os("HERMES_HOME").filter(|v| !v.is_empty()) {
+        return PathBuf::from(h);
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let p = PathBuf::from(local).join("hermes");
+        if p.join("config.yaml").exists() {
+            return p;
+        }
+    }
+    home().join(".hermes")
+}
+
+// ── Hermes: a marked block in config.yaml ─────────────────────────────────────
+
+const YAML_BEGIN: &str = "# >>> awuuu >>>";
+const YAML_END: &str = "# <<< awuuu <<<";
+
+/// Hermes shell-hook events the island follows. Every one is fire-and-forget:
+/// Hermes' own approval prompt can't be answered by a hook, so the island
+/// shows it and says where it is asked.
+const HERMES_EVENTS: &[&str] = &[
+    "on_session_start",
+    "pre_llm_call",
+    "pre_tool_call",
+    "post_tool_call",
+    "post_llm_call",
+    "on_session_end",
+    "pre_approval_request",
+    "post_approval_response",
+    "subagent_stop",
+];
+
+fn hermes_block() -> String {
+    // Hermes splits the command with shlex (no shell): forward slashes, and
+    // the path in double quotes inside a single-quoted YAML scalar.
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    let mut out = format!(
+        "{YAML_BEGIN}\n# Awuuu shows Hermes sessions in its island. Added and removed from Awuuu's Settings.\nhooks:\n"
+    );
+    for ev in HERMES_EVENTS {
+        out.push_str(&format!("  {ev}:\n    - command: '\"{exe}\" --agent hermes {ev}'\n      timeout: 5\n"));
+    }
+    out.push_str(YAML_END);
+    out.push('\n');
+    out
+}
+
+/// config.yaml without our block, and nothing else changed.
+fn yaml_without_ours(text: &str) -> String {
+    let Some(start) = text.find(YAML_BEGIN) else { return text.to_string() };
+    let Some(rel) = text[start..].find(YAML_END) else { return text.to_string() };
+    let mut end = start + rel + YAML_END.len();
+    if text[end..].starts_with("\r\n") {
+        end += 2;
+    } else if text[end..].starts_with('\n') {
+        end += 1;
+    }
+    let mut head = text[..start].to_string();
+    // Drop the blank line we put in front of the block.
+    if head.ends_with("\n\n") {
+        head.pop();
+    }
+    head + &text[end..]
+}
+
+/// A top-level `hooks:` key outside our block: we must not add a second one.
+fn yaml_has_foreign_hooks(text: &str) -> bool {
+    yaml_without_ours(text).lines().any(|l| l.starts_with("hooks:"))
+}
+
+fn hermes_next(text: &str, install: bool) -> Result<String, String> {
+    let base = yaml_without_ours(text);
+    if !install {
+        return Ok(base);
+    }
+    if yaml_has_foreign_hooks(text) {
+        let block = hermes_block();
+        let entries: Vec<&str> = block
+            .lines()
+            .filter(|l| !l.starts_with('#') && *l != "hooks:")
+            .collect();
+        return Err(format!(
+            "Your config.yaml already has a `hooks:` section, so Awuuu won't add a second one. Add these entries under it yourself:\n\n{}",
+            entries.join("\n")
+        ));
+    }
+    let mut out = base;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&hermes_block());
+    Ok(out)
+}
+
+// ── OpenCode: our own plugin file ─────────────────────────────────────────────
+
+const OPENCODE_MARKER: &str = "awuuu-opencode-plugin";
+
+fn opencode_plugin() -> String {
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    include_str!("opencode_plugin.js")
+        .replace("__AWUUU_HOOK__", &exe)
+        .replace("__MARKER__", OPENCODE_MARKER)
+}
+
+/// The file as it should be after installing or removing; `None` = no file.
+fn text_next(agent: HookAgent, current: &str, install: bool) -> Result<Option<String>, String> {
+    match agent {
+        HookAgent::Hermes => hermes_next(current, install).map(Some),
+        HookAgent::OpenCode => Ok(install.then(opencode_plugin)),
+        _ => Err("JSON settings are merged as JSON".into()),
     }
 }
 
@@ -149,6 +282,8 @@ fn read_settings_lossy() -> Value {
 
 fn hook_command(agent: HookAgent, event: &str) -> String {
     match agent {
+        // Written by hermes_block() / the plugin file instead.
+        HookAgent::Hermes | HookAgent::OpenCode => String::new(),
         HookAgent::Claude => {
             // Claude Code on Windows runs hooks via Git Bash (MSYS2), where forward slashes are required.
             let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
@@ -308,6 +443,7 @@ fn current_fingerprint() -> String {
 
 fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
     match agent {
+        HookAgent::Hermes | HookAgent::OpenCode => existing.clone(),
         HookAgent::Claude => merged(existing),
         HookAgent::Agy => {
             // AGY's hooks.json (spec bundled in agy.exe 1.2.14): top-level keys
@@ -361,7 +497,7 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
         .unwrap_or(false);
 
     match agent {
-        HookAgent::Claude => has_hooks,
+        HookAgent::Claude | HookAgent::Hermes | HookAgent::OpenCode => has_hooks,
         // Only the current format counts: an install in the old format never
         // ran, so it shows as "not installed" and gets replaced.
         HookAgent::Agy => current.get(AGY_HOOK_NAME).is_some_and(Value::is_object),
@@ -372,8 +508,15 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
 
 pub fn status_for(agent: HookAgent) -> HookStatus {
     let path = agent.settings_path();
-    let current = read_settings_lossy_path(&path);
-    let installed = is_installed_for_agent(agent, &current);
+    let installed = if agent.is_json() {
+        is_installed_for_agent(agent, &read_settings_lossy_path(&path))
+    } else {
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        match agent {
+            HookAgent::Hermes => text.contains(YAML_BEGIN),
+            _ => text.contains(OPENCODE_MARKER),
+        }
+    };
     let hook_path = settings::hook_exe_path();
     HookStatus {
         installed,
@@ -390,6 +533,16 @@ pub fn status() -> HookStatus {
 
 pub fn preview_for(agent: HookAgent, install: bool) -> Result<HookPreview, String> {
     let path = agent.settings_path();
+    if !agent.is_json() {
+        let current = read_text(&path)?;
+        let next = text_next(agent, &current, install)?.unwrap_or_default();
+        return Ok(HookPreview {
+            diff: unified_diff(&current, &next),
+            backup: backup_path_for(&path).to_string_lossy().to_string(),
+            settings_path: path.to_string_lossy().to_string(),
+            fingerprint: current_fingerprint_path(&path),
+        });
+    }
     let current = read_settings_path(&path)?;
     let next = if install {
         merged_for_agent(agent, &current)
@@ -443,6 +596,9 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
 
+    if !agent.is_json() {
+        return write_text(agent, &path, install, fingerprint);
+    }
     let current = read_settings_path(&path)?;
     if current_fingerprint_path(&path) != fingerprint {
         return Err(format!(
@@ -469,6 +625,52 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
     if let Err(err) = std::fs::rename(&temp, &path) {
         let _ = std::fs::remove_file(&temp);
         return Err(format!("write failed: {err}"));
+    }
+    Ok(backup.to_string_lossy().to_string())
+}
+
+fn read_text(path: &Path) -> Result<String, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+            String::from_utf8(bytes.to_vec())
+                .map_err(|_| format!("{} isn't UTF-8 text — Awuuu won't touch it.", path.display()))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(format!("Can't read {}: {err}", path.display())),
+    }
+}
+
+/// Text files (Hermes config.yaml, the OpenCode plugin) follow the same rules:
+/// the file must be what the preview showed, a dated backup comes first, then
+/// an atomic replace. No text for the plugin removes our file.
+fn write_text(agent: HookAgent, path: &Path, install: bool, fingerprint: &str) -> Result<String, String> {
+    let current = read_text(path)?;
+    if current_fingerprint_path(path) != fingerprint {
+        return Err(format!(
+            "{} changed since the preview. Nothing was written — review the new diff.",
+            path.display()
+        ));
+    }
+    let next = text_next(agent, &current, install)?;
+    let backup = backup_path_for(path);
+    if path.exists() {
+        std::fs::copy(path, &backup).map_err(|e| format!("backup failed: {e}"))?;
+    }
+    match next {
+        None => {
+            if path.exists() {
+                std::fs::remove_file(path).map_err(|e| format!("remove failed: {e}"))?;
+            }
+        }
+        Some(text) => {
+            let temp = path.with_extension(format!("awuuu-{}", std::process::id()));
+            std::fs::write(&temp, text.as_bytes()).map_err(|e| format!("write failed: {e}"))?;
+            if let Err(err) = std::fs::rename(&temp, path) {
+                let _ = std::fs::remove_file(&temp);
+                return Err(format!("write failed: {err}"));
+            }
+        }
     }
     Ok(backup.to_string_lossy().to_string())
 }
@@ -767,5 +969,38 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod text_tests {
+    use super::*;
+
+    #[test]
+    fn hermes_block_round_trips_and_leaves_the_rest_alone() {
+        let original = "model:\n  default: x\nagent:\n  y: 1\n";
+        let installed = hermes_next(original, true).unwrap();
+        assert!(installed.starts_with(original));
+        assert!(installed.contains("hooks:\n  on_session_start:\n    - command: '\""));
+        assert!(installed.contains("--agent hermes pre_tool_call'"));
+        assert_eq!(hermes_next(&installed, false).unwrap(), original);
+        // Reinstalling replaces our block instead of adding a second one.
+        let again = hermes_next(&installed, true).unwrap();
+        assert_eq!(again.matches(YAML_BEGIN).count(), 1);
+    }
+
+    #[test]
+    fn hermes_refuses_a_second_hooks_key() {
+        let err = hermes_next("hooks:\n  pre_tool_call: []\n", true).unwrap_err();
+        assert!(err.contains("already has a `hooks:` section"));
+        assert!(err.contains("--agent hermes on_session_start"));
+    }
+
+    #[test]
+    fn opencode_plugin_is_filled_in() {
+        let js = opencode_plugin();
+        assert!(js.contains(OPENCODE_MARKER));
+        assert!(!js.contains("__AWUUU_HOOK__"));
+        assert!(js.contains("awuuu-hook.exe"));
     }
 }
