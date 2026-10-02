@@ -6,6 +6,7 @@ mod hooks;
 mod integrations;
 mod island;
 mod log;
+mod mouse;
 mod pipe;
 mod secrets;
 mod updater;
@@ -460,7 +461,7 @@ pub fn run() {
             }
             gate.collapsed.store(false, Ordering::Relaxed);
             gate.set_active(true);
-            island::spawn_cursor_poll(handle.clone(), gate.clone());
+            island::spawn_mouse_watch(handle.clone(), gate.clone());
 
             log::line(format!("--- Awuuu {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
