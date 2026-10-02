@@ -174,6 +174,8 @@ class AppState {
   agentSessions: AgentTask[] = [];
   agentFocusId: string | null = null;
   approvalQueue: ApprovalInfo[] = [];
+  /** Measured content height of the approval card (layout.approvalHeight). */
+  approvalFit = 0;
   sessionAlwaysAllowed = new Set<string>();
 
   get pendingApproval(): ApprovalInfo | null {

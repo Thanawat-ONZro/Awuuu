@@ -390,13 +390,13 @@ function buildEmpty(actions: ViewActions): ViewHost {
 
 // ── Approval ──────────────────────────────────────────────────────────────────
 
-function buildApproval(actions: ViewActions): ViewHost {
+function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean) => void): ViewHost {
   const who = h("div");
   const code = h("div", {
     class: "code",
-    style: "white-space:pre-wrap;max-height:96px;overflow-y:auto;word-break:break-word;font-size:13px;line-height:1.45",
+    style: "white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.45",
   });
-  const row = h("div", { class: "actions", style: "flex-wrap:wrap;gap:8px;max-height:120px;overflow-y:auto" });
+  const row = h("div", { class: "actions", style: "flex-wrap:wrap;gap:8px" });
   const other = h("input", {
     type: "text",
     class: "chat-input",
@@ -405,7 +405,25 @@ function buildApproval(actions: ViewActions): ViewHost {
   }) as HTMLInputElement;
   const otherSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
   const otherBar = h("div", { class: "chat-bar", style: "margin-top:6px" }, other, otherSend);
-  const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row, otherBar)));
+  const body = stack(116, 16, who, code, row, otherBar);
+  // Taller than the window allows: scroll instead of clipping the top.
+  body.style.overflowY = "auto";
+  body.style.justifyContent = "safe center";
+  const el = h("div", { class: "view" }, card("amber", body));
+
+  // The island grows or shrinks to the card's content (layout.approvalHeight).
+  function fit() {
+    const kids = [...body.children] as HTMLElement[];
+    const shown = kids.filter((k) => k.style.display !== "none");
+    const cs = getComputedStyle(body);
+    const gap = parseFloat(cs.rowGap) || 0;
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const content = shown.reduce((sum, k) => sum + k.offsetHeight, 0) + gap * Math.max(0, shown.length - 1) + pad + 16;
+    if (Math.abs(content - State.approvalFit) < 3) return;
+    const shrinking = content < State.approvalFit;
+    State.approvalFit = content;
+    onHeightChange(shrinking);
+  }
   let lastReqKey = "";
 
   // An agent can ask several questions at once; they are answered one after
@@ -512,6 +530,7 @@ function buildApproval(actions: ViewActions): ViewHost {
           btn("Always allow", "secondary", () => actions.decide("always")),
         );
       }
+      requestAnimationFrame(fit);
     },
   };
 }
@@ -686,12 +705,13 @@ function buildPlaceholder(title: string, sub: string): ViewHost {
 export function buildViews(
   actions: ViewActions,
   onChatHeightChange: () => void,
+  onApprovalHeightChange: (shrinking: boolean) => void,
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildOverview(actions));
   map.set("agents", buildAgentsHub(actions));
   map.set("empty", buildEmpty(actions));
-  map.set("approval", buildApproval(actions));
+  map.set("approval", buildApproval(actions, onApprovalHeightChange));
   map.set("question", buildQuestion());
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));

@@ -213,7 +213,9 @@ export class Island {
     this.countdown = h("div", { id: "countdown" });
 
     this.header = buildHeader(actions);
-    this.views = buildViews(actions, () => this.animateGeometry(false));
+    this.views = buildViews(actions, () => this.animateGeometry(false), (shrinking) => {
+      if (State.view === "approval" && State.mode === "expanded") this.animateGeometry(shrinking);
+    });
     this.viewsEl = h("div", { id: "views" });
     for (const v of this.views.values()) this.viewsEl.append(v.el);
     this.contentEl = h("div", { id: "content" }, this.header.el, this.viewsEl);
@@ -512,7 +514,7 @@ export class Island {
       State.mode,
       State.view,
       State.chatHistory.length,
-      !!State.pendingApproval?.isQuestion,
+      State.approvalFit,
     );
     const r = State.mode === "expanded"
       ? EXPANDED_CORNER

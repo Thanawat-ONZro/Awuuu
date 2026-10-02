@@ -104,19 +104,29 @@ export function chatPromptHeight(messageCount: number): number {
   return Math.min(300, 240 + messageCount * 40);
 }
 
+/** Height of the header strip above every expanded view's card. */
+export const HEADER_BOTTOM = 42;
+/** Space under the card, inside the island. */
+export const CARD_BOTTOM_GAP = 14;
+export const APPROVAL_MIN_H = 160;
+export const APPROVAL_MAX_H = PANEL_H - 12;
+
 /**
- * An approval card has to be readable at a glance: a long command needs a few
- * lines, and a question needs its text, every option and a field for "Other".
+ * An approval card fits its content: a long command or a question with many
+ * options gets the room it needs, up to the window. `fit` is the measured
+ * height of the card's content; 0 = not measured yet.
  */
-export function approvalHeight(isQuestion: boolean): number {
-  return isQuestion ? PANEL_H - 20 : 200;
+export function approvalHeight(fit: number): number {
+  if (fit <= 0) return 200;
+  const h = HEADER_BOTTOM + fit + CARD_BOTTOM_GAP;
+  return Math.round(Math.min(APPROVAL_MAX_H, Math.max(APPROVAL_MIN_H, h)));
 }
 
 export function islandSize(
   mode: IslandMode,
   view: IslandViewName,
   chatCount = 0,
-  approvalIsQuestion = false,
+  approvalFit = 0,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
@@ -129,7 +139,7 @@ export function islandSize(
         view === "prompt"
           ? chatPromptHeight(chatCount)
           : view === "approval"
-          ? approvalHeight(approvalIsQuestion)
+          ? approvalHeight(approvalFit)
           : VIEW_LAYOUTS[view].height;
       return { w: EXPANDED_W, h };
     }
@@ -169,7 +179,7 @@ export function botPosition(
         return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
       }
       // Centre of the fixed 84 pt card (8 pt top inset + 34 pt header → content at y = 42)
-      const headerBottom = 42;
+      const headerBottom = HEADER_BOTTOM;
       const cardH = 84;
       const cy = headerBottom + (islandH - headerBottom - cardH) / 2 + cardH / 2;
       return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: 1 };
