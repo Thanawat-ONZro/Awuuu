@@ -1,7 +1,8 @@
-// The launch "coucou" — port of GreetingCanvasView.swift.
+// The launch greeting ("Awuuu!") — port of GreetingCanvasView.swift.
 // Everything is laid out in the same 640×150 reference space as on macOS.
 
 import { Sound } from "../core/sound";
+import { drawBrows, drawEars, drawMuzzle, drawTail, earTwitch, type FacePose } from "./dog";
 import { COMPACT_W, NOTCH_H, NOTCH_W } from "../core/layout";
 
 // ── Timing (mirrors greeting-v2.html `T`) ─────────────────────────────────────
@@ -270,8 +271,8 @@ function whiteFill(
   x0: number, y0: number, x1: number, y1: number,
 ) {
   const g = x.createLinearGradient(x0, y0, x1, y1);
-  g.addColorStop(0, "rgb(251,251,252)");
-  g.addColorStop(1, "rgb(231,233,236)");
+  g.addColorStop(0, "rgb(255,248,238)");
+  g.addColorStop(1, "rgb(236,217,194)");
   x.save();
   x.fillStyle = g;
   x.fill(path);
@@ -316,8 +317,8 @@ function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose)
   x.translate(rx, ry);
   x.rotate(ang);
   const g = x.createLinearGradient(L / 2, -T2 / 2, -L / 2, T2 / 2);
-  g.addColorStop(0, "rgb(251,251,252)");
-  g.addColorStop(1, "rgb(231,233,236)");
+  g.addColorStop(0, "rgb(255,248,238)");
+  g.addColorStop(1, "rgb(236,217,194)");
   rr(x, -L / 2, -T2 / 2, L, T2, T2 / 2);
   x.fillStyle = g;
   x.fill();
@@ -327,7 +328,7 @@ function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose)
   x.restore();
 }
 
-function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
+function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
   const hh = p.hb / 2;
   const hw = hh * ASP;
   if (hh <= 0.4) return;
@@ -354,6 +355,18 @@ function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
   x.rotate(p.tilt);
   x.scale(p.sx, p.sy);
 
+  // Awuuu's tail and ears sit behind the body; the tail wags hard while waving.
+  const t = performance.now() / 1000;
+  const excited = p.wave >= 0 || p.eye === "happy";
+  if (hh > 6) drawTail(x, hw, hh, excited ? Math.sin(t * 15) * 0.32 : Math.sin(t * 4.2) * 0.16, null);
+  drawEars(x, hw, hh, {
+    shift: p.lookX * hw * 0.12,
+    perk: p.wave >= 0 ? 0.8 : 0,
+    twitch: [earTwitch(t, 0.2), earTwitch(t, 0.9)],
+    solid: null,
+    alpha: 1,
+  });
+
   drawHandL(x, hw, hh, p);
   drawHandR(x, hw, hh, p);
 
@@ -370,6 +383,26 @@ function drawMochi(x: CanvasRenderingContext2D, p: Pose) {
     x.fill(body);
     x.restore();
   }
+
+  // Muzzle, nose, mouth and brows. Body height is 2·ry = 1.76·R in the engine.
+  const R = hh / 0.88;
+  const lx0 = p.lookX * hw * 0.42;
+  const face: FacePose = {
+    shiftX: lx0,
+    shiftY: p.lookY * hh * 0.2,
+    squash: 1,
+    mouth: p.wave >= 0 ? "howl" : "smile",
+    tongue: p.eye === "happy" && p.wave < 0 ? 0.9 + Math.sin(t * 7.5) * 0.1 : 0,
+    ink: "#16171A",
+    markings: hh > 6,
+    alpha: 1,
+  };
+  x.save();
+  x.clip(body);
+  const browY = hh * 0.12 + p.lookY * hh * 0.28 - p.hb * 0.15;
+  drawBrows(x, R, [[-p.hb * 0.19 + lx0, browY, -1], [p.hb * 0.19 + lx0, browY, 1]], face);
+  drawMuzzle(x, R, hw, hh * 0.6, face);
+  x.restore();
 
   // Eyes
   x.save();
@@ -547,7 +580,7 @@ export class Greeting {
       x.save();
       x.globalAlpha = p.card;
       rr(x, CARD.x, CARD.y, CARD.w, CARD.h, CARD_R);
-      x.fillStyle = "#141518";
+      x.fillStyle = "#1a1612";
       x.fill();
       x.restore();
 
@@ -561,6 +594,6 @@ export class Greeting {
     }
 
     drawMinis(x, p.minis);
-    drawMochi(x, p);
+    drawAwuuu(x, p);
   }
 }

@@ -240,16 +240,27 @@ fn approval_decline(app: AppHandle, request_id: String) {
 
 // ── Chat, files and secrets ───────────────────────────────────────────────────
 
-/// One chat turn. The API key and any file bytes stay on the Rust side.
+/// One chat turn. The API key and any file bytes stay on the Rust side; the
+/// reply so far is pushed to the island as `chat-delta` while it streams.
 #[tauri::command]
 async fn chat_send(
+    app: AppHandle,
     shared: State<'_, Shared>,
     chat: State<'_, Chat>,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
     let model = shared.settings.lock().unwrap().model.clone();
-    claude::send(&chat, &model, query, context).await
+    let on_delta = move |text: &str| {
+        let _ = app.emit_to(island::WINDOW_LABEL, "chat-delta", text.to_string());
+    };
+    claude::send(&chat, &model, query, context, &on_delta).await
+}
+
+/// Settings → "Test connection" for the Hermes gateway.
+#[tauri::command]
+async fn hermes_status() -> Result<Vec<String>, String> {
+    claude::hermes_models().await
 }
 
 #[tauri::command]
@@ -328,7 +339,7 @@ fn create_settings_window(app: &AppHandle) {
     let url = settings_page_url(app);
     match WebviewWindowBuilder::new(app, "settings", url)
         .additional_browser_args(BROWSER_ARGS)
-        .title("Settings — Coucou")
+        .title("Settings — Awuuu")
         .inner_size(560.0, 680.0)
         .min_inner_size(460.0, 480.0)
         .resizable(true)
@@ -366,8 +377,12 @@ fn open_settings_window(app: AppHandle) {
 }
 
 pub fn run() {
+    // Release builds abort on panic with no console: leave the reason in awuuu.log.
+    std::panic::set_hook(Box::new(|info| log::line(format!("PANIC: {info}"))));
     let loaded = settings::load();
     let gate = Arc::new(PollGate::new());
+
+    let context = tauri::generate_context!();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -399,6 +414,7 @@ pub fn run() {
             log_line,
             chat_send,
             chat_reset,
+            hermes_status,
             ingest_file,
             secret_present,
             secret_set,
@@ -410,7 +426,10 @@ pub fn run() {
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
-            tray::build(&handle)?;
+            if let Err(err) = tray::build(&handle) {
+                log::line(format!("tray::build error: {err}"));
+                return Err(Box::new(err));
+            }
             // Before the island: see create_settings_window.
             create_settings_window(&handle);
 
@@ -418,17 +437,23 @@ pub fn run() {
                 island::make_non_activating(&win);
                 island::apply_geometry(&handle, &loaded.screen, false);
                 let _ = win.show();
+            } else {
+                log::line("WARNING: island window not found by label");
             }
             gate.collapsed.store(false, Ordering::Relaxed);
             gate.set_active(true);
             island::spawn_cursor_poll(handle.clone(), gate.clone());
 
-            log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
+            log::line(format!("--- Awuuu {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
             pipe::start(handle.clone());
             integrations::start(handle.clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Coucou");
+        .run(context)
+        .map_err(|err| {
+            log::line(format!("tauri run error: {err}"));
+            err
+        })
+        .expect("error while running Awuuu");
 }

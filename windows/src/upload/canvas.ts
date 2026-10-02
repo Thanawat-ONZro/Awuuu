@@ -6,6 +6,7 @@
 // exactly as on macOS, because this canvas draws its own.
 
 import { State } from "../core/state";
+import { drawEars, drawMuzzle, drawTail, earTwitch } from "../mochi/dog";
 import {
   USC, eIn, eInOut, eOut, lerp, progressAt,
   type UploadEyeShape, type UploadFrame,
@@ -174,7 +175,7 @@ export class UploadCanvas {
   private drawDropText(ctx: CanvasRenderingContext2D, f: UploadFrame) {
     ctx.save();
     ctx.globalAlpha = f.textAlpha;
-    text(ctx, "Drop your files here", USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#D5D7DB");
+    text(ctx, "Toss a file to Awuuu", USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#E3D4C2");
 
     let cx = USC.TEXT_X;
     for (const chip of ["PDF", "Images", "Code", "Docs"]) {
@@ -183,7 +184,7 @@ export class UploadCanvas {
       ctx.fillStyle = "rgba(255,255,255,0.07)";
       rr(ctx, cx, USC.TEXT_Y + 9, w, 18, 9);
       ctx.fill();
-      text(ctx, chip, cx + 8, USC.TEXT_Y + 18, `500 11px ${FONT}`, "#B9BDC4");
+      text(ctx, chip, cx + 8, USC.TEXT_Y + 18, `500 11px ${FONT}`, "#CBBBA8");
       cx += w + 6;
     }
     ctx.restore();
@@ -201,7 +202,7 @@ export class UploadCanvas {
     const barLen = (x1 - x0) * f.barReveal;
 
     const name = State.droppedFile?.name ?? "file";
-    text(ctx, `Uploading ${name}`, x0, by - 30, `500 12.5px ${FONT}`, "#A9ADB5");
+    text(ctx, `Uploading ${name}`, x0, by - 30, `500 12.5px ${FONT}`, "#BBAB99");
 
     if (f.check > 0) {
       ctx.save();
@@ -222,7 +223,7 @@ export class UploadCanvas {
       ctx.stroke();
       ctx.restore();
     } else {
-      text(ctx, `${Math.round(f.progress * 100)} %`, x1, by - 30, `500 12.5px ${FONT}`, "#A9ADB5", "right");
+      text(ctx, `${Math.round(f.progress * 100)} %`, x1, by - 30, `500 12.5px ${FONT}`, "#BBAB99", "right");
     }
 
     // Track.
@@ -273,22 +274,22 @@ export class UploadCanvas {
     ctx.translate(0, (1 - f.chooseAlpha) * 4);
 
     const name = State.droppedFile?.name ?? "file";
-    text(ctx, `${name} is ready.`, 114, 80, `600 14px ${FONT}`, "#F5F6F8");
-    text(ctx, "What do you want to do with it?", 114, 100, `400 12.5px ${FONT}`, "#9398A1");
+    text(ctx, `${name} is ready.`, 114, 80, `600 14px ${FONT}`, "#FFF4E6");
+    text(ctx, "What do you want to do with it?", 114, 100, `400 12.5px ${FONT}`, "#A89A8A");
 
-    ctx.fillStyle = "#F5F6F8";
+    ctx.fillStyle = "#E4A871";
     rr(ctx, 114, 113, 168, 26, 13);
     ctx.fill();
-    text(ctx, "Ask a question about it", 198, 126, `500 12.5px ${FONT}`, "#0B0C0E", "center");
+    text(ctx, "Ask a question about it", 198, 126, `500 12.5px ${FONT}`, "#2B1E14", "center");
 
     ctx.fillStyle = "rgba(255,255,255,0.09)";
     rr(ctx, 290, 113, 120, 26, 13);
     ctx.fill();
-    text(ctx, "Cancel", 350, 126, `500 12.5px ${FONT}`, "#F1F2F4", "center");
+    text(ctx, "Cancel", 350, 126, `500 12.5px ${FONT}`, "#FBEFDF", "center");
     ctx.restore();
   }
 
-  // ── Mochi ─────────────────────────────────────────────────────────────────
+  // ── Awuuu ─────────────────────────────────────────────────────────────────
 
   private drawMochi(ctx: CanvasRenderingContext2D, f: UploadFrame) {
     const R = f.d / 2 / 1.04;
@@ -299,12 +300,31 @@ export class UploadCanvas {
     ctx.rotate(f.tilt);
     ctx.scale(f.sx, f.sy);
 
+    // Awuuu's tail and ears fade out as the body turns into the box.
+    const dogA = Math.max(0, 1 - mc * 2.2);
+    const t = performance.now() / 1000;
+    if (dogA > 0.01) {
+      const erx = R * (1.04 - 0.04 * mc);
+      const ery = R * (0.97 - 0.03 * mc);
+      ctx.save();
+      ctx.globalAlpha *= dogA;
+      drawTail(ctx, erx, ery, Math.sin(t * 6) * 0.2, null);
+      ctx.restore();
+      drawEars(ctx, erx, ery, {
+        shift: f.lookX * erx * 0.12,
+        perk: 0.6,
+        twitch: [earTwitch(t, 0.2), earTwitch(t, 0.9)],
+        solid: null,
+        alpha: dogA,
+      });
+    }
+
     const { rx, ry } = bodyPath(ctx, f.morph, R);
 
     // Body.
     const bg = ctx.createLinearGradient(rx * 0.7, -ry * 0.9, -rx * 0.8, ry * 0.9);
-    bg.addColorStop(0, "#EDEDEF");
-    bg.addColorStop(1, "#C4C5CA");
+    bg.addColorStop(0, "#FFF8EE");
+    bg.addColorStop(1, "#ECD9C2");
     ctx.fillStyle = bg;
     ctx.fill();
 
@@ -355,6 +375,20 @@ export class UploadCanvas {
         ctx.lineCap = "round";
         ctx.stroke();
       }
+    }
+
+    // Muzzle and nose, under the eyes.
+    if (dogA > 0.01) {
+      drawMuzzle(ctx, R * 0.9, rx, R * 0.6, {
+        shiftX: f.lookX * R * 0.3,
+        shiftY: f.lookY * R * 0.1,
+        squash: 1,
+        mouth: "smile",
+        tongue: 0,
+        ink: "#16171A",
+        markings: true,
+        alpha: dogA,
+      });
     }
 
     // Eyes.

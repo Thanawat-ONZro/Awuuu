@@ -10,8 +10,10 @@ export class IslandStateMachine {
 
   /** home → petit delay, seconds. */
   homeToPetitDelay = 15;
-  /** petit → hidden delay, seconds. */
-  petitToHiddenDelay = 60;
+  /** petit → hidden delay, seconds; 0 = the compact island never hides. */
+  petitToHiddenDelay = 0;
+  /** While this says true (an agent is busy), the hide timer starts over. */
+  keepVisible: (() => boolean) | null = null;
   /** coucou → petit once the greeting animation ends (no hover). */
   greetAutoCollapseDelay = 0.6;
   /** coucou → petit while the mouse hovers the greeting. */
@@ -106,9 +108,13 @@ export class IslandStateMachine {
 
   private schedulePetitHide() {
     this.clear("petitHide");
+    if (this.petitToHiddenDelay <= 0) return;
     this.petitHide = window.setTimeout(() => {
       this.petitHide = null;
-      if (this.state === "petit") this.transition("hidden");
+      if (this.state !== "petit") return;
+      // Never vanish in the middle of a long Claude Code run.
+      if (this.keepVisible?.()) this.schedulePetitHide();
+      else this.transition("hidden");
     }, this.petitToHiddenDelay * 1000);
   }
 

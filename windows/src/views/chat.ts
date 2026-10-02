@@ -3,12 +3,26 @@
 
 import { h, svg, clear } from "./dom";
 import { ICONS } from "./icons";
-import { Bridge, type ChatContext } from "../core/bridge";
+import { Bridge, onEvent, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type ChatMessage } from "../core/state";
 import type { ViewHost } from "./views";
 
 let nextId = 1;
+
+/** The assistant bubble being filled by a streamed reply, if any. */
+let streaming: ChatMessage | null = null;
+
+// Rust pushes the whole reply so far on every streamed piece.
+void onEvent<string>("chat-delta", (text) => {
+  if (!streaming) {
+    streaming = { id: nextId++, role: "assistant", content: "" };
+    State.chatHistory.push(streaming);
+    State.stateOverride = null; // the bubble replaces the typing dots
+  }
+  streaming.content = text;
+  State.notify();
+});
 
 function bubble(message: ChatMessage): HTMLElement {
   if (message.role === "user") {
@@ -56,7 +70,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", "rgba(99,102,241,0.5)");
 
   let sending = false;
-  let renderedCount = -1;
+  let renderedKey = "";
 
   async function submit() {
     const query = input.value.trim();
@@ -74,17 +88,21 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     const context: ChatContext | null =
       State.chatHistory.length === 1 && file ? { kind: "file", name: file.name, path: file.path } : null;
 
+    streaming = null;
     try {
       const reply = await Bridge.chatSend(query, context);
-      State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
+      if (streaming) (streaming as ChatMessage).content = reply.text;
+      else State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
       State.stateOverride = null;
       Sound.play("finish");
     } catch (err) {
+      // A reply cut off mid-stream stays in the log; the note says why.
       State.stateOverride = null;
       State.noteMessage = String(err).replace(/^Error:\s*/, "");
       State.view = "note";
       Sound.play("error");
     } finally {
+      streaming = null;
       sending = false;
       State.notify();
       onHeightChange();
@@ -113,16 +131,18 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       }
 
       const thinking = State.stateOverride === "thinking";
-      const count = State.chatHistory.length + (thinking ? 0.5 : 0);
-      if (count !== renderedCount) {
-        renderedCount = count;
+      // The last bubble grows while a reply streams, so its length is part of the key.
+      const last = State.chatHistory[State.chatHistory.length - 1];
+      const key = `${State.chatHistory.length}|${thinking}|${last?.content.length ?? 0}`;
+      if (key !== renderedKey) {
+        renderedKey = key;
         clear(log);
         for (const m of State.chatHistory) log.append(bubble(m));
         if (thinking) log.append(typingDots());
         log.scrollTop = log.scrollHeight;
       }
 
-      input.placeholder = State.chatHistory.length === 0 ? "Ask me anything…" : "Continue…";
+      input.placeholder = State.chatHistory.length === 0 ? "Ask Awuuu anything…" : "Continue…";
       input.disabled = sending;
     },
     focus() {

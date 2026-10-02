@@ -1,5 +1,5 @@
-/* Coucou for Windows — same palette, sizes and type scale as the macOS island.
-   Every colour below is copied from the Swift views. */
+/* Awuuu for Windows — sizes and type scale from the macOS island, with a warm
+   black + caramel palette that matches Awuuu's fur (src/mochi/dog.ts). */
 
 :root {
   color-scheme: dark;
@@ -7,18 +7,18 @@
   --font: system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
-  --ink: #f5f6f8;        /* primary text */
-  --ink-2: #f1f2f4;
-  --dim: #9398a1;
-  --dim-2: #8e939c;
-  --dim-3: #6b7079;
-  --dim-4: #5f646d;
-  --dim-5: #4b5563;
-  --card: #141518;
-  --card-flat: #0e0f11;
-  --tab-on: #1d1f23;
+  --ink: #fff4e6;        /* primary text */
+  --ink-2: #fbefdf;
+  --dim: #a89a8a;
+  --dim-2: #a29484;
+  --dim-3: #7d7062;
+  --dim-4: #706356;
+  --dim-5: #5a4e43;
+  --card: #1a1612;
+  --card-flat: #120f0c;
+  --tab-on: #241e19;
   --hairline: rgba(255, 255, 255, 0.035);
-  --red: #f4505e;
+  --red: #f0645a;
   --red-text: #ff8d97;
   --green: #22c55e;
   --green-2: #34d399;
@@ -26,6 +26,9 @@
   --cyan: #22d3ee;
   --indigo: #6366f1;
   --pink: #f472b6;
+  --accent: #e4a871;      /* caramel — primary buttons, highlights */
+  --accent-hover: #edb985;
+  --accent-ink: #2b1e14;  /* text on caramel */
 }
 
 * {
@@ -120,7 +123,7 @@ body {
   position: absolute;
   padding: 0;
   border: 0;
-  border-radius: 13px;
+  border-radius: 15px;
   background: none;
   pointer-events: auto;
   cursor: pointer;
@@ -214,14 +217,14 @@ body {
   place-items: center;
   border: 0;
   background: transparent;
-  border-radius: 11px;
+  border-radius: 13px;
   color: var(--dim-2);
   cursor: default;
 }
 
 .tab:hover {
   background: rgba(255, 255, 255, 0.07);
-  color: #b0b5be;
+  color: #c2b2a0;
 }
 
 .tab.on {
@@ -276,7 +279,7 @@ body {
 .card {
   position: relative;
   height: 100%;
-  border-radius: 20px;
+  border-radius: 22px;
   background: var(--card);
   border: 1px solid var(--hairline);
   overflow: hidden;
@@ -325,8 +328,12 @@ body {
 }
 
 .btn.primary {
-  background: var(--ink);
-  color: #0b0c0e;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn.primary:hover {
+  background: var(--accent-hover);
 }
 
 .btn.secondary {
@@ -479,9 +486,9 @@ body {
 .shimmer {
   background: linear-gradient(
     90deg,
-    #7c818a 0%,
-    #f2f3f5 40%,
-    #7c818a 70%
+    #8f8172 0%,
+    #fcf0e1 40%,
+    #8f8172 70%
   );
   background-size: 260% 100%;
   -webkit-background-clip: text;
@@ -556,7 +563,7 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #0b0c0e;
+  background: #0e0b09;
   display: grid;
   place-items: center;
 }
@@ -606,10 +613,10 @@ body {
 
 .code {
   font: 400 12px var(--mono);
-  color: #e8e9ec;
+  color: #f2e5d4;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 5px 10px;
   max-width: 100%;
   white-space: nowrap;
@@ -654,14 +661,14 @@ body {
   align-items: center;
   gap: 10px;
   font: 400 12.5px var(--font);
-  color: #c5c8cd;
+  color: #d6c6b3;
 }
 
 .switch {
   position: relative;
   width: 32px;
   height: 18px;
-  border-radius: 9px;
+  border-radius: 11px;
   background: rgba(255, 255, 255, 0.15);
   flex: 0 0 32px;
   transition: background 0.18s;
@@ -723,7 +730,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seg button.on {
-  background: #252830;
+  background: #2a231d;
   color: var(--ink);
 }
 
@@ -806,7 +813,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .bubble {
   background: rgba(255, 255, 255, 0.13);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 6px 10px;
   font: 400 12.5px var(--font);
   color: var(--ink-2);
@@ -816,7 +823,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .reply {
   font: 400 12.5px var(--font);
-  color: #b0b5be;
+  color: #c2b2a0;
   white-space: pre-wrap;
   padding-right: 8px;
   user-select: text;
@@ -855,7 +862,7 @@ input[type="range"]::-webkit-slider-thumb {
   gap: 8px;
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
+  border-radius: 14px;
 }
 
 .chat-input {
@@ -880,7 +887,7 @@ input[type="range"]::-webkit-slider-thumb {
   border: 0;
   border-radius: 50%;
   background: var(--ink);
-  color: #0b0c0e;
+  color: #0e0b09;
   display: grid;
   place-items: center;
   cursor: default;
@@ -943,7 +950,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .drop-title {
   font: 500 13px var(--font);
-  color: #d5d7db;
+  color: #e3d4c2;
   transition: color 0.2s;
 }
 
@@ -961,7 +968,7 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 3px 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
-  color: #b9bdc4;
+  color: #cbbba8;
 }
 
 /* ── Uploading ──────────────────────────────────────────────────────────── */
@@ -985,7 +992,7 @@ input[type="range"]::-webkit-slider-thumb {
   justify-content: space-between;
   gap: 8px;
   font: 400 12.5px var(--font);
-  color: #a9adb5;
+  color: #bbab99;
 }
 
 .up-name {
@@ -1075,7 +1082,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-total span {
   font: 500 11px var(--font);
-  color: #c5c8cd;
+  color: #d6c6b3;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1131,7 +1138,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-name {
   font: 500 11px var(--font);
-  color: #9398a1;
+  color: #a89a8a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1139,7 +1146,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .int-row.first .int-name {
-  color: #c5c8cd;
+  color: #d6c6b3;
 }
 
 .int-ago {
@@ -1150,7 +1157,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-sub {
   font: 400 10px var(--font);
-  color: #4d5159;
+  color: #5c5045;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1218,7 +1225,7 @@ input[type="range"]::-webkit-slider-thumb {
 .int-stat-value {
   margin-left: auto;
   font: 600 12px var(--font);
-  color: #c5c8cd;
+  color: #d6c6b3;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1319,7 +1326,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-commit {
   font: 400 10.5px var(--font);
-  color: #c5c8cd;
+  color: #d6c6b3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

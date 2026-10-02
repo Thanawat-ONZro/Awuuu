@@ -29,7 +29,7 @@ function dashedFrame(): SVGSVGElement {
 
 export function buildUpload(): ViewHost {
   const frame = dashedFrame();
-  const title = h("div", { class: "drop-title", text: "Drop your files here" });
+  const title = h("div", { class: "drop-title", text: "Toss a file to Awuuu" });
   const tags = h(
     "div",
     { class: "drop-tags" },

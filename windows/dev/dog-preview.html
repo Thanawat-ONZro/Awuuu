@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Awuuu — character preview</title>
+    <style>
+      body { margin: 0; background: #1b1b1f; font: 12px system-ui; color: #ccc; }
+      #grid { display: grid; grid-template-columns: repeat(6, 150px); gap: 10px; padding: 16px; }
+      .cell { background: #000; border-radius: 18px; text-align: center; padding-bottom: 6px; }
+      #greet { margin: 0 16px; background: #000; border-radius: 18px; }
+    </style>
+  </head>
+  <body>
+    <div id="grid"></div>
+    <canvas id="greet" width="640" height="150"></canvas>
+    <script type="module" src="./dog-preview.ts"></script>
+  </body>
+</html>

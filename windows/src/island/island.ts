@@ -99,6 +99,21 @@ export class Island {
       this.dirty = true;
       this.ensureRunning();
     });
+    this.scheduleFidget();
+  }
+
+  /**
+   * Every few seconds Awuuu does one small move (wag, ear flick, sniff…). The
+   * move is a tween, so the frame loop wakes for ~1 s and stops again; while the
+   * island is hidden the timer does nothing and no frame is drawn.
+   */
+  private scheduleFidget() {
+    window.setTimeout(() => {
+      if (State.mode !== "hidden" && !UploadSeq.isActive && this.engine.fidget()) {
+        this.ensureRunning();
+      }
+      this.scheduleFidget();
+    }, 4000 + Math.random() * 3000);
   }
 
   // ── DOM ─────────────────────────────────────────────────────────────────────
@@ -225,6 +240,9 @@ export class Island {
 
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
+    this.fsm.petitToHiddenDelay = State.settings.hideAfter;
+    const BUSY = new Set(["working", "thinking", "searching", "approval", "question"]);
+    this.fsm.keepVisible = () => State.tasks.some((t) => BUSY.has(t.state));
     this.fsm.onTransition = (from, to) => {
       switch (to) {
         case "hidden":
@@ -874,6 +892,7 @@ export class Island {
     Sound.setEnabled(State.settings.soundEnabled);
     Sound.setVolume(State.settings.soundVolume);
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
+    this.fsm.petitToHiddenDelay = State.settings.hideAfter;
     State.notify();
   }
 

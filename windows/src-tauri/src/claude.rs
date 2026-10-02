@@ -1,7 +1,9 @@
-// Hermes Agent & Claude API client.
-// Defaults to local Hermes Agent at http://127.0.0.1:8642 with model hermes-agent.
-// Supports full Owen profile, memories, subagents, and tools.
-// Falls back to Anthropic API if a claude-* model is selected.
+// Chat backends: the local Hermes Agent (OpenAI-compatible, streamed) by
+// default, the Claude API when a claude-* model is selected.
+//
+// Everything happens here rather than in the island: keys never leave the
+// Credential Manager and file bytes never cross the IPC boundary. Hermes
+// replies stream back through `on_delta`, which the island shows as it types.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -22,6 +24,15 @@ const MAX_INLINE_TEXT: u64 = 200_000;
 
 const SYSTEM_PROMPT: &str = "You are Awuuu, a personal AI companion dog living at the top of the user's screen. \
 Respond in the user's language. Be thorough, helpful and concise.";
+
+/// Sent ahead of the Hermes history. Kept light on persona so the agent's own
+/// profile and memories stay in charge; it only sets the display constraints.
+const HERMES_SYSTEM: &str = "You are talking through Awuuu, a small dog companion that lives at the top of the user's screen. \
+Your reply appears in a small chat bubble: keep it clear and reasonably short, plain text with line breaks, no markdown. \
+Respond in the user's language.";
+
+/// Images larger than this are not sent inline (base64 grows them by a third).
+const MAX_INLINE_IMAGE: u64 = 5_000_000;
 
 #[derive(Default)]
 pub struct Chat {
@@ -64,6 +75,18 @@ pub struct ChatReply {
     pub text: String,
 }
 
+/// The `.env` files Hermes writes its API_SERVER_KEY to, in lookup order.
+fn hermes_env_files() -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Some(dir) = std::env::var_os("LOCALAPPDATA") {
+        files.push(PathBuf::from(dir).join("hermes").join(".env"));
+    }
+    if let Some(dir) = std::env::var_os("USERPROFILE") {
+        files.push(PathBuf::from(dir).join(".hermes").join(".env"));
+    }
+    files
+}
+
 pub fn get_hermes_key() -> Option<String> {
     if let Some(key) = secrets::get("hermes-api-key") {
         if !key.is_empty() {
@@ -80,9 +103,7 @@ pub fn get_hermes_key() -> Option<String> {
             return Some(key);
         }
     }
-    // Check %LOCALAPPDATA%\hermes\.env
-    if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
-        let env_path = PathBuf::from(local_appdata).join("hermes").join(".env");
+    for env_path in hermes_env_files() {
         if let Ok(content) = std::fs::read_to_string(&env_path) {
             for line in content.lines() {
                 let line = line.trim();
@@ -98,8 +119,57 @@ pub fn get_hermes_key() -> Option<String> {
     None
 }
 
+/// The chat-completions endpoint. Settings may hold just the server
+/// ("http://127.0.0.1:8642"), the /v1 base, or the full endpoint.
 pub fn get_hermes_url() -> String {
-    secrets::get("hermes-url").unwrap_or_else(|| DEFAULT_HERMES_URL.to_string())
+    let raw = secrets::get("hermes-url").unwrap_or_else(|| DEFAULT_HERMES_URL.to_string());
+    let base = raw.trim().trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        base.to_string()
+    } else if base.ends_with("/v1") {
+        format!("{base}/chat/completions")
+    } else {
+        format!("{base}/v1/chat/completions")
+    }
+}
+
+fn missing_key_message() -> String {
+    "Hermes API key missing. Add it in Settings, or check API_SERVER_KEY in \
+%LOCALAPPDATA%\\hermes\\.env (or %USERPROFILE%\\.hermes\\.env)."
+        .to_string()
+}
+
+/// Settings → "Test connection": lists the models the Hermes server offers.
+/// Only ever called from that button, never in the background.
+pub async fn hermes_models() -> Result<Vec<String>, String> {
+    let key = get_hermes_key().ok_or_else(missing_key_message)?;
+    let url = get_hermes_url().replace("/chat/completions", "/models");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .map_err(|e| format!("Can't reach Hermes at {url}: {e}"))?;
+    let status = response.status();
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Hermes returned {status}: {}", text.chars().take(200).collect::<String>()));
+    }
+    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from Hermes: {e}"))?;
+    Ok(parsed
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// One chat turn. Returns the assistant's text, or a message the island shows
@@ -109,11 +179,32 @@ pub async fn send(
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
     if model.starts_with("claude-") {
         return send_claude(chat, model, query, context).await;
     }
-    send_hermes(chat, model, query, context).await
+    send_hermes(chat, model, query, context, on_delta).await
+}
+
+/// An image as an OpenAI `image_url` part (data URL), when the file is one.
+fn image_part(path: &str) -> Option<Value> {
+    let ext = std::path::Path::new(path).extension()?.to_str()?.to_lowercase();
+    let media = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => return None,
+    };
+    if std::fs::metadata(path).ok()?.len() > MAX_INLINE_IMAGE {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    Some(json!({
+        "type": "image_url",
+        "image_url": { "url": format!("data:{media};base64,{}", base64(&bytes)) },
+    }))
 }
 
 async fn send_hermes(
@@ -121,21 +212,25 @@ async fn send_hermes(
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
-    let key = get_hermes_key().ok_or_else(|| {
-        "Hermes API key missing. Ensure Hermes service is running or check ~/.hermes/.env".to_string()
-    })?;
-
+    let key = get_hermes_key().ok_or_else(missing_key_message)?;
     let url = get_hermes_url();
 
+    // File / window context rides along with the first message only.
     let mut prompt = String::new();
+    let mut image: Option<Value> = None;
     if chat.is_empty() {
         match &context {
             Some(ChatContext::File { name, path }) => {
                 prompt.push_str(&format!("File: {name}\n"));
-                if let Ok(text) = std::fs::read_to_string(path) {
-                    if (text.len() as u64) <= MAX_INLINE_TEXT {
+                if let Some(part) = image_part(path) {
+                    image = Some(part);
+                } else if std::fs::metadata(path).map(|m| m.len() <= MAX_INLINE_TEXT).unwrap_or(false) {
+                    if let Ok(text) = std::fs::read_to_string(path) {
                         prompt.push_str(&format!("File contents:\n{text}\n\n"));
+                    } else {
+                        prompt.push_str(&format!("(Binary file saved at {path})\n\n"));
                     }
                 }
             }
@@ -151,19 +246,22 @@ async fn send_hermes(
     }
     prompt.push_str(&query);
 
-    chat.push(json!({ "role": "user", "content": prompt }));
+    let content = match image {
+        Some(part) => json!([{ "type": "text", "text": prompt }, part]),
+        None => json!(prompt),
+    };
+    chat.push(json!({ "role": "user", "content": content }));
 
-    let body = json!({
-        "model": model,
-        "messages": chat.snapshot(),
-    });
+    let mut messages = vec![json!({ "role": "system", "content": HERMES_SYSTEM })];
+    messages.extend(chat.snapshot());
+    let body = json!({ "model": model, "messages": messages, "stream": true });
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let response = match client
+    let mut response = match client
         .post(&url)
         .header("Authorization", format!("Bearer {key}"))
         .header("Content-Type", "application/json; charset=utf-8")
@@ -174,32 +272,76 @@ async fn send_hermes(
         Ok(res) => res,
         Err(err) => {
             chat.pop();
-            return Err(format!("Hermes link error (is HermesGateway running on :8642?): {err}"));
+            return Err(format!("Can't reach Hermes at {url} — is the gateway running? ({err})"));
         }
     };
 
     let status = response.status();
-    let text = response.text().await.map_err(|e| e.to_string())?;
-
     if !status.is_success() {
         chat.pop();
-        return Err(format!("Hermes server returned {status}: {text}"));
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Hermes returned {status}: {}", text.chars().take(300).collect::<String>()));
     }
 
-    let parsed: Value =
-        serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from Hermes: {e}"))?;
+    let streamed = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/event-stream"));
 
-    let reply_text = parsed
-        .get("choices")
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|choice| choice.get("message"))
-        .and_then(|msg| msg.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let mut reply_text = String::new();
+    if streamed {
+        // Server-sent events: `data: {json}` lines, ending with `data: [DONE]`.
+        let mut buf: Vec<u8> = Vec::new();
+        'read: loop {
+            let chunk = match response.chunk().await {
+                Ok(Some(c)) => c,
+                Ok(None) => break,
+                Err(err) => {
+                    if reply_text.is_empty() {
+                        chat.pop();
+                        return Err(format!("Hermes stream broke: {err}"));
+                    }
+                    break; // keep what already arrived
+                }
+            };
+            buf.extend_from_slice(&chunk);
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=pos).collect();
+                let line = String::from_utf8_lossy(&line);
+                let Some(data) = line.trim().strip_prefix("data:") else { continue };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    break 'read;
+                }
+                let Ok(event) = serde_json::from_str::<Value>(data) else { continue };
+                if let Some(piece) = event
+                    .pointer("/choices/0/delta/content")
+                    .and_then(Value::as_str)
+                {
+                    reply_text.push_str(piece);
+                    on_delta(&reply_text);
+                }
+            }
+        }
+    } else {
+        // A server that ignores `stream` answers with one JSON body.
+        let text = response.text().await.map_err(|e| e.to_string())?;
+        let parsed: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                chat.pop();
+                return Err(format!("Invalid JSON from Hermes: {e}"));
+            }
+        };
+        reply_text = parsed
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+    }
 
+    let reply_text = reply_text.trim().to_string();
     if reply_text.is_empty() {
         chat.pop();
         return Err("No response received from Hermes Agent.".into());

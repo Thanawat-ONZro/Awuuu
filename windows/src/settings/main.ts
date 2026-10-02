@@ -180,9 +180,125 @@ const MODELS: [string, string][] = [
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
 ];
 
+function hermesSection(): HTMLElement {
+  const dot = statusDot(false);
+  dot.style.background = "#a89a8a";
+  const state = h("span", {
+    class: "hint",
+    text: "Awuuu chats with your local Hermes Agent. The key is read from API_SERVER_KEY in %LOCALAPPDATA%\\hermes\\.env unless you set one here.",
+  });
+
+  const url = h("input", {
+    type: "text",
+    placeholder: "http://127.0.0.1:8642  (default)",
+    style: "flex:1 1 auto;min-width:0",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const saveUrl = h("button", { text: "Save" });
+
+  const key = h("input", {
+    type: "password",
+    placeholder: "Optional — overrides the .env key",
+    style: "flex:1 1 auto;min-width:0",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const saveKey = h("button", { text: "Save" });
+  const clearKey = h("button", { class: "danger", text: "Remove" });
+
+  const test = h("button", { class: "primary", text: "Test connection" });
+  const feedback = h("div", {});
+
+  function say(kind: "ok" | "err", text: string) {
+    clear(feedback);
+    feedback.append(h("div", { class: `notice ${kind}`, text }));
+  }
+
+  async function refreshKey() {
+    const present = (await Bridge.secretPresent("hermes-api-key")) ?? false;
+    key.placeholder = present ? "••••••••••••  (stored)" : "Optional — overrides the .env key";
+    clearKey.style.display = present ? "" : "none";
+  }
+
+  saveUrl.addEventListener("click", async () => {
+    try {
+      // Empty clears it, which falls back to the default local gateway.
+      await Bridge.secretSet("hermes-url", url.value.trim());
+      say("ok", url.value.trim() ? "Server saved." : "Back to the default local gateway.");
+    } catch (err) {
+      say("err", `Could not save: ${String(err)}`);
+    }
+  });
+
+  saveKey.addEventListener("click", async () => {
+    const value = key.value.trim();
+    if (!value) return;
+    try {
+      await Bridge.secretSet("hermes-api-key", value);
+      key.value = "";
+      say("ok", "Key saved in the Windows Credential Manager.");
+      await refreshKey();
+    } catch (err) {
+      say("err", `Could not save: ${String(err)}`);
+    }
+  });
+
+  clearKey.addEventListener("click", async () => {
+    try {
+      await Bridge.secretClear("hermes-api-key");
+      say("ok", "Key removed — the .env key is used again.");
+      await refreshKey();
+    } catch (err) {
+      say("err", `Could not remove: ${String(err)}`);
+    }
+  });
+
+  test.addEventListener("click", async () => {
+    test.setAttribute("disabled", "");
+    say("ok", "Sniffing for Hermes…");
+    try {
+      const models = await Bridge.hermesStatus();
+      dot.style.background = "#22c55e";
+      say("ok", models.length
+        ? `Connected — ${models.length} model${models.length > 1 ? "s" : ""}: ${models.slice(0, 6).join(", ")}`
+        : "Connected.");
+    } catch (err) {
+      dot.style.background = "#f0645a";
+      say("err", String(err).replace(/^Error:\s*/, ""));
+    } finally {
+      test.removeAttribute("disabled");
+    }
+  });
+
+  const model = h("select", {}) as HTMLSelectElement;
+  for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
+  if (!MODELS.some(([id]) => id === settings.model)) {
+    model.append(h("option", { value: settings.model, text: settings.model }));
+  }
+  model.value = settings.model;
+  model.addEventListener("change", () => {
+    settings.model = model.value;
+    void save();
+  });
+
+  void refreshKey();
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, dot, h("span", { text: "Chat — Hermes Agent" })),
+    state,
+    h("div", { class: "row" }, h("label", { text: "Model" }), model),
+    h("div", { class: "row" }, h("label", { text: "Server" }), url, saveUrl),
+    h("div", { class: "row" }, h("label", { text: "API key" }), key, saveKey, clearKey),
+    h("div", { class: "row" }, test),
+    feedback,
+  );
+}
+
 function apiSection(hasKey: boolean): HTMLElement {
   const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No Claude key yet." });
 
   const field = h("input", {
     type: "password",
@@ -201,7 +317,7 @@ function apiSection(hasKey: boolean): HTMLElement {
     dot.style.background = present ? "#22c55e" : "#f4505e";
     state.textContent = present
       ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
+      : "No Claude key yet.";
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -231,26 +347,15 @@ function apiSection(hasKey: boolean): HTMLElement {
     }
   });
 
-  const model = h("select", {}) as HTMLSelectElement;
-  for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
-  if (!MODELS.some(([id]) => id === settings.model)) {
-    model.append(h("option", { value: settings.model, text: settings.model }));
-  }
-  model.value = settings.model;
-  model.addEventListener("change", () => {
-    settings.model = model.value;
-    void save();
-  });
-
   clearBtn.style.display = hasKey ? "" : "none";
 
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Claude" })),
+    h("h2", {}, dot, h("span", { text: "Claude API" })),
     state,
+    h("div", { class: "hint", text: "Only needed when a Claude model is picked above." }),
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
-    h("div", { class: "row" }, h("label", { text: "Model" }), model),
     feedback,
   );
 }
@@ -293,7 +398,7 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 
   function updateNote() {
     const used = settings.activeIntegrations.length;
-    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
+    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Awuuu — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
   }
 
   for (const def of INTEGRATIONS) {
@@ -382,6 +487,19 @@ function generalSection(): HTMLElement {
     void save();
   });
 
+  const hide = h("select", {}) as HTMLSelectElement;
+  hide.append(
+    h("option", { value: "0", text: "Never — Awuuu stays on screen" }),
+    h("option", { value: "60", text: "After 1 minute" }),
+    h("option", { value: "300", text: "After 5 minutes" }),
+  );
+  hide.value = String(settings.hideAfter ?? 0);
+  if (hide.value === "") hide.value = "0";
+  hide.addEventListener("change", () => {
+    settings.hideAfter = Number(hide.value);
+    void save();
+  });
+
   const screen = h("select", {}) as HTMLSelectElement;
   screen.append(
     h("option", { value: "primary", text: "Main display" }),
@@ -406,6 +524,10 @@ function generalSection(): HTMLElement {
       h("label", { text: "Auto-close" }),
       autoClose,
       h("span", { class: "hint", text: "seconds after you leave the island" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Hide when idle" }),
+      hide,
     ),
     h("div", { class: "row" },
       h("label", { text: "Island lives on" }),
@@ -441,8 +563,9 @@ async function main() {
 
   clear(root);
   root.append(
-    h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
+    h("h1", {}, h("span", { text: "Awuuu" }), h("span", { class: "version", text: version })),
     claudeSection(status),
+    hermesSection(),
     apiSection(hasKey),
     integrationsSection(present),
     generalSection(),

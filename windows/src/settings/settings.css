@@ -7,14 +7,14 @@
 
   --font: system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-  --ink: #f5f6f8;
-  --dim: #9398a1;
-  --dim-2: #6b7079;
-  --bg: #0b0c0e;
-  --card: #141518;
+  --ink: #fff4e6;
+  --dim: #a89a8a;
+  --dim-2: #7d7062;
+  --bg: #0e0b09;
+  --card: #1a1612;
   --hairline: rgba(255, 255, 255, 0.07);
   --green: #22c55e;
-  --red: #f4505e;
+  --red: #f0645a;
   --amber: #f5a524;
 }
 
@@ -119,12 +119,12 @@ button:active:not(:disabled) {
 }
 
 button.primary {
-  background: var(--ink);
-  color: #0b0c0e;
+  background: #e4a871;
+  color: #2b1e14;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #fff;
+  background: #edb985;
 }
 
 button.danger {

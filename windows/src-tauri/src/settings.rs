@@ -1,4 +1,4 @@
-// Preferences, stored as plain JSON in %APPDATA%\Coucou\settings.json.
+// Preferences, stored as plain JSON in %APPDATA%\Awuuu\settings.json.
 // No secret ever lands here — API keys live in the Windows Credential Manager.
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,10 @@ pub struct Settings {
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+    /// Seconds the compact island stays up with nothing going on before it
+    /// hides; 0 = never hide. Missing in older settings.json → 0.
+    #[serde(default)]
+    pub hide_after: f64,
 }
 
 fn default_model() -> String {
@@ -43,6 +47,7 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             model: default_model(),
+            hide_after: 0.0,
         }
     }
 }

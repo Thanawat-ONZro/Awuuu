@@ -61,7 +61,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   // misleading here.
   const missing = task.id === "integration_claude" ? "Hooks not installed" : "Key not configured";
   const label = error ?? (configured ? "Connected · loading…" : missing);
-  const statusColor = error || !configured ? "#F4505E" : "#22C55E";
+  const statusColor = error || !configured ? "#F0645A" : "#22C55E";
 
   const actions = h("div", { class: "int-actions" });
   if (task.id === "integration_claude") {
@@ -103,7 +103,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
     );
   } else {
     actions.append(
-      h("button", { class: "link-btn", style: "color:#8e939c", text: "Settings…", onclick: openSettings }),
+      h("button", { class: "link-btn", style: "color:#a29484", text: "Settings…", onclick: openSettings }),
     );
   }
 
@@ -122,7 +122,7 @@ function vercelCard(onDetail: () => void): HTMLElement {
   const deployments = arr("integration_vercel", "deployments");
   const rows = h("div", { class: "int-rows" });
   deployments.slice(0, 3).forEach((d, i) => {
-    const accent = d.state === "READY" ? "#22C55E" : "#F4505E";
+    const accent = d.state === "READY" ? "#22C55E" : "#F0645A";
     const name = h("span", { class: "int-name", text: String(d.projectName ?? "") });
     const ago = h("span", { class: "int-ago", text: timeAgo(d.createdAt) });
     if (i === 0) {
@@ -142,7 +142,7 @@ function vercelCard(onDetail: () => void): HTMLElement {
 function vercelDetail(onBack: () => void): HTMLElement {
   const d = arr("integration_vercel", "deployments")[0] ?? {};
   const success = d.state === "READY";
-  const accent = success ? "#22C55E" : "#F4505E";
+  const accent = success ? "#22C55E" : "#F0645A";
   const status = success ? "Ready" : d.state === "CANCELED" ? "Canceled" : "Error";
   const body = h("div", { class: "int-detail-body" });
   if (d.commitMessage) body.append(h("div", { class: "int-commit", text: String(d.commitMessage) }));
@@ -186,7 +186,7 @@ function resendCard(): HTMLElement {
   const rows = h("div", { class: "int-rows" });
   emails.slice(0, 3).forEach((e, i) => {
     const delivered = e.lastEvent === "delivered";
-    const accent = delivered ? "#22C55E" : "#F4505E";
+    const accent = delivered ? "#22C55E" : "#F0645A";
     const to = Array.isArray(e.to) ? String(e.to[0] ?? "?") : "?";
     const short = to.split("@")[0];
     const cells: Node[] = [
@@ -219,12 +219,12 @@ function githubCard(): HTMLElement {
   return h(
     "div",
     { class: "int-card" },
-    header("#F4505E", "GitHub", "Overview"),
+    header("#F0645A", "GitHub", "Overview"),
     h(
       "div",
       { class: "int-stats" },
       statRow(ICONS.star, "#F5A524", "Total stars", fmt(stars)),
-      statRow(ICONS.stack, "#6B7079", "Repositories", String(repos)),
+      statRow(ICONS.stack, "#7D7062", "Repositories", String(repos)),
     ),
   );
 }
@@ -238,7 +238,7 @@ function stripeCard(): HTMLElement {
   const rows = h("div", { class: "int-rows tight" });
   for (const p of arr("integration_stripe", "payments")) {
     const success = p.status === "succeeded";
-    const accent = success ? "#22C55E" : "#F4505E";
+    const accent = success ? "#22C55E" : "#F0645A";
     rows.append(
       h(
         "div",
@@ -321,7 +321,7 @@ function n8nCard(task: AgentTask, onDetail: () => void, openSettings: () => void
   const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
   if (!hasActivity) return idleCard(task, openSettings);
   const success = task.state === "finished";
-  const accent = success ? "#22C55E" : "#F4505E";
+  const accent = success ? "#22C55E" : "#F0645A";
   return h(
     "div",
     { class: "int-card" },
@@ -346,7 +346,7 @@ function n8nCard(task: AgentTask, onDetail: () => void, openSettings: () => void
 
 function n8nDetail(task: AgentTask, onBack: () => void): HTMLElement {
   const success = task.state === "finished";
-  const accent = success ? "#22C55E" : "#F4505E";
+  const accent = success ? "#22C55E" : "#F0645A";
   const detail = task.steps[1];
   return h(
     "div",

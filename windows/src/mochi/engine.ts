@@ -1,4 +1,4 @@
-// Mochi — direct port of NotchBuddy/Sources/App/BotEngine.swift to Canvas 2D.
+// Awuuu (née Mochi) — port of NotchBuddy/Sources/App/BotEngine.swift to Canvas 2D; dog parts in dog.ts.
 // Same constants, same tweens, same easings, same particles. The only intentional
 // difference is the `happy`/`wink` eye arc, which follows the prototype
 // (design/prototype/notch-buddy.html, the visual source of truth) — the Swift
@@ -7,6 +7,10 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
+import {
+  DOG, drawBrows, drawEars, drawMuzzle, drawTail,
+  type DogMouth, type FacePose,
+} from "./dog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,7 +40,8 @@ interface Tween {
 
 type PropKey =
   | "yaw" | "pitch" | "roll" | "tilt" | "open" | "sx" | "sy"
-  | "oy" | "ox" | "tint" | "morph" | "hands" | "blush" | "es" | "badgeS";
+  | "oy" | "ox" | "tint" | "morph" | "hands" | "blush" | "es" | "badgeS"
+  | "wag" | "ear";
 
 interface BotStateCfg {
   color: RGB;
@@ -63,9 +68,10 @@ interface Particle {
 const EYE_W = 0.25;
 const EYE_H = 0.27;
 const EYE_SP = 0.37;
-const EYE_P = -0.12;
-const BASE_TOP: RGB = [0.929, 0.929, 0.937]; // #EDEDEF
-const BASE_BOTTOM: RGB = [0.769, 0.773, 0.792]; // #C4C5CA
+// Eyes sit a little higher than Mochi's to leave room for Awuuu's muzzle.
+const EYE_P = -0.03;
+const BASE_TOP: RGB = DOG.furTop;
+const BASE_BOTTOM: RGB = DOG.furBottom;
 const INK = "rgb(26,20,18)"; // #1A1412
 const MINI_INK = "rgb(16,19,26)"; // #10131A
 
@@ -173,12 +179,19 @@ export class BotEngine {
   yaw = 0; pitch = 0; roll = 0; tilt = 0; open = 1;
   sx = 1; sy = 1; oy = 0; ox = 0;
   tint = 0; morph = 0; hands = 0; blush = 0; es = 1; badgeS = 0;
+  /** Tail swing and ear flick (radians), driven by tweens so they stop when idle. */
+  wag = 0; ear = 0;
+  private earSide = 1;
 
   // Targets
   tgYaw = 0; tgPitch = 0; tgTilt = 0; tgSy = 1; tgSx = 1; tgEs = 1;
 
   /** Extra canvas height above the body so hearts can fly out without clipping. */
   particleOverhang = 0;
+
+  // Dog parts, eased every frame toward the state's target.
+  private earPerk = 0;
+  private tongue = 0;
 
   // Mouth spring (fraction of R)
   slotH = 0; slotHTarget = 0; slotHVel = 0; isChewing = false;
@@ -234,8 +247,9 @@ export class BotEngine {
 
     switch (next) {
       case "finished":
-        this.doRoll(950, 1);
-        setTimeout(() => this.emit("spark", 5), 500);
+        // A wet-dog shake instead of Mochi's spin, then a happy wag.
+        this.shakeOff();
+        setTimeout(() => { this.emit("spark", 5); this.wagBurst(0.36, 10, 85); }, 520);
         break;
       case "error":
         this.anim("ox", [
@@ -244,13 +258,22 @@ export class BotEngine {
         ]);
         break;
       case "approval":
-        this.anim("oy", [[-0.2, 150, Ease.out], [0, 300, Ease.back]]);
+        this.anim("oy", [[-0.28, 140, Ease.out], [0.04, 160, Ease.inOut], [0, 260, Ease.back]]);
+        this.anim("sy", [[0.82, 70, Ease.out], [1.14, 140, Ease.out], [1, 240, Ease.back]]);
+        this.anim("sx", [[1.14, 70, Ease.out], [0.92, 140, Ease.out], [1, 240, Ease.back]]);
+        this.earFlick();
         break;
       case "dizzy":
         this.doRoll(1300, 2);
         break;
       case "question":
+        // The puzzled head tilt: overshoot past the state's tilt, settle back.
         this.blink();
+        this.anim("tilt", [[0.32, 180, Ease.out], [0.17, 320, Ease.back]]);
+        this.earFlick();
+        break;
+      case "searching":
+        this.earFlick();
         break;
       case "ratelimit":
         this.emit("sweat", 1);
@@ -279,8 +302,89 @@ export class BotEngine {
   }
 
   squash() {
-    this.anim("sy", [[0.78, 70, Ease.out], [1.1, 130, Ease.out], [1, 170, Ease.inOut]]);
-    this.anim("sx", [[1.16, 70, Ease.out], [0.95, 130, Ease.out], [1, 170, Ease.inOut]]);
+    this.anim("sy", [[0.74, 70, Ease.out], [1.14, 130, Ease.out], [0.97, 120, Ease.inOut], [1, 160, Ease.back]]);
+    this.anim("sx", [[1.2, 70, Ease.out], [0.93, 130, Ease.out], [1.02, 120, Ease.inOut], [1, 160, Ease.back]]);
+  }
+
+  // ── Dog moves ───────────────────────────────────────────────────────────────
+
+  /** Tail swings that fade out: `swings` half-swings of `ms` each. */
+  wagBurst(amp: number, swings: number, ms: number) {
+    const keys: TweenKey[] = [];
+    for (let i = 0; i < swings; i++) {
+      const a = amp * (1 - (i / swings) * 0.55);
+      keys.push([i % 2 ? -a : a, ms, Ease.inOut]);
+    }
+    keys.push([0, ms * 1.5, Ease.out]);
+    this.anim("wag", keys);
+  }
+
+  /** One ear flicks out and back. */
+  earFlick() {
+    this.earSide = Math.random() < 0.5 ? -1 : 1;
+    this.anim("ear", [[0.34, 60, Ease.out], [-0.08, 90, Ease.inOut], [0.2, 70, Ease.inOut], [0, 160, Ease.out]]);
+  }
+
+  /** Little hop with squash on landing. */
+  hop() {
+    this.anim("oy", [[-0.22, 150, Ease.out], [0.03, 170, Ease.inOut], [0, 200, Ease.back]]);
+    this.anim("sy", [[1.1, 150, Ease.out], [0.84, 170, Ease.inOut], [1, 220, Ease.back]]);
+    this.anim("sx", [[0.93, 150, Ease.out], [1.12, 170, Ease.inOut], [1, 220, Ease.back]]);
+  }
+
+  /** Wet-dog shake: fast side-to-side twist that dies out. */
+  shakeOff() {
+    this.anim("tilt", [
+      [0.24, 60, Ease.out], [-0.24, 80, Ease.inOut], [0.2, 80, Ease.inOut], [-0.16, 80, Ease.inOut],
+      [0.1, 80, Ease.inOut], [-0.05, 80, Ease.inOut], [0, 120, Ease.out],
+    ]);
+    this.anim("ox", [
+      [0.05, 60, Ease.out], [-0.05, 80, Ease.inOut], [0.04, 80, Ease.inOut], [-0.03, 80, Ease.inOut],
+      [0, 200, Ease.out],
+    ]);
+    this.eyeOverride = "happy";
+    this.eyeOverrideUntil = now() + 1.4;
+  }
+
+  /** Sniffing: nose dips toward the ground in quick little bobs. */
+  sniff() {
+    this.anim("pitch", [
+      [0.3, 200, Ease.out], [0.2, 90, Ease.inOut], [0.3, 90, Ease.inOut], [0.2, 90, Ease.inOut],
+      [0.3, 90, Ease.inOut], [0, 320, Ease.inOut],
+    ]);
+  }
+
+  /** Curious head tilt, held for a beat. */
+  curiousTilt() {
+    const d = Math.random() < 0.5 ? -1 : 1;
+    this.anim("tilt", [[0.2 * d, 220, Ease.out], [0.2 * d, 650, Ease.lin], [0, 320, Ease.back]]);
+    this.earFlick();
+  }
+
+  /**
+   * One small idle move, chosen for the current state. The island calls this
+   * every few seconds while it is visible; tweens keep the frame loop alive only
+   * for the move itself. Returns false when this state should stay still.
+   */
+  fidget(): boolean {
+    if (this.isMini || this.morph > 0.05 || this.tweens.size > 0) return false;
+    if (this.state === "sleeping" || this.state === "dizzy" || this.state === "error") return false;
+    const r = Math.random();
+    if (this.state === "finished" || this.state === "approval") {
+      this.wagBurst(0.32, 8, 85);
+    } else if (this.state === "searching") {
+      this.sniff();
+    } else if (this.state === "idle") {
+      if (r < 0.3) this.wagBurst(0.26, 6, 95);
+      else if (r < 0.55) this.earFlick();
+      else if (r < 0.75) this.curiousTilt();
+      else if (r < 0.9) this.sniff();
+      else this.hop();
+    } else {
+      if (r < 0.5) this.earFlick();
+      else this.wagBurst(0.18, 4, 110);
+    }
+    return true;
   }
 
   /** Mailbox swallow — opens the slot, chews, then closes. */
@@ -328,7 +432,7 @@ export class BotEngine {
 
     this.eyeOverride = "happy";
     this.eyeOverrideUntil = t + 2.0;
-    this.anim("oy", [[-0.06, 220, Ease.out], [0.0, 220, Ease.back]]);
+    this.anim("oy", [[-0.16, 200, Ease.out], [0.0, 260, Ease.back]]);
 
     setTimeout(() => {
       if (this.greetToken !== tok) return;
@@ -388,7 +492,8 @@ export class BotEngine {
           [1, 300, Ease.out], [1, (duration - 0.6) * 1000, Ease.lin], [0, 300, Ease.inOut],
         ]);
         this.emit("heart", 4);
-        this.anim("oy", [[-0.1, 160, Ease.out], [0, 300, Ease.back]]);
+        this.anim("oy", [[-0.2, 150, Ease.out], [0, 320, Ease.back]]);
+        this.wagBurst(0.34, 8, 85);
         break;
       case "surprised":
         this.anim("oy", [[-0.3, 140, Ease.out], [0, 380, Ease.back]]);
@@ -415,6 +520,8 @@ export class BotEngine {
         break;
       case "happy":
         this.anim("blush", [[0.6, 200, Ease.out], [0, 600, Ease.inOut]]);
+        this.hop();
+        this.wagBurst(0.32, 8, 85);
         break;
       case "annoyed":
         this.eyeOverride = "line";
@@ -512,8 +619,9 @@ export class BotEngine {
       tp = tp * 0.3 + this.cfg.look[1] * 0.5;
     }
     if (this.cfg.scans) {
+      // Nose down, sweeping side to side with little sniffs.
       ty = Math.sin(t * 2.6) * 0.6;
-      tp = -0.06;
+      tp = 0.16 + Math.max(0, Math.sin(t * 13)) * 0.06;
     }
     if (this.state === "sleeping") { ty = 0; tp = -0.14; }
     if (this.state === "dizzy") { ty = Math.sin(t * 9) * 0.25; }
@@ -540,14 +648,16 @@ export class BotEngine {
       this.tgTilt = -0.06 + Math.sin(2 * Math.PI * 1.2 * wt) * 0.07;
     }
 
-    const bounce = this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0;
+    const bounce = this.cfg.bounces ? -Math.abs(Math.sin(t * 6)) * 0.1 : 0;
     const kGen = 1 - Math.pow(0.0008, dt);
     if (!this.locks.has("oy")) this.oy += (bounce - this.oy) * kGen;
 
     if (this.cfg.breathes) {
+      // Asleep, Awuuu curls up: lower and wider, breathing slowly.
       const amp = this.isMini ? 0.07 : 0.035;
-      this.tgSy = 1 + Math.sin(t * 1.8) * amp;
-      this.tgSx = 1 - Math.sin(t * 1.8) * amp * 0.57;
+      const curl = this.isMini ? 0 : 0.07;
+      this.tgSy = 1 - curl + Math.sin(t * 1.8) * amp;
+      this.tgSx = 1 + curl * 0.8 - Math.sin(t * 1.8) * amp * 0.57;
     } else if (this.isMini) {
       this.tgSy = 1 + Math.sin(t * 2.2) * 0.04;
       this.tgSx = 1 - Math.sin(t * 2.2) * 0.02;
@@ -647,14 +757,31 @@ export class BotEngine {
     const cx = W / 2 + this.ox * R;
     const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
 
-    this.drawTailBehind(x, R, rx, ry, cx, cy);
-    this.drawDogEars(x, R, rx, ry, cx, cy);
     this.drawHandsBehind(x, R, rx, ry, cx, cy);
 
     x.save();
     x.translate(cx, cy);
     if (this.tilt !== 0) x.rotate(this.tilt);
     x.scale(this.sx, this.sy);
+
+    const t = now();
+    const dogA = Math.max(0, 1 - this.morph * 2.2);
+    this.earPerk += (this.earPerkTarget() - this.earPerk) * 0.12;
+    if (!this.isMini && R > 14 && dogA > 0.01) {
+      x.save();
+      x.globalAlpha *= dogA;
+      drawTail(x, rx, ry, this.tailWag(t), this.bodyColor);
+      x.restore();
+    }
+    if (R > 7) {
+      drawEars(x, rx, ry, {
+        shift: Math.sin(this.yaw) * rx * 0.22,
+        perk: this.earPerk,
+        twitch: this.earSide < 0 ? [-this.ear, 0] : [0, this.ear],
+        solid: this.bodyColor,
+        alpha: dogA,
+      });
+    }
 
     const body = this.bodyPath(rx, ry, R);
     this.drawBody(x, body, R, rx, ry);
@@ -673,8 +800,8 @@ export class BotEngine {
       x.restore();
     }
 
+    if (dogA > 0.01) this.drawDogFace(x, body, R, rx, ry, t, dogA);
     this.drawEyes(x, body, R, rx, ry);
-    this.drawDogSnout(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
 
     x.restore();
@@ -1004,194 +1131,90 @@ export class BotEngine {
     }
   }
 
-  /** Animated wagging dog tail drawn behind the body. */
-  private drawTailBehind(
-    x: CanvasRenderingContext2D,
-    R: number, rx: number, ry: number, cx: number, cy: number,
-  ) {
-    if (this.isMini || R <= 14) return;
-    const t = now();
-    const isSleeping = this.state === "sleeping";
-    const wagSpeed = isSleeping ? 0.8 : (this.state === "finished" || this.state === "approval" || this.state === "working") ? 14 : 5.5;
-    const wagAmp = isSleeping ? 0.08 : 0.42;
-    const wagAngle = Math.sin(t * wagSpeed) * wagAmp;
+  // ── Awuuu the dog ───────────────────────────────────────────────────────────
 
-    const tailOriginX = cx + rx * 0.78 * Math.cos(this.tilt) - ry * 0.45 * Math.sin(this.tilt);
-    const tailOriginY = cy + rx * 0.78 * Math.sin(this.tilt) + ry * 0.45 * Math.cos(this.tilt);
-
-    x.save();
-    x.translate(tailOriginX, tailOriginY);
-    x.rotate(this.tilt + 0.35 + wagAngle);
-
-    const tailLen = R * 0.65;
-    const tailThick = R * 0.22;
-
-    x.beginPath();
-    x.moveTo(0, 0);
-    x.quadraticCurveTo(tailLen * 0.6, -tailThick * 0.8, tailLen, -tailThick * 0.3);
-    x.quadraticCurveTo(tailLen * 0.7, tailThick * 0.9, 0, tailThick * 0.5);
-    x.closePath();
-
-    const tg = x.createLinearGradient(0, 0, tailLen, 0);
-    tg.addColorStop(0, rgba(BASE_TOP));
-    tg.addColorStop(0.7, rgba(BASE_BOTTOM));
-    tg.addColorStop(1, "rgba(255,255,255,0.95)");
-    x.fillStyle = tg;
-    x.fill();
-    x.strokeStyle = "rgba(0,0,0,0.08)";
-    x.lineWidth = 1;
-    x.stroke();
-    x.restore();
-  }
-
-  /** Cute animated dog ears (puppy/wolf ears) with spring twitch & tilt. */
-  private drawDogEars(
-    x: CanvasRenderingContext2D,
-    R: number, rx: number, ry: number, cx: number, cy: number,
-  ) {
-    if (R <= 12) return;
-    const t = now();
-    const isSleeping = this.state === "sleeping";
-    const earW = rx * 0.42;
-    const earH = ry * 0.68;
-
-    for (const sd of [-1, 1]) {
-      x.save();
-      const earBaseX = cx + sd * rx * 0.58 * Math.cos(this.tilt) - ry * 0.82 * Math.sin(this.tilt);
-      const earBaseY = cy + sd * rx * 0.58 * Math.sin(this.tilt) + ry * 0.82 * Math.cos(this.tilt);
-
-      x.translate(earBaseX, earBaseY);
-
-      let earAngle = sd * (0.28 + (isSleeping ? 0.35 : 0));
-      const twitchPhase = (t * 1.5 + (sd > 0 ? 1.2 : 0)) % 4;
-      if (twitchPhase < 0.25) {
-        earAngle += Math.sin(twitchPhase * Math.PI * 8) * 0.12 * sd;
-      }
-      if (this.state === "approval" || this.state === "question") {
-        if (sd > 0) earAngle -= 0.18;
-      }
-      x.rotate(this.tilt + earAngle);
-
-      x.beginPath();
-      x.moveTo(-earW * 0.5, 0);
-      x.quadraticCurveTo(-earW * 0.45, -earH * 0.7, 0, -earH);
-      x.quadraticCurveTo(earW * 0.5, -earH * 0.6, earW * 0.5, 0);
-      x.closePath();
-
-      const eg = x.createLinearGradient(0, 0, 0, -earH);
-      eg.addColorStop(0, rgba(BASE_BOTTOM));
-      eg.addColorStop(1, rgba(BASE_TOP));
-      x.fillStyle = this.bodyColor ? rgba(this.bodyColor, 1) : eg;
-      x.fill();
-      x.strokeStyle = "rgba(0,0,0,0.08)";
-      x.lineWidth = 1;
-      x.stroke();
-
-      x.beginPath();
-      x.moveTo(-earW * 0.28, -earH * 0.1);
-      x.quadraticCurveTo(-earW * 0.22, -earH * 0.65, 0, -earH * 0.82);
-      x.quadraticCurveTo(earW * 0.28, -earH * 0.55, earW * 0.28, -earH * 0.1);
-      x.closePath();
-      x.fillStyle = isSleeping ? "rgba(235,170,180,0.3)" : "rgba(255,160,175,0.48)";
-      x.fill();
-
-      x.restore();
+  /** Ears: perked when something needs the user, drooped when sad or asleep. */
+  private earPerkTarget(): number {
+    switch (this.state) {
+      case "approval": return 1;
+      case "question": case "searching": return 0.7;
+      case "sleeping": case "error": case "ratelimit": return -1;
+      case "dizzy": return -0.5;
+      default: return this.permanentEmote === "annoyed" ? -0.6 : 0;
     }
   }
 
-  /** Cute black dog nose, mouth arc, panting tongue (blep) & tan eyebrow spots. */
-  private drawDogSnout(
-    x: CanvasRenderingContext2D,
-    body: Path2D,
-    R: number, rx: number, ry: number,
+  private isExcited(): boolean {
+    return this.state === "finished" || this.state === "approval"
+      || this.permanentEmote === "happy" || this.permanentEmote === "love"
+      || this.eyeOverride === "happy";
+  }
+
+  private isWaving(): boolean {
+    const n = now();
+    return this.waveStart > 0 && n >= this.waveStart && n < this.waveUntil;
+  }
+
+  /**
+   * Continuous wagging only where the loop already runs every frame (bouncing,
+   * breathing, waving); everywhere else the tail moves through `wag` tweens so
+   * a still Awuuu costs no frames.
+   */
+  private tailWag(t: number): number {
+    switch (this.state) {
+      case "sleeping": return 0.1 + Math.sin(t * 1.1) * 0.04;
+      case "error": case "ratelimit": return 0.38 + this.wag * 0.3;
+    }
+    if (this.cfg.bounces || this.isWaving()) return Math.sin(t * 15) * 0.32;
+    return this.wag;
+  }
+
+  /** Muzzle, nose, mouth, tongue and brows — follow the head turn like the eyes. */
+  private drawDogFace(
+    x: CanvasRenderingContext2D, body: Path2D,
+    R: number, rx: number, ry: number, t: number, alpha: number,
   ) {
-    if (this.morph > 0.3) return;
-    const t = now();
-    const isSleeping = this.state === "sleeping";
-    const isHappy = this.state === "finished" || this.state === "idle" || this.permanentEmote === "happy" || this.eyeOverride === "happy";
-    const isHowling = this.permanentEmote === "proud" || this.state === "working";
+    const wrap = (a: number) => (((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    const solid = this.isMini || this.bodyColor !== null;
+    const cy = Math.cos(this.yaw);
+    const squash = Math.max(0.2, cy);
+
+    const mp = wrap(-0.5 + this.pitch + this.roll);
+    const cmp = Math.cos(mp);
+    if (cy * cmp <= 0.08) return; // facing away (roll / big turn)
+
+    let mouth: DogMouth = "smile";
+    if (this.isWaving() || this.permanentEmote === "proud") mouth = "howl";
+    else if (this.state === "error" || this.state === "ratelimit" || this.permanentEmote === "annoyed") mouth = "flat";
+    else if (solid && this.isMini) mouth = "none";
+
+    const wantsTongue = !solid && this.state !== "sleeping"
+      && (this.isExcited() || this.state === "dizzy");
+    this.tongue += ((wantsTongue ? 1 : 0) - this.tongue) * 0.15;
+    const tongue = this.tongue * (0.85 + Math.sin(t * 7.5) * 0.15);
+
+    const pose: FacePose = {
+      shiftX: Math.sin(this.yaw) * cmp * rx,
+      shiftY: 0,
+      squash,
+      mouth,
+      tongue,
+      ink: this.isMini ? MINI_INK : INK,
+      markings: !solid && R > 14,
+      alpha: alpha * Math.min(1, (cy * cmp - 0.08) * 6),
+    };
 
     x.save();
     x.clip(body);
-
-    const noseX = Math.sin(this.yaw) * rx * 0.35;
-    const noseY = ry * 0.24 - Math.sin(this.pitch) * ry * 0.35;
-    const noseW = R * 0.18;
-    const noseH = R * 0.11;
-
-    // 1. Shiba/Dog tan eyebrow accents above eyes
-    const browY = -ry * 0.42;
-    const browOffset = rx * 0.42;
-    x.fillStyle = "rgba(215, 185, 155, 0.45)";
-    for (const sd of [-1, 1]) {
-      x.beginPath();
-      x.ellipse(sd * browOffset + noseX * 0.5, browY, R * 0.08, R * 0.05, sd * 0.15, 0, Math.PI * 2);
-      x.fill();
+    const bp = wrap(EYE_P + 0.36 + this.pitch + this.roll);
+    if (Math.cos(bp) > 0.1) {
+      const brows = [-1, 1].map((sd) => {
+        const by = sd * EYE_SP * 0.92 + this.yaw;
+        return [Math.sin(by) * Math.cos(bp) * rx, -Math.sin(bp) * ry, sd] as const;
+      });
+      drawBrows(x, R, brows, pose);
     }
-
-    // 2. Dog mouth & panting tongue (blep)
-    const mouthY = noseY + noseH * 0.85;
-
-    // Panting tongue
-    if (!isSleeping && (isHappy || this.state === "dizzy")) {
-      const tongueBob = Math.sin(t * 7) * R * 0.02;
-      const tongueW = R * 0.12;
-      const tongueH = R * 0.16 + tongueBob;
-      x.save();
-      x.translate(noseX + R * 0.03, mouthY + tongueH * 0.45);
-      x.beginPath();
-      roundRectPath(x, -tongueW / 2, -tongueH / 2, tongueW, tongueH, tongueW / 2);
-      x.fillStyle = "#FF708F";
-      x.fill();
-      x.strokeStyle = "rgba(210, 50, 80, 0.45)";
-      x.lineWidth = 1;
-      x.beginPath();
-      x.moveTo(0, -tongueH * 0.3);
-      x.lineTo(0, tongueH * 0.2);
-      x.stroke();
-      x.restore();
-    }
-
-    x.strokeStyle = this.isMini ? MINI_INK : INK;
-    x.lineWidth = Math.max(1.2, R * 0.035);
-    x.lineCap = "round";
-
-    if (isHowling) {
-      x.fillStyle = "#1A1412";
-      x.beginPath();
-      x.ellipse(noseX, mouthY + R * 0.06, R * 0.065, R * 0.09, 0, 0, Math.PI * 2);
-      x.fill();
-    } else {
-      x.beginPath();
-      x.moveTo(noseX, noseY + noseH * 0.3);
-      x.lineTo(noseX, mouthY);
-      x.stroke();
-
-      const mw = R * 0.13;
-      x.beginPath();
-      x.arc(noseX - mw * 0.5, mouthY, mw * 0.5, 0.1 * Math.PI, 0.9 * Math.PI, false);
-      x.arc(noseX + mw * 0.5, mouthY, mw * 0.5, 0.1 * Math.PI, 0.9 * Math.PI, false);
-      x.stroke();
-    }
-
-    // 3. Cute black dog nose
-    x.fillStyle = this.isMini ? MINI_INK : INK;
-    x.beginPath();
-    const nr = noseW * 0.3;
-    x.moveTo(noseX - noseW / 2 + nr, noseY - noseH / 2);
-    x.lineTo(noseX + noseW / 2 - nr, noseY - noseH / 2);
-    x.quadraticCurveTo(noseX + noseW / 2, noseY - noseH / 2, noseX + noseW / 2, noseY - noseH / 2 + nr);
-    x.quadraticCurveTo(noseX + noseW * 0.25, noseY + noseH / 2, noseX, noseY + noseH / 2);
-    x.quadraticCurveTo(noseX - noseW * 0.25, noseY + noseH / 2, noseX - noseW / 2, noseY - noseH / 2 + nr);
-    x.quadraticCurveTo(noseX - noseW / 2, noseY - noseH / 2, noseX - noseW / 2 + nr, noseY - noseH / 2);
-    x.closePath();
-    x.fill();
-
-    x.fillStyle = "rgba(255,255,255,0.7)";
-    x.beginPath();
-    x.arc(noseX - noseW * 0.2, noseY - noseH * 0.15, noseW * 0.12, 0, Math.PI * 2);
-    x.fill();
-
+    drawMuzzle(x, solid ? R * 1.25 : R, rx, -Math.sin(mp) * ry, pose);
     x.restore();
   }
 
