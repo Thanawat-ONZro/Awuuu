@@ -55,15 +55,17 @@ body {
   inset: 0;
 }
 
-/* Invisible strip that wakes the island when it is hidden. */
+/* Strip that wakes the island when it is hidden. */
 #wake-strip {
   position: fixed;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 240px;
-  height: 6px;
-  background: transparent;
+  width: 140px;
+  height: 14px;
+  background: rgba(18, 15, 12, 0.01);
+  cursor: pointer;
+  z-index: 10;
 }
 
 /* ── Island ─────────────────────────────────────────────────────────────── */
@@ -72,10 +74,44 @@ body {
   position: absolute;
   top: 0;
   left: 50%;
-  background: #000;
+  background: #120f0c;
   border-radius: 0 0 14px 14px;
   overflow: visible;
   will-change: width, height, transform;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+#island:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Subtle notch indicator in idle/hidden state */
+#notch-nub {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+
+#root.at-bottom #notch-nub {
+  top: auto;
+  bottom: 3px;
+}
+
+#root.mode-compact #notch-nub,
+#root.mode-expanded #notch-nub {
+  opacity: 0;
 }
 
 /* Bottom of the screen: the island hangs from the window's bottom edge. */
@@ -83,6 +119,8 @@ body {
 #root.at-bottom #island {
   top: auto;
   bottom: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: none;
 }
 
 #root.at-bottom #countdown {
@@ -258,8 +296,10 @@ body {
   display: grid;
   place-items: center;
   cursor: default;
+  transition: color 0.15s ease;
 }
 
+.header-actions button:hover,
 .header-actions button.on {
   color: var(--ink);
 }

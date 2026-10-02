@@ -64,25 +64,61 @@ fn home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-pub fn settings_path() -> PathBuf {
-    home().join(".claude").join("settings.json")
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HookAgent {
+    Claude,
+    Codex,
+    Agy,
 }
 
-/// Reads `~/.claude/settings.json`.
-///
-/// The only error that means "start from nothing" is the file not being there.
-/// Everything else — a lock held by another process, a permission problem, JSON
-/// we cannot parse — is reported, because the alternative is treating somebody's
-/// unreadable settings as an empty object and then writing that back over them.
-fn read_settings() -> Result<Value, String> {
-    let path = settings_path();
-    match std::fs::read(&path) {
+impl HookAgent {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "claude" | "claude-code" => Some(Self::Claude),
+            "codex" | "codex-cli" => Some(Self::Codex),
+            "agy" | "antigravity" | "gemini" => Some(Self::Agy),
+            _ => None,
+        }
+    }
+
+    pub fn settings_path(&self) -> PathBuf {
+        match self {
+            Self::Claude => home().join(".claude").join("settings.json"),
+            Self::Codex => home().join(".codex").join("hooks.json"),
+            Self::Agy => home().join(".gemini").join("config").join("hooks.json"),
+        }
+    }
+}
+
+pub const CODEX_HOOK_EVENTS: &[(&str, u64)] = &[
+    ("SessionStart", 10),
+    ("UserPromptSubmit", 10),
+    ("PreToolUse", 10),
+    ("PermissionRequest", 120),
+    ("PostToolUse", 10),
+    ("Stop", 10),
+    ("SessionEnd", 10),
+];
+
+pub fn settings_path() -> PathBuf {
+    HookAgent::Claude.settings_path()
+}
+
+fn read_settings_path(path: &Path) -> Result<Value, String> {
+    match std::fs::read(path) {
         Ok(bytes) => parse_settings(&bytes, &path.display().to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
-        // A lock, a permission problem, a bad drive: all of them mean we do not
-        // know what is in there, and not knowing is not the same as empty.
         Err(err) => Err(format!("Can't read {}: {err}", path.display())),
     }
+}
+
+fn read_settings_lossy_path(path: &Path) -> Value {
+    read_settings_path(path).unwrap_or_else(|_| json!({}))
+}
+
+#[allow(dead_code)]
+fn read_settings() -> Result<Value, String> {
+    read_settings_path(&settings_path())
 }
 
 /// The parsing half of `read_settings`, split out so it can be tested without a
@@ -107,16 +143,33 @@ fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
 /// The settings as they are, or an empty object when we cannot tell. Only for
 /// read-only paths like `status()`, which must never fail loudly; anything that
 /// writes uses `read_settings()` and surfaces the error instead.
+#[allow(dead_code)]
 fn read_settings_lossy() -> Value {
     read_settings().unwrap_or_else(|_| json!({}))
 }
 
-fn hook_command(event: &str) -> String {
-    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
-    format!("\"{exe}\" {event}")
+fn hook_command(agent: HookAgent, event: &str) -> String {
+    match agent {
+        HookAgent::Claude => {
+            // Claude Code on Windows runs hooks via Git Bash (MSYS2), where forward slashes are required.
+            let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+            format!("\"{exe}\" {event}")
+        }
+        HookAgent::Codex | HookAgent::Agy => {
+            // Codex CLI and Antigravity CLI on Windows execute commands via cmd.exe / PowerShell.
+            // Native backslashes and standard Windows path formatting are mandatory.
+            let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
+            format!("\"{exe}\" {event}")
+        }
+    }
 }
 
 fn entry_is_ours(entry: &Value) -> bool {
+    if let Some(cmd) = entry.get("command").and_then(Value::as_str) {
+        if cmd.contains(MARKER) || cmd.contains("coucou-hook") {
+            return true;
+        }
+    }
     entry
         .get("hooks")
         .and_then(Value::as_array)
@@ -150,7 +203,7 @@ fn merged(existing: &Value) -> Value {
         list.push(json!({
             "hooks": [{
                 "type": "command",
-                "command": hook_command(event),
+                "command": hook_command(HookAgent::Claude, event),
                 "timeout": timeout,
             }]
         }));
@@ -204,9 +257,17 @@ fn stamp() -> String {
     )
 }
 
+fn backup_path_for(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("settings.json");
+    path.with_file_name(format!("{name}.bak-{}", stamp()))
+}
+
+#[allow(dead_code)]
 fn backup_path() -> PathBuf {
-    let p = settings_path();
-    p.with_file_name(format!("settings.json.bak-{}", stamp()))
+    backup_path_for(&settings_path())
 }
 
 /// Identifies the exact bytes a preview was computed from. FNV-1a is plenty:
@@ -220,18 +281,96 @@ fn fingerprint(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
-fn current_fingerprint() -> String {
-    match std::fs::read(settings_path()) {
+fn current_fingerprint_path(path: &Path) -> String {
+    match std::fs::read(path) {
         Ok(bytes) => fingerprint(&bytes),
         Err(_) => fingerprint(b""),
     }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+#[allow(dead_code)]
+fn current_fingerprint() -> String {
+    current_fingerprint_path(&settings_path())
+}
 
-pub fn status() -> HookStatus {
-    let current = read_settings_lossy();
-    let installed = current
+fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
+    match agent {
+        HookAgent::Claude => merged(existing),
+        HookAgent::Codex => {
+            let mut root = existing.as_object().cloned().unwrap_or_default();
+            let mut hooks = root
+                .get("hooks")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_else(Map::new);
+
+            for (event, timeout) in CODEX_HOOK_EVENTS {
+                let mut list = hooks
+                    .get(*event)
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                list.retain(|entry| !entry_is_ours(entry));
+                list.push(json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": hook_command(HookAgent::Codex, event),
+                        "timeout": timeout,
+                    }]
+                }));
+                hooks.insert((*event).to_string(), Value::Array(list));
+            }
+
+            root.insert("hooks".into(), Value::Object(hooks));
+            Value::Object(root)
+        }
+        HookAgent::Agy => {
+            let mut root = existing.as_object().cloned().unwrap_or_default();
+            let mut hooks = root
+                .get("hooks")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_else(Map::new);
+
+            let agy_events: &[(&str, Option<&str>, u64)] = &[
+                ("PreToolUse", Some(".*"), 120),
+                ("PostToolUse", Some(".*"), 10),
+                ("SessionStart", None, 10),
+                ("Stop", None, 10),
+            ];
+
+            for (event, matcher, timeout) in agy_events {
+                let mut list = hooks
+                    .get(*event)
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                list.retain(|entry| !entry_is_ours(entry));
+                let mut entry = Map::new();
+                entry.insert("command".into(), Value::String(hook_command(HookAgent::Agy, event)));
+                if let Some(m) = matcher {
+                    entry.insert("matcher".into(), Value::String((*m).to_string()));
+                }
+                entry.insert("timeout".into(), json!(timeout));
+                list.push(Value::Object(entry));
+                hooks.insert((*event).to_string(), Value::Array(list));
+            }
+
+            root.insert("hooks".into(), Value::Object(hooks));
+            Value::Object(root)
+        }
+    }
+}
+
+fn without_ours_for_agent(_agent: HookAgent, existing: &Value) -> Value {
+    let mut root = existing.as_object().cloned().unwrap_or_default();
+    root.remove(MARKER);
+    root.remove("coucou-hook");
+    without_ours(&Value::Object(root))
+}
+
+fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
+    let has_hooks = current
         .get("hooks")
         .and_then(Value::as_object)
         .map(|hooks| {
@@ -242,58 +381,106 @@ pub fn status() -> HookStatus {
                 .any(entry_is_ours)
         })
         .unwrap_or(false);
+
+    has_hooks
+        || (agent == HookAgent::Agy
+            && (current.get(MARKER).is_some() || current.get("coucou-hook").is_some()))
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+pub fn status_for(agent: HookAgent) -> HookStatus {
+    let path = agent.settings_path();
+    let current = read_settings_lossy_path(&path);
+    let installed = is_installed_for_agent(agent, &current);
     let hook_path = settings::hook_exe_path();
     HookStatus {
         installed,
-        settings_path: settings_path().to_string_lossy().to_string(),
+        settings_path: path.to_string_lossy().to_string(),
         hook_ready: hook_path.exists(),
         hook_path: hook_path.to_string_lossy().to_string(),
     }
 }
 
-pub fn preview(install: bool) -> Result<HookPreview, String> {
-    let current = read_settings()?;
-    let next = if install { merged(&current) } else { without_ours(&current) };
+pub fn status() -> HookStatus {
+    status_for(HookAgent::Claude)
+}
+
+pub fn preview_for(agent: HookAgent, install: bool) -> Result<HookPreview, String> {
+    let path = agent.settings_path();
+    let current = read_settings_path(&path)?;
+    let next = if install {
+        merged_for_agent(agent, &current)
+    } else {
+        without_ours_for_agent(agent, &current)
+    };
     Ok(HookPreview {
         diff: unified_diff(&pretty(&current), &pretty(&next)),
-        backup: backup_path().to_string_lossy().to_string(),
-        settings_path: settings_path().to_string_lossy().to_string(),
-        fingerprint: current_fingerprint(),
+        backup: backup_path_for(&path).to_string_lossy().to_string(),
+        settings_path: path.to_string_lossy().to_string(),
+        fingerprint: current_fingerprint_path(&path),
     })
 }
 
+pub fn preview(install: bool) -> Result<HookPreview, String> {
+    preview_for(HookAgent::Claude, install)
+}
+
+pub fn stage_hook_binary_if_needed() {
+    let dest = settings::hook_exe_path();
+    if dest.exists() {
+        return;
+    }
+    if let Some(dir) = dest.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidates = [
+                parent.join("awuuu-hook.exe"),
+                parent.join("../release/awuuu-hook.exe"),
+                parent.join("_up_/target/release/awuuu-hook.exe"),
+            ];
+            for c in &candidates {
+                if c.exists() {
+                    let _ = std::fs::copy(c, &dest);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Writes the merged (or cleaned) settings after taking a dated backup.
-///
-/// `fingerprint` is the one the preview was computed from. If the file changed
-/// in between — another tool, another window, the user's own editor — we stop
-/// and make them look at a fresh diff, because the only thing worse than not
-/// installing the hooks is silently reverting somebody else's edit.
-pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
-    let path = settings_path();
+pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<String, String> {
+    if install {
+        stage_hook_binary_if_needed();
+    }
+    let path = agent.settings_path();
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
 
-    // Read before the backup: an unreadable file must abort before we touch
-    // anything at all.
-    let current = read_settings()?;
-    if current_fingerprint() != fingerprint {
+    let current = read_settings_path(&path)?;
+    if current_fingerprint_path(&path) != fingerprint {
         return Err(format!(
             "{} changed since the preview. Nothing was written — review the new diff.",
             path.display()
         ));
     }
 
-    let backup = backup_path();
+    let backup = backup_path_for(&path);
     if path.exists() {
         std::fs::copy(&path, &backup).map_err(|e| format!("backup failed: {e}"))?;
     }
 
-    let next = if install { merged(&current) } else { without_ours(&current) };
+    let next = if install {
+        merged_for_agent(agent, &current)
+    } else {
+        without_ours_for_agent(agent, &current)
+    };
     let mut text = pretty(&next);
     text.push('\n');
 
-    // Write beside the target and rename over it: a crash or a full disk leaves
-    // the original settings.json intact rather than half a file.
     let temp = path.with_extension(format!("json.coucou-{}", std::process::id()));
     std::fs::write(&temp, text.as_bytes()).map_err(|e| format!("write failed: {e}"))?;
     if let Err(err) = std::fs::rename(&temp, &path) {
@@ -301,6 +488,10 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
         return Err(format!("write failed: {err}"));
     }
     Ok(backup.to_string_lossy().to_string())
+}
+
+pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
+    write_for(HookAgent::Claude, install, fingerprint)
 }
 
 /// Copies coucou-hook.exe into %LOCALAPPDATA%\Coucou\bin on launch.
@@ -537,7 +728,7 @@ mod tests {
 
         // Install.
         let plan = preview(true).expect("a BOM must not stop the preview");
-        assert!(plan.diff.contains("coucou-hook"), "the diff must show what changes");
+        assert!(plan.diff.contains("awuuu-hook") || plan.diff.contains("coucou-hook"), "the diff must show what changes");
         let backup = write(true, &plan.fingerprint).expect("install should succeed");
 
         // The backup holds the original bytes, BOM and all.

@@ -71,50 +71,60 @@ fn connect() -> Option<std::fs::File> {
     }
 }
 
-fn main() {
-    let Some((payload, event)) = read_event() else { std::process::exit(0) };
+struct HookEvent {
+    payload: String,
+    event: String,
+    is_agy: bool,
+}
 
-    let waits_for_answer = event == "PermissionRequest";
+fn main() {
+    let Some(ev) = read_event() else { std::process::exit(0) };
+
+    let waits_for_answer = ev.event == "PermissionRequest" || (ev.is_agy && ev.event == "PreToolUse");
     let budget = if waits_for_answer { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
 
-    // The worker owns every blocking call. If it overruns the budget we simply
-    // stop listening and exit: the process dying takes the pipe handle with it.
-    // (No catch_unwind here — the release profile is panic = "abort", so it would
-    // be dead code. `talk` is written to have nothing to panic on instead.)
     let (tx, rx) = mpsc::channel::<Option<String>>();
+    let payload = ev.payload;
     std::thread::spawn(move || {
         let _ = tx.send(talk(&payload, waits_for_answer));
     });
 
     if let Ok(Some(decision)) = rx.recv_timeout(budget) {
-        if let Some(json) = decision_json(&decision) {
+        if let Some(json) = decision_json(&decision, ev.is_agy) {
             let mut out = std::io::stdout();
             let _ = writeln!(out, "{json}");
             let _ = out.flush();
         }
     }
-    // Nothing printed: Claude Code asks in the terminal, as if we were not here.
     std::process::exit(0);
 }
 
-/// The documented PermissionRequest output. Anything we do not recognise prints
-/// nothing at all rather than guessing — silence is the safe answer.
-/// See https://code.claude.com/docs/en/hooks
-fn decision_json(decision: &str) -> Option<String> {
+fn decision_json(decision: &str, is_agy: bool) -> Option<String> {
     let behavior = match decision.trim() {
-        // "always" still answers a plain allow; remembering it is the island's
-        // business, not Claude Code's.
-        "allow" | "always" => r#"{"behavior":"allow"}"#.to_string(),
-        "deny" => r#"{"behavior":"deny","message":"Denied from Coucou"}"#.to_string(),
+        "allow" | "always" => "allow",
+        "deny" => "deny",
         _ => return None,
     };
-    Some(format!(
-        r#"{{"hookSpecificOutput":{{"hookEventName":"PermissionRequest","decision":{behavior}}}}}"#
-    ))
+    if is_agy {
+        if behavior == "allow" {
+            Some(r#"{"decision":"allow"}"#.to_string())
+        } else {
+            Some(r#"{"decision":"deny","reason":"Denied from Awuuu"}"#.to_string())
+        }
+    } else {
+        let dec_val = if behavior == "allow" {
+            r#"{"behavior":"allow"}"#
+        } else {
+            r#"{"behavior":"deny","message":"Denied from Awuuu"}"#
+        };
+        Some(format!(
+            r#"{{"hookSpecificOutput":{{"hookEventName":"PermissionRequest","decision":{dec_val}}}}}"#
+        ))
+    }
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
-fn read_event() -> Option<(String, String)> {
+fn read_event() -> Option<HookEvent> {
     let mut raw = Vec::new();
     if std::io::stdin().read_to_end(&mut raw).is_err() || raw.is_empty() {
         return None;
@@ -126,6 +136,45 @@ fn read_event() -> Option<(String, String)> {
 
     let mut payload = serde_json::from_slice::<serde_json::Value>(&raw).ok()?;
     let map = payload.as_object_mut()?;
+
+    let is_agy = map.contains_key("conversationId") || map.contains_key("toolCall");
+    if is_agy {
+        map.insert("agent_source".into(), serde_json::Value::String("agy".into()));
+        if let Some(cid) = map.get("conversationId").and_then(|v| v.as_str()) {
+            if !map.contains_key("session_id") {
+                map.insert("session_id".into(), serde_json::Value::String(cid.into()));
+            }
+        }
+        if let Some(paths) = map.get("workspacePaths").and_then(|v| v.as_array()) {
+            if let Some(first) = paths.first().and_then(|v| v.as_str()) {
+                if !map.contains_key("cwd") {
+                    map.insert("cwd".into(), serde_json::Value::String(first.into()));
+                }
+            }
+        }
+        // Gather tool metadata as owned values first (the borrow into `map`
+                // must not outlive the `insert`s below — that would trip E0502).
+                let (tool_name, tool_input) = {
+                    let obj = map.get("toolCall").and_then(|v| v.as_object());
+                    match obj {
+                        Some(o) => (
+                            o.get("name").and_then(|v| v.as_str()).map(str::to_owned),
+                            o.get("args").cloned(),
+                        ),
+                        None => (None, None),
+                    }
+                };
+                if let Some(name) = tool_name {
+                    if !map.contains_key("tool_name") {
+                        map.insert("tool_name".into(), serde_json::Value::String(name));
+                    }
+                }
+                if let Some(args) = tool_input {
+                    if !map.contains_key("tool_input") {
+                        map.insert("tool_input".into(), args);
+                    }
+                }
+    }
 
     // The event name is passed as argv[1] by the hook command; the JSON usually
     // carries it too. Trust argv when the JSON is missing it.
@@ -175,7 +224,7 @@ fn read_event() -> Option<(String, String)> {
 
     let mut line = payload.to_string();
     line.push('\n');
-    Some((line, event))
+    Some(HookEvent { payload: line, event, is_agy })
 }
 
 /// Caps every string in the payload. A single Write can carry a whole file.
@@ -236,23 +285,27 @@ mod tests {
     #[test]
     fn decision_json_matches_the_documented_shape() {
         assert_eq!(
-            decision_json("allow").unwrap(),
+            decision_json("allow", false).unwrap(),
             r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
         );
         assert_eq!(
-            decision_json("deny").unwrap(),
-            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Coucou"}}}"#
+            decision_json("deny", false).unwrap(),
+            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Awuuu"}}}"#
         );
         // "always" is an island concept; Claude Code just gets an allow.
-        assert!(decision_json("always").unwrap().contains(r#""behavior":"allow""#));
+        assert!(decision_json("always", false).unwrap().contains(r#""behavior":"allow""#));
+
+        // AGY shape
+        assert_eq!(decision_json("allow", true).unwrap(), r#"{"decision":"allow"}"#);
+        assert_eq!(decision_json("deny", true).unwrap(), r#"{"decision":"deny","reason":"Denied from Awuuu"}"#);
     }
 
     #[test]
     fn anything_unrecognised_prints_nothing() {
-        assert!(decision_json("").is_none());
-        assert!(decision_json("maybe").is_none());
+        assert!(decision_json("", false).is_none());
+        assert!(decision_json("maybe", false).is_none());
         // The shape the app used to send must not be mistaken for a decision.
-        assert!(decision_json(r#"{"permissionDecision":"allow"}"#).is_none());
+        assert!(decision_json(r#"{"permissionDecision":"allow"}"#, false).is_none());
     }
 
     #[test]

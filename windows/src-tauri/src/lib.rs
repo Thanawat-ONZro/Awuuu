@@ -227,6 +227,40 @@ fn hooks_apply(
 }
 
 #[tauri::command]
+fn agent_hooks_status(agent: String) -> Result<HookStatus, String> {
+    let a = hooks::HookAgent::parse(&agent).ok_or_else(|| format!("Unknown agent '{agent}'"))?;
+    Ok(hooks::status_for(a))
+}
+
+#[tauri::command]
+fn agent_hooks_preview(agent: String, install: bool) -> Result<HookPreview, String> {
+    let a = hooks::HookAgent::parse(&agent).ok_or_else(|| format!("Unknown agent '{agent}'"))?;
+    hooks::preview_for(a, install)
+}
+
+#[tauri::command]
+fn agent_hooks_apply(
+    app: AppHandle,
+    shared: State<Shared>,
+    agent: String,
+    install: bool,
+    fingerprint: String,
+) -> Result<String, String> {
+    let a = hooks::HookAgent::parse(&agent).ok_or_else(|| format!("Unknown agent '{agent}'"))?;
+    let backup = hooks::write_for(a, install, &fingerprint)?;
+    if a == hooks::HookAgent::Claude {
+        let updated = {
+            let mut current = shared.settings.lock().unwrap();
+            current.hooks_installed = install;
+            let _ = settings::save(&current);
+            current.clone()
+        };
+        let _ = app.emit("settings-changed", updated);
+    }
+    Ok(backup)
+}
+
+#[tauri::command]
 fn approval_decision(app: AppHandle, request_id: String, decision: String) {
     pipe::answer(&app, &request_id, &decision);
 }
@@ -423,6 +457,9 @@ pub fn run() {
             hooks_status,
             hooks_preview,
             hooks_apply,
+            agent_hooks_status,
+            agent_hooks_preview,
+            agent_hooks_apply,
             approval_decision,
             approval_ack,
             approval_decline,

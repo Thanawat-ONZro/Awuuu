@@ -6,6 +6,7 @@ export type IslandMode = "hidden" | "compact" | "expanded";
 
 export type IslandViewName =
   | "overview"
+  | "agents"
   | "empty"
   | "approval"
   | "question"
@@ -59,15 +60,21 @@ export const NOTCH_H = 32;
 export const COMPACT_W = 288; // NOTCH_W + 104
 export const EXPANDED_W = 640;
 
-export const ROUNDED_CORNER = 14; // hidden / compact
+export const ROUNDED_CORNER = 14; // compact
 export const EXPANDED_CORNER = 22;
+export const NOTCH_TAB_CORNER = 8; // subtle notch tab
 
-/** Invisible hover strip that wakes the island when hidden. */
-export const WAKE_STRIP_W = 240;
-export const WAKE_STRIP_H = 6;
+/** Subtle notch tab dimensions in hidden/idle state */
+export const NOTCH_TAB_W = 120;
+export const NOTCH_TAB_H = 10;
+
+/** Hover strip that wakes the island when hidden. */
+export const WAKE_STRIP_W = 140;
+export const WAKE_STRIP_H = 14;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   overview: { height: 160, botX: 68, botY: null, botDiameter: 58, agentMode: "pills" },
+  agents: { height: 160, botX: 68, botY: null, botDiameter: 58, agentMode: "pills" },
   empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
   approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
   question: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
@@ -104,9 +111,8 @@ export function islandSize(
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
-      // No notch to hide inside on a PC: the island retracts to zero height and
-      // slides into the top edge of the screen instead of sitting there as a bar.
-      return { w: NOTCH_W, h: 0 };
+      // Subtle notch tab protruding slightly from the screen edge
+      return { w: NOTCH_TAB_W, h: NOTCH_TAB_H };
     case "compact":
       return { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {

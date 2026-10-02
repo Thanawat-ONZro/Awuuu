@@ -10,9 +10,13 @@ export class IslandStateMachine {
 
   /** home → petit delay, seconds. */
   homeToPetitDelay = 15;
+  /** petit → hidden delay for edge hover leave, seconds. */
+  hoverLeaveDelay = 1.0;
+  /** Toast display duration, seconds; 0 = never auto-hide. */
+  toastDelay = 5;
   /** petit → hidden delay, seconds; 0 = the compact island never hides. */
-  petitToHiddenDelay = 0;
-  /** While this says true (an agent is busy), the hide timer starts over. */
+  petitToHiddenDelay = 5;
+  /** While this says true (e.g. pinned approval), the hide timer will not hide. */
   keepVisible: (() => boolean) | null = null;
   /** coucou → petit once the greeting animation ends (no hover). */
   greetAutoCollapseDelay = 0.6;
@@ -22,6 +26,7 @@ export class IslandStateMachine {
   pinned = false;
 
   private petitHide: number | null = null;
+  private toastHide: number | null = null;
   private homeCollapse: number | null = null;
   private greetCollapse: number | null = null;
 
@@ -40,6 +45,7 @@ export class IslandStateMachine {
         break;
       case "petit":
         this.clear("petitHide");
+        this.clear("toastHide");
         break;
       case "home":
         this.clear("homeCollapse");
@@ -55,7 +61,9 @@ export class IslandStateMachine {
       case "hidden":
         break;
       case "petit":
-        this.schedulePetitHide();
+        if (!this.pinned) {
+          this.schedulePetitHide(this.hoverLeaveDelay);
+        }
         break;
       case "home":
         this.scheduleHomeCollapse();
@@ -77,6 +85,33 @@ export class IslandStateMachine {
   greetComplete() {
     if (this.state !== "coucou") return;
     if (this.greetCollapse == null) this.scheduleGreetCollapse(this.greetAutoCollapseDelay);
+  }
+
+  /** Toast event (finished, integration update): show compact from hidden and auto-hide after duration. */
+  revealToast(durationSec = this.toastDelay) {
+    if (this.state === "home" || this.state === "coucou") return;
+    this.clear("petitHide");
+    this.clear("toastHide");
+    if (this.state === "hidden") {
+      this.transition("petit");
+    }
+    if (!this.pinned && durationSec > 0) {
+      this.toastHide = window.setTimeout(() => {
+        this.toastHide = null;
+        if (this.state !== "petit") return;
+        if (this.pinned || this.keepVisible?.()) return;
+        this.transition("hidden");
+      }, durationSec * 1000);
+    }
+  }
+
+  /** Pinned alert (approval or choice question): show compact and never auto-hide. */
+  revealPinned() {
+    this.pinned = true;
+    this.cancelTimers();
+    if (this.state === "hidden") {
+      this.transition("petit");
+    }
   }
 
   /** Non-alert work event: show compact from hidden. */
@@ -104,18 +139,29 @@ export class IslandStateMachine {
     this.transition("hidden");
   }
 
+  dropPin() {
+    this.pinned = false;
+    this.clear("toastHide");
+    if (this.state === "petit") {
+      this.schedulePetitHide(this.hoverLeaveDelay);
+    }
+  }
+
   // ── Timers ──────────────────────────────────────────────────────────────────
 
-  private schedulePetitHide() {
+  private schedulePetitHide(delay = this.petitToHiddenDelay) {
     this.clear("petitHide");
-    if (this.petitToHiddenDelay <= 0) return;
+    if (this.pinned) return;
+    if (delay <= 0) return;
     this.petitHide = window.setTimeout(() => {
       this.petitHide = null;
       if (this.state !== "petit") return;
-      // Never vanish in the middle of a long Claude Code run.
-      if (this.keepVisible?.()) this.schedulePetitHide();
-      else this.transition("hidden");
-    }, this.petitToHiddenDelay * 1000);
+      if (this.pinned || this.keepVisible?.()) {
+        this.schedulePetitHide(delay);
+      } else {
+        this.transition("hidden");
+      }
+    }, delay * 1000);
   }
 
   private scheduleHomeCollapse() {
@@ -135,7 +181,7 @@ export class IslandStateMachine {
     }, delay * 1000);
   }
 
-  private clear(which: "petitHide" | "homeCollapse" | "greetCollapse") {
+  private clear(which: "petitHide" | "toastHide" | "homeCollapse" | "greetCollapse") {
     const id = this[which];
     if (id != null) window.clearTimeout(id);
     this[which] = null;
@@ -143,6 +189,7 @@ export class IslandStateMachine {
 
   cancelTimers() {
     this.clear("petitHide");
+    this.clear("toastHide");
     this.clear("homeCollapse");
     this.clear("greetCollapse");
   }

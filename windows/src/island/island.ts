@@ -4,8 +4,8 @@
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
-  ROUNDED_CORNER, VIEW_LAYOUTS, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
+  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, PANEL_H, PANEL_W,
+  ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
   type IslandMode, type IslandViewName,
 } from "../core/layout";
@@ -46,6 +46,7 @@ export class Island {
   private miniGrid!: HTMLElement;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
+  private notchNub!: HTMLElement;
 
   private header!: ViewHost;
   private views!: Map<IslandViewName, ViewHost>;
@@ -126,9 +127,13 @@ export class Island {
         State.setFocus(id);
         Sound.play("blip");
       },
-      openTerminal: () => {
-        const cwd = State.focusTask?.sessionCwd ?? null;
-        void Bridge.openInVSCode(cwd);
+      setAgentFocus: (id) => {
+        State.setAgentFocus(id);
+        Sound.play("blip");
+      },
+      openTerminal: (cwd) => {
+        const path = cwd ?? State.focusedAgentSession?.sessionCwd ?? State.focusTask?.sessionCwd ?? null;
+        void Bridge.openInVSCode(path);
       },
       // The ↗ button — same targets as openAgentTarget() on macOS.
       openTarget: () => {
@@ -142,25 +147,38 @@ export class Island {
           integration_notion: "https://notion.so",
           integration_calcom: "https://app.cal.com/bookings",
         };
-        if (task.id === "integration_claude") void Bridge.openInVSCode(task.sessionCwd ?? null);
+        if (task.sessionCwd) void Bridge.openInVSCode(task.sessionCwd);
         else if (task.id === "integration_n8n") void Bridge.openN8n();
         else if (urls[task.id]) void Bridge.openUrl(urls[task.id]);
       },
       openUrl: (url) => {
         if (url) void Bridge.openUrl(url);
       },
-      decide: (d) => {
+      decide: (d, _answers) => {
         const req = State.pendingApproval;
         void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
         if (!req) return;
         Sound.play(d === "deny" ? "blip" : "approve");
+        if (d === "always") {
+          const ruleKey = `${req.tool}:${req.command}`;
+          State.addAlwaysAllowed(ruleKey);
+          void Bridge.saveSettings(State.settings);
+        }
         void Bridge.approvalDecision(req.requestId, d);
-        State.pendingApproval = null;
-        State.isPinned = false;
-        this.fsm.pinned = false;
-        State.updateTask("integration_claude", "working");
-        State.setPillBadge("integration_claude", null);
-        this.setView(State.defaultView());
+        State.removeApproval(req.requestId);
+        const next = State.pendingApproval;
+        if (next) {
+          this.setView("approval");
+        } else {
+          State.isPinned = false;
+          this.fsm.pinned = false;
+          const session = State.agentSessions.find((s) => s.id === `session_${req.sessionId}`);
+          if (session) {
+            session.state = "working";
+            session.pillBadge = null;
+          }
+          this.setView(State.defaultView());
+        }
       },
       toggleSound: () => {
         State.settings.soundEnabled = !State.settings.soundEnabled;
@@ -185,6 +203,7 @@ export class Island {
     };
 
     this.wakeStrip = h("div", { id: "wake-strip" });
+    this.notchNub = h("div", { id: "notch-nub" });
     this.botGlow = h("div", { id: "bot-glow" });
     this.botCanvas = h("canvas", { id: "bot-canvas" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
@@ -219,6 +238,7 @@ export class Island {
     this.islandEl = h(
       "div",
       { id: "island" },
+      this.notchNub,
       this.clipEl,
       this.botGlow,
       this.botCanvas,
@@ -240,9 +260,9 @@ export class Island {
 
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
-    this.fsm.petitToHiddenDelay = State.settings.hideAfter;
-    const BUSY = new Set(["working", "thinking", "searching", "approval", "question"]);
-    this.fsm.keepVisible = () => State.tasks.some((t) => BUSY.has(t.state));
+    this.fsm.toastDelay = State.settings.hideAfter ?? 5;
+    this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
+    this.fsm.keepVisible = () => State.isPinned || State.pendingApproval != null;
     this.fsm.onTransition = (from, to) => {
       switch (to) {
         case "hidden":
@@ -278,6 +298,8 @@ export class Island {
     const prev = State.mode;
     if (mode === prev) return;
     State.mode = mode;
+    this.root.classList.remove("mode-hidden", "mode-compact", "mode-expanded");
+    this.root.classList.add(`mode-${mode}`);
     if (mode === "expanded") Sound.play("open");
     if (prev === "expanded") {
       Sound.play("close");
@@ -342,10 +364,26 @@ export class Island {
   }
 
   /** Alert from the hook server: open on this view. Pinned alerts never auto-close. */
-  alert(view: IslandViewName) {
+  alert(view: IslandViewName, forceExpanded = false) {
     this.fsm.pinned = State.isPinned;
-    this.fsm.forceHome();
-    this.expand(view);
+    if (forceExpanded) {
+      this.fsm.forceHome();
+      this.expand(view);
+    } else {
+      this.fsm.revealPinned();
+      if (State.mode === "expanded") {
+        this.setView(view);
+      }
+    }
+  }
+
+  /** Toast from hook/integration: pop compact for durationSec then auto-hide. */
+  toast(view: IslandViewName = "overview", durationSec = State.settings.hideAfter ?? 5) {
+    if (State.mode === "expanded") {
+      this.setView(view);
+      return;
+    }
+    this.fsm.revealToast(durationSec);
   }
 
   reveal() {
@@ -354,7 +392,7 @@ export class Island {
 
   /** An alert stopped waiting for an answer: let the island auto-close again. */
   dropPin() {
-    this.fsm.pinned = false;
+    this.fsm.dropPin();
   }
 
   // ── File drop ───────────────────────────────────────────────────────────────
@@ -469,7 +507,11 @@ export class Island {
 
   private targetSize(): { w: number; h: number; r: number } {
     const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
-    const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
+    const r = State.mode === "expanded"
+      ? EXPANDED_CORNER
+      : State.mode === "hidden"
+      ? NOTCH_TAB_CORNER
+      : ROUNDED_CORNER;
     return { w, h, r };
   }
 
@@ -513,10 +555,13 @@ export class Island {
     }
   }
 
-  /** Island rect in window coordinates (origin top-left of the 720×320 window). */
+  /** Island rect in window coordinates (origin top-left of the window). */
   private islandRect(): { x: number; y: number; w: number; h: number } {
     const w = this.width.value;
     const hh = this.height.value;
+    if (this.collapsed) {
+      return { x: (WAKE_STRIP_W - w) / 2, y: this.atBottom ? WAKE_STRIP_H - hh : 0, w, h: hh };
+    }
     return { x: (PANEL_W - w) / 2, y: this.atBottom ? PANEL_H - hh : 0, w, h: hh };
   }
 
@@ -539,6 +584,7 @@ export class Island {
         this.collapseTimer = null;
         if (State.mode !== "hidden") return;
         this.collapsed = true;
+        this.applyGeometry();
         void Bridge.setCollapsed(true);
       }, 420);
     } else if (this.collapsed) {
@@ -548,20 +594,58 @@ export class Island {
     }
   }
 
+  onNotchHover() {
+    Sound.resume();
+    this.wasInIsland = true;
+    if (State.mode === "hidden") {
+      this.fsm.mouseEntered();
+    }
+  }
+
+  onNotchClick() {
+    Sound.resume();
+    State.lastActivity = performance.now();
+    if (State.mode === "hidden") {
+      this.wasInIsland = true;
+      this.fsm.mouseEntered();
+      this.fsm.click();
+    }
+  }
+
   // ── Input ───────────────────────────────────────────────────────────────────
 
   private wireInput() {
-    // The wake strip is the only thing the OS can hit while the island is hidden.
-    this.wakeStrip.addEventListener("mouseenter", () => {
+    // Both the visible notch tab (islandEl) and the wakeStrip trigger wake to compact
+    const onEnter = () => {
       Sound.resume();
-      if (State.mode === "hidden") this.fsm.mouseEntered();
+      this.wasInIsland = true;
+      if (State.mode === "hidden") {
+        this.fsm.mouseEntered();
+      }
+    };
+
+    this.wakeStrip.addEventListener("mouseenter", onEnter);
+    this.islandEl.addEventListener("mouseenter", onEnter);
+
+    this.islandEl.addEventListener("mouseleave", () => {
+      this.wasInIsland = false;
+      this.fsm.mouseLeft();
     });
 
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
       State.lastActivity = performance.now();
-      if (State.mode !== "expanded") {
+      if (State.mode === "hidden") {
+        this.fsm.mouseEntered();
         this.fsm.click();
+        return;
+      }
+      if (State.mode !== "expanded") {
+        if (State.pendingApproval) {
+          this.expand("approval");
+        } else {
+          this.fsm.click();
+        }
         return;
       }
       if (this.isBotHit(e.clientX, e.clientY)) {

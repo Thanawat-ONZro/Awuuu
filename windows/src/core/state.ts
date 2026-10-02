@@ -3,7 +3,7 @@
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 
-export type AgentSource = "claudeCode" | "n8n";
+export type AgentSource = "claudeCode" | "codex" | "agy" | "hermes" | "opencode" | "n8n";
 export type PillBadge = "approval" | "finished" | "error";
 
 export interface AgentTask {
@@ -21,11 +21,27 @@ export interface AgentTask {
   sessionCwd?: string | null;
 }
 
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionItem {
+  question: string;
+  header?: string;
+  options: QuestionOption[];
+  multiSelect?: boolean;
+}
+
 export interface ApprovalInfo {
   requestId: string;
   sessionId: string;
   tool: string;
   command: string;
+  rawInput?: Record<string, unknown>;
+  isQuestion?: boolean;
+  questions?: QuestionItem[];
+  createdAt?: number;
 }
 
 export interface ChatMessage {
@@ -56,9 +72,8 @@ const task = (
   id, name, color, state: "idle", stepIndex: 0, steps: [], source, isIntegration: true,
 });
 
-/** AgentTask.integrationAgents — same ids, names and colours as macOS. */
+/** AgentTask.integrationAgents — pure integrations without static VS Code. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
-  task("integration_claude", "VS Code", "#FFF4E6", "claudeCode"),
   task("integration_resend", "Resend", "#22C55E", "n8n"),
   task("integration_n8n", "n8n", "#F29B38", "n8n"),
   task("integration_vercel", "Vercel", "#7C5CFF", "n8n"),
@@ -98,6 +113,8 @@ export interface Settings {
   hideAfter: number;
   /** Automatic update checks; null = not asked yet. */
   updateCheck: boolean | null;
+  /** Always-allowed tool commands or patterns. */
+  alwaysAllowedRules: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -113,8 +130,9 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",
-  hideAfter: 10,
+  hideAfter: 5,
   updateCheck: null,
+  alwaysAllowedRules: [],
 };
 
 type Listener = () => void;
@@ -145,7 +163,41 @@ class AppState {
   noteMessage: string | null = null;
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
-  pendingApproval: ApprovalInfo | null = null;
+
+  agentSessions: AgentTask[] = [];
+  agentFocusId: string | null = null;
+  approvalQueue: ApprovalInfo[] = [];
+  sessionAlwaysAllowed = new Set<string>();
+
+  get pendingApproval(): ApprovalInfo | null {
+    return this.approvalQueue[0] ?? null;
+  }
+  set pendingApproval(val: ApprovalInfo | null) {
+    if (val == null) {
+      if (this.approvalQueue.length > 0) this.approvalQueue.shift();
+    } else {
+      const idx = this.approvalQueue.findIndex((x) => x.requestId === val.requestId);
+      if (idx >= 0) this.approvalQueue[idx] = val;
+      else this.approvalQueue.unshift(val);
+    }
+  }
+
+  pushApproval(info: ApprovalInfo) {
+    if (!this.approvalQueue.some((x) => x.requestId === info.requestId)) {
+      this.approvalQueue.push(info);
+      this.notify();
+    }
+  }
+
+  removeApproval(requestId: string): ApprovalInfo | null {
+    const idx = this.approvalQueue.findIndex((x) => x.requestId === requestId);
+    if (idx >= 0) {
+      const removed = this.approvalQueue.splice(idx, 1)[0];
+      this.notify();
+      return removed;
+    }
+    return null;
+  }
 
   integrations: Record<string, IntegrationInfo> = {};
 
@@ -174,7 +226,15 @@ class AppState {
   }
 
   get otherTasks(): AgentTask[] {
-    return this.tasks.filter((t) => t.id !== this.focusId);
+    return this.tasks.filter((t) => t.id !== this.focusId && t.isIntegration);
+  }
+
+  get activeAgentSessions(): AgentTask[] {
+    return this.agentSessions;
+  }
+
+  get focusedAgentSession(): AgentTask | null {
+    return this.agentSessions.find((s) => s.id === this.agentFocusId) ?? this.agentSessions[0] ?? null;
   }
 
   setFocus(id: string) {
@@ -182,6 +242,97 @@ class AppState {
     if (!t) return;
     this.focusId = id;
     t.pillBadge = null;
+    this.notify();
+  }
+
+  setAgentFocus(id: string) {
+    this.agentFocusId = id;
+    const s = this.agentSessions.find((x) => x.id === id);
+    if (s) s.pillBadge = null;
+    this.notify();
+  }
+
+  getOrCreateSession(sessionId: string, cwd: string, source: AgentSource = "claudeCode"): AgentTask {
+    const id = `session_${sessionId}`;
+    const agentColor = (s: AgentSource) => {
+      switch (s) {
+        case "agy": return "#4285F4";
+        case "codex": return "#10A37F";
+        case "hermes": return "#8B5CF6";
+        case "opencode": return "#00D26A";
+        default: return "#F06543";
+      }
+    };
+    const defaultName = (s: AgentSource) => {
+      switch (s) {
+        case "agy": return "AGY";
+        case "codex": return "Codex";
+        case "hermes": return "Hermes";
+        case "opencode": return "OpenCode";
+        default: return "Claude";
+      }
+    };
+
+    let existing = this.agentSessions.find((s) => s.id === id);
+    if (!existing) {
+      const cleaned = cwd.replace(/[\\/]+$/, "");
+      const idx = Math.max(cleaned.lastIndexOf("\\"), cleaned.lastIndexOf("/"));
+      const dirName = idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
+      const name = dirName || defaultName(source);
+      const color = agentColor(source);
+      existing = {
+        id,
+        name,
+        color,
+        state: "idle",
+        stepIndex: 0,
+        steps: [],
+        source,
+        isIntegration: false,
+        sessionCwd: cwd,
+      };
+      this.agentSessions.push(existing);
+      this.tasks.push(existing);
+      if (!this.agentFocusId) this.agentFocusId = id;
+      this.notify();
+    } else {
+      if (cwd && !existing.sessionCwd) existing.sessionCwd = cwd;
+      if (source && source !== "claudeCode" && existing.source === "claudeCode") {
+        existing.source = source;
+        existing.color = agentColor(source);
+      }
+    }
+    return existing;
+  }
+
+  removeSession(sessionId: string) {
+    const id = `session_${sessionId}`;
+    const sIdx = this.agentSessions.findIndex((s) => s.id === id);
+    if (sIdx >= 0) this.agentSessions.splice(sIdx, 1);
+    const tIdx = this.tasks.findIndex((t) => t.id === id);
+    if (tIdx >= 0) this.tasks.splice(tIdx, 1);
+    if (this.agentFocusId === id) {
+      this.agentFocusId = this.agentSessions[0]?.id ?? null;
+    }
+    this.notify();
+  }
+
+  isAlwaysAllowed(rule: string): boolean {
+    return this.sessionAlwaysAllowed.has(rule) || (this.settings.alwaysAllowedRules || []).includes(rule);
+  }
+
+  addAlwaysAllowed(rule: string) {
+    this.sessionAlwaysAllowed.add(rule);
+    if (!this.settings.alwaysAllowedRules) this.settings.alwaysAllowedRules = [];
+    if (!this.settings.alwaysAllowedRules.includes(rule)) {
+      this.settings.alwaysAllowedRules.push(rule);
+    }
+    this.notify();
+  }
+
+  clearAlwaysAllowed() {
+    this.sessionAlwaysAllowed.clear();
+    this.settings.alwaysAllowedRules = [];
     this.notify();
   }
 
@@ -208,28 +359,35 @@ class AppState {
     this.notify();
   }
 
-  /** loadIntegrationTasks() — VS Code always on, the rest opt-in (max 4). */
+  /** loadIntegrationTasks() — load enabled integration pollers. */
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
-      const shouldLoad =
-        proto.id === "integration_claude" || this.settings.activeIntegrations.includes(proto.id);
+      const shouldLoad = this.settings.activeIntegrations.includes(proto.id);
       const idx = this.tasks.findIndex((t) => t.id === proto.id);
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);
     }
-    // Keep the declared order so pills never shuffle.
+    // Keep declared order for integrations
     const order = INTEGRATION_AGENTS.map((t) => t.id);
-    this.tasks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-    if (!this.focusId) this.focusId = "integration_claude";
+    this.tasks.sort((a, b) => {
+      const aIdx = a.isIntegration ? order.indexOf(a.id) : 999;
+      const bIdx = b.isIntegration ? order.indexOf(b.id) : 999;
+      return aIdx - bIdx;
+    });
+    if (!this.focusId) {
+      const first = this.tasks.find((t) => t.isIntegration);
+      if (first) this.focusId = first.id;
+    }
     this.notify();
   }
 
   toggleIntegration(id: string) {
-    if (id === "integration_claude") return;
     const active = this.settings.activeIntegrations;
     if (active.includes(id)) {
       this.settings.activeIntegrations = active.filter((x) => x !== id);
-      if (this.focusId === id) this.focusId = "integration_claude";
+      if (this.focusId === id) {
+        this.focusId = this.settings.activeIntegrations[0] ?? null;
+      }
     } else {
       if (active.length >= 4) return;
       this.settings.activeIntegrations = [...active, id];
@@ -238,7 +396,7 @@ class AppState {
   }
 
   defaultView(): IslandViewName {
-    return this.tasks.length === 0 ? "empty" : "overview";
+    return "agents";
   }
 }
 

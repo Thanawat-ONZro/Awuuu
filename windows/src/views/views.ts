@@ -16,11 +16,12 @@ export interface ViewActions {
   setView(v: IslandViewName): void;
   collapse(): void;
   setFocus(id: string): void;
-  openTerminal(): void;
+  setAgentFocus(id: string): void;
+  openTerminal(cwd?: string | null): void;
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
-  decide(d: "allow" | "deny"): void;
+  decide(d: "allow" | "deny" | "always", answers?: Record<string, unknown>): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -79,13 +80,28 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
+// ── Header ────────────────────────────────────────────────────────────────────
+
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.kennel, 13));
+  const tabHome = h("button", { class: "tab", title: "Overview (Integrations)", onclick: () => go("overview") }, svg(ICONS.kennel, 13));
+  const tabAgents = h("button", { class: "tab", title: "Agent Sessions", onclick: () => go("agents") }, svg(ICONS.terminal, 13));
   const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: "Feed Awuuu a file", onclick: () => go("upload") }, svg(ICONS.bone, 13));
 
   const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
   const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
+  const collapseBtn = h(
+    "button",
+    {
+      class: "collapse-btn",
+      title: "Collapse to notch (Esc)",
+      onclick: () => {
+        actions.blip();
+        actions.collapse();
+      },
+    },
+    svg(ICONS.chevronUp, 13, { stroke: 2.4 }),
+  );
 
   function go(v: IslandViewName) {
     actions.blip();
@@ -95,8 +111,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
-    h("div", { class: "header-actions" }, gearBtn, soundBtn),
+    h("div", { class: "tabs" }, tabAgents, tabChat, tabHome, tabDrop),
+    h("div", { class: "header-actions" }, soundBtn, gearBtn, collapseBtn),
   );
 
   return {
@@ -104,6 +120,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     sync() {
       const v = State.view;
       tabHome.classList.toggle("on", v === "overview" || v === "empty");
+      tabAgents.classList.toggle("on", v === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
       gearBtn.classList.toggle("on", v === "settings");
@@ -116,12 +133,9 @@ export function buildHeader(actions: ViewActions): ViewHost {
   };
 }
 
-// ── Overview ──────────────────────────────────────────────────────────────────
+// ── Overview (Integrations) ──────────────────────────────────────────────────
 
 function buildOverview(actions: ViewActions): ViewHost {
-  const ticker = new Ticker();
-  const who = h("div", { class: "who" });
-  const tickerBody = h("div", { class: "card-body" }, who, ticker.el);
   const leftBody = h("div", { class: "left-body" });
   const jump = h(
     "button",
@@ -140,7 +154,6 @@ function buildOverview(actions: ViewActions): ViewHost {
   let pillIds = "";
   let detailOpen = false;
   let lastFocus: string | null = null;
-  let mode: "ticker" | "card" | null = null;
   let cardKey = "";
 
   const hooks: IntegrationCardHooks = {
@@ -162,44 +175,15 @@ function buildOverview(actions: ViewActions): ViewHost {
 
   return {
     el,
-    tick(nowMs: number) {
-      if (mode === "ticker") ticker.tick(nowMs);
-    },
     sync() {
       const task = State.focusTask;
       if (task?.id !== lastFocus) {
         lastFocus = task?.id ?? null;
         detailOpen = false;
         cardKey = "";
-        mode = null;
       }
 
-      // VS Code with a live Claude Code session keeps the ticker; every other
-      // pill shows its own card, exactly like IntegrationCardView.
-      const sessionActive =
-        task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
-
-      if (task && sessionActive) {
-        if (mode !== "ticker") {
-          clear(leftBody);
-          leftBody.append(tickerBody);
-          mode = "ticker";
-          cardKey = "";
-        }
-        clear(who);
-        who.append(
-          dot(task.color, 7),
-          h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
-        );
-        if (task.steps.length > 1) {
-          who.append(h("span", {
-            class: "count",
-            text: `${Math.min(task.stepIndex + 1, task.steps.length)}/${task.steps.length}`,
-          }));
-        }
-        ticker.sync(task);
-      } else if (task) {
+      if (task && task.isIntegration) {
         const info = State.integrations[task.id];
         const key = [
           task.id, detailOpen, task.state, task.steps.join("|"),
@@ -208,10 +192,17 @@ function buildOverview(actions: ViewActions): ViewHost {
         ].join("~");
         if (key !== cardKey) {
           cardKey = key;
-          mode = "card";
           clear(leftBody);
           leftBody.append(renderIntegrationCard(task, hooks));
         }
+      } else {
+        clear(leftBody);
+        leftBody.append(
+          h("div", { class: "stack", style: "padding:0 18px 0 118px;justify-content:center;gap:6px" },
+            h("div", { class: "title", text: "Integrations Overview" }),
+            h("div", { class: "sub", text: "Connect GitHub, Stripe, Vercel, Resend in Settings." }),
+          ),
+        );
       }
 
       jump.style.display = detailOpen ? "none" : "";
@@ -228,14 +219,139 @@ function buildOverview(actions: ViewActions): ViewHost {
   };
 }
 
+// ── Agents Hub ───────────────────────────────────────────────────────────────
+
+function buildAgentsHub(actions: ViewActions): ViewHost {
+  const ticker = new Ticker();
+  const who = h("div", { class: "who" });
+  const tickerBody = h("div", { class: "card-body" }, who, ticker.el);
+  const leftBody = h("div", { class: "left-body" });
+  const jump = h(
+    "button",
+    {
+      class: "icon-btn jump",
+      title: "Open in VS Code / Terminal",
+      onclick: () => {
+        const session = State.focusedAgentSession;
+        actions.openTerminal(session?.sessionCwd ?? null);
+      },
+    },
+    svg(ICONS.arrowUpRight, 8),
+  );
+  const left = card(null, leftBody, jump);
+  const pills = h("div", { class: "pills" });
+  const right = card(null, pills);
+
+  const el = h("div", { class: "view overview" },
+    h("div", { class: "left" }, left),
+    h("div", { class: "right" }, right),
+  );
+
+  let pillIds = "";
+  let lastSessionId: string | null = null;
+
+  return {
+    el,
+    tick(nowMs: number) {
+      ticker.tick(nowMs);
+    },
+    sync() {
+      const sessions = State.activeAgentSessions;
+      const focused = State.focusedAgentSession;
+
+      if (!focused || sessions.length === 0) {
+        clear(leftBody);
+        leftBody.append(
+          h("div", { class: "stack", style: "padding:0 18px 0 118px;justify-content:center;gap:6px" },
+            h("div", { class: "title", text: "No active agent sessions." }),
+            h("div", { class: "sub", text: "Launch Claude Code or any agent in a terminal to see it here." }),
+          ),
+        );
+        jump.style.display = "none";
+        clear(pills);
+        pillIds = "";
+        lastSessionId = null;
+        return;
+      }
+
+      jump.style.display = "";
+
+      if (focused.id !== lastSessionId) {
+        lastSessionId = focused.id;
+        clear(leftBody);
+        leftBody.append(tickerBody);
+      }
+
+      const agentLabel =
+        focused.source === "hermes"
+          ? "Hermes Agent"
+          : focused.source === "opencode"
+          ? "OpenCode"
+          : focused.source === "agy"
+          ? "Antigravity CLI"
+          : focused.source === "codex"
+          ? "Codex CLI"
+          : "Claude Code";
+
+      clear(who);
+      who.append(
+        dot(focused.color, 7),
+        h("span", { class: "name", text: focused.name }),
+        h("span", { class: "tool", text: agentLabel }),
+      );
+      if (focused.steps.length > 1) {
+        who.append(h("span", {
+          class: "count",
+          text: `${Math.min(focused.stepIndex + 1, focused.steps.length)}/${focused.steps.length}`,
+        }));
+      }
+      ticker.sync(focused);
+
+      const pillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
+      if (pillKey !== pillIds) {
+        pillIds = pillKey;
+        clear(pills);
+        for (const s of sessions) {
+          const pill = buildPill(s, {
+            ...actions,
+            setFocus: (id) => actions.setAgentFocus(id),
+          });
+          if (s.id === focused.id) {
+            pill.style.background = `${s.color}24`;
+            pill.style.borderColor = `${s.color}66`;
+          }
+          pills.append(pill);
+        }
+        pruneMiniBots();
+      }
+    },
+  };
+}
+
 function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
-  const label = task.id === "integration_claude" ? "VS Code" : task.name;
+  const label = task.name;
   const canvas = createMiniBot(task, 24);
+  const tagText =
+    task.source === "hermes"
+      ? "Hermes"
+      : task.source === "opencode"
+      ? "OpenCode"
+      : task.source === "agy"
+      ? "AGY"
+      : task.source === "codex"
+      ? "Codex"
+      : "Claude";
   const pill = h(
     "div",
     { class: "pill", onclick: () => actions.setFocus(task.id) },
     canvas,
     h("span", { class: "lbl", text: label }),
+    !task.isIntegration
+      ? h("span", {
+          style: `font-size:9.5px;opacity:0.75;padding:1px 4px;border-radius:4px;background:${task.color}22;color:${task.color};font-weight:600;margin-left:auto`,
+          text: tagText,
+        })
+      : null,
   );
   pill.style.borderColor = `${task.color}24`;
   pill.addEventListener("mouseenter", () => {
@@ -292,29 +408,54 @@ function buildEmpty(actions: ViewActions): ViewHost {
 
 function buildApproval(actions: ViewActions): ViewHost {
   const who = h("div");
-  const code = h("div", { class: "code" });
-  const row = h("div", { class: "actions" });
+  const code = h("div", {
+    class: "code",
+    style: "white-space:pre-wrap;max-height:64px;overflow-y:auto;word-break:break-all;font-size:12px;line-height:1.4",
+  });
+  const row = h("div", { class: "actions", style: "flex-wrap:wrap;gap:8px" });
   const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row)));
-  let rowKey = "";
+  let lastReqKey = "";
+
   return {
     el,
     sync() {
+      const req = State.pendingApproval;
+      if (!req) return;
+
+      const session = State.agentSessions.find((s) => s.id === `session_${req.sessionId}`);
+      const qCount = State.approvalQueue.length > 1 ? ` (${State.approvalQueue.length} pending)` : "";
+
       clear(who);
-      who.append(agentWho(State.focusTask, "needs permission"));
-      // The whole point of approving here rather than in the terminal: this line
-      // is the command, the file path or the URL being authorised, not just the
-      // name of the tool asking.
-      code.textContent = State.pendingApproval?.command || State.pendingApproval?.tool || "…";
-      // Two buttons, built once. Rebuilding them between a mouse-down and a
-      // mouse-up would swallow the click, and there is nothing left to vary:
-      // "Always" is gone until the remembered-rules list exists to back it.
-      if (rowKey === "built") return;
-      rowKey = "built";
+      if (req.isQuestion) {
+        who.append(agentWho(session ?? State.focusTask, `asks a question${qCount}`));
+        const qItem = req.questions?.[0];
+        code.textContent = qItem?.question || req.command || "Claude has a question:";
+      } else {
+        who.append(agentWho(session ?? State.focusTask, `needs permission${qCount}`));
+        code.textContent = req.command || req.tool || "…";
+      }
+
+      const reqKey = `${req.requestId}:${req.isQuestion ? "q" : "p"}`;
+      if (lastReqKey === reqKey) return;
+      lastReqKey = reqKey;
+
       clear(row);
-      row.append(
-        btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn("Allow", "primary", () => actions.decide("allow"), "Y", ICONS.paw),
-      );
+      if (req.isQuestion && req.questions && req.questions[0]?.options?.length) {
+        const options = req.questions[0].options;
+        for (const opt of options) {
+          row.append(
+            btn(opt.label, "primary", () => {
+              actions.decide("allow", { answer: opt.label });
+            })
+          );
+        }
+      } else {
+        row.append(
+          btn("Deny", "secondary", () => actions.decide("deny"), "N"),
+          btn("Allow", "primary", () => actions.decide("allow"), "Y", ICONS.paw),
+          btn("Always allow", "secondary", () => actions.decide("always")),
+        );
+      }
     },
   };
 }
@@ -491,6 +632,7 @@ export function buildViews(
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildOverview(actions));
+  map.set("agents", buildAgentsHub(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
   map.set("question", buildQuestion());

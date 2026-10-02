@@ -62,9 +62,8 @@ function handle(island: Island, update: IntegrationUpdate) {
         task.pillBadge = event.success ? "finished" : "error";
       }
       Sound.play(event.success ? "finish" : "error");
-      // Same as the Swift pollers: show the compact island so the badge is seen,
-      // but never steal the screen for a successful deploy.
-      island.reveal();
+      // Toast compact island so the badge is seen, then auto-hide after 5 seconds
+      island.toast("overview", 5);
 
       const existing = clearTimers.get(update.id);
       if (existing != null) window.clearTimeout(existing);

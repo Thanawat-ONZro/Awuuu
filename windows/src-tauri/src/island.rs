@@ -26,9 +26,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// Logical size of the full window — the largest island view, like the macOS panel.
 pub const PANEL_W: f64 = 720.0;
 pub const PANEL_H: f64 = 320.0;
-/// Logical size of the invisible strip that wakes the island when it is hidden.
-pub const STRIP_W: f64 = 240.0;
-pub const STRIP_H: f64 = 6.0;
+/// Logical size of the subtle notch tab when the island is in hidden/idle state.
+pub const STRIP_W: f64 = 140.0;
+pub const STRIP_H: f64 = 14.0;
 
 pub const WINDOW_LABEL: &str = "island";
 
@@ -98,6 +98,16 @@ impl PollGate {
         self.cv.notify_all();
     }
 
+    pub fn wait_timeout(&self, dur: Duration) -> bool {
+        let guard = self.active.lock().unwrap();
+        if *guard {
+            return true;
+        }
+        let (guard, _) = self.cv.wait_timeout(guard, dur).unwrap();
+        *guard
+    }
+
+    #[allow(dead_code)]
     fn wait_until_active(&self) {
         let mut guard = self.active.lock().unwrap();
         while !*guard {
@@ -105,7 +115,7 @@ impl PollGate {
         }
     }
 
-    fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         *self.active.lock().unwrap()
     }
 }
@@ -290,11 +300,45 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         // it is a click outside, which closes an open island.
         let mut pressed_off_island = false;
         let mut press_at = (0.0, 0.0);
-        // Remembered across wakes so a display change while hidden is noticed the
-        // moment the island comes back.
+        let mut hovered_notch = false;
         let mut last_screen: Option<(i32, i32, u32, u32, u64)> = None;
         loop {
-            gate.wait_until_active();
+            if !gate.is_active() {
+                // Island is collapsed / hidden. Poll for notch hover at ~25 Hz (40 ms) with negligible CPU.
+                if gate.wait_timeout(Duration::from_millis(40)) {
+                    continue;
+                }
+                let Some(win) = window(&app) else { continue };
+                let Ok(origin) = win.outer_position() else { continue };
+                let scale = win.scale_factor().unwrap_or(1.0);
+                let size = win.inner_size().unwrap_or_default();
+                let Some((cx, cy)) = cursor_physical() else { continue };
+
+                // Margin around the subtle notch tab (6 physical px)
+                let margin = (6.0 * scale).round() as i32;
+                let in_notch = (cx as i32) >= origin.x - margin
+                    && (cx as i32) <= origin.x + size.width as i32 + margin
+                    && (cy as i32) >= origin.y
+                    && (cy as i32) <= origin.y + size.height as i32 + margin;
+
+                let down = left_button_down();
+                if in_notch && down && !was_down {
+                    let _ = win.emit("notch-click", ());
+                }
+                was_down = down;
+
+                if in_notch {
+                    if !hovered_notch {
+                        hovered_notch = true;
+                        let _ = win.emit("notch-hover", ());
+                    }
+                } else {
+                    hovered_notch = false;
+                }
+                continue;
+            }
+
+            hovered_notch = false;
             let mut last = (f64::MIN, f64::MIN);
             let mut ticks: u32 = 0;
             while gate.is_active() {

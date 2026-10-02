@@ -5,34 +5,23 @@
 
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { State } from "../core/state";
+import { State, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
-
-const CLAUDE_ID = "integration_claude";
-
-/** Clears the approval card if no decision was made before the hook gave up. */
-let pendingTimeout: number | null = null;
 
 interface HookPayload {
   hook_event_name?: string;
   request_id?: string;
   session_id?: string;
+  conversationId?: string; // AGY
   cwd?: string;
+  workspacePaths?: string[]; // AGY
   message?: string;
   /** UserPromptSubmit carries `prompt`; `message` belongs to Notification/Stop. */
   prompt?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
-}
-
-const PROJECT_ALIASES: Record<string, string> = {
-  "notch-buddy": "Notch Buddy",
-  notchbuddy: "Notch Buddy",
-  notch_buddy: "Notch Buddy",
-};
-
-function aliasProjectName(name: string): string {
-  return PROJECT_ALIASES[name.toLowerCase()] ?? name;
+  toolCall?: { name?: string; args?: Record<string, unknown> }; // AGY
+  agent_source?: AgentSource;
 }
 
 function lastPathComponent(p: string): string {
@@ -101,20 +90,70 @@ function approvalTarget(tool: string, input: Record<string, unknown>): string {
   return tool;
 }
 
-function upsert(projectName: string, cwd: string) {
-  const t = State.tasks.find((x) => x.id === CLAUDE_ID);
-  if (!t) return;
-  t.name = projectName;
-  if (cwd) t.sessionCwd = cwd;
-}
+function queueApprovalRequest(
+  island: Island,
+  session: ReturnType<typeof State.getOrCreateSession>,
+  sessionId: string,
+  requestId: string,
+  tool: string,
+  input: Record<string, unknown>,
+) {
+  const target = approvalTarget(tool, input);
+  const ruleKey = `${tool}:${target}`;
 
-function clearSession() {
-  const t = State.tasks.find((x) => x.id === CLAUDE_ID);
-  if (!t) return;
-  t.steps = [];
-  t.stepIndex = 0;
-  t.name = "VS Code";
-  t.pillBadge = null;
+  // 1. Check Always-Allowed rule: auto-approve immediately
+  if (State.isAlwaysAllowed(ruleKey)) {
+    void Bridge.log(`Auto-allowed always-rule: ${ruleKey}`);
+    void Bridge.approvalAck(requestId);
+    void Bridge.approvalDecision(requestId, "allow");
+    return;
+  }
+
+  // 2. Ack immediately so relay timeout doesn't expire
+  void Bridge.approvalAck(requestId);
+
+  // 3. Detect AskUserQuestion
+  const isQuestion = tool === "AskUserQuestion";
+  let questions: QuestionItem[] | undefined;
+  if (isQuestion && Array.isArray(input.questions)) {
+    questions = input.questions as QuestionItem[];
+  }
+
+  // 4. Queue the approval
+  State.pushApproval({
+    requestId,
+    sessionId,
+    tool,
+    command: target,
+    rawInput: input,
+    isQuestion,
+    questions,
+    createdAt: performance.now(),
+  });
+
+  session.state = "approval";
+  session.pillBadge = "approval";
+  State.isPinned = true;
+  Sound.play("approval");
+
+  if (State.mode === "expanded") {
+    island.setView("approval");
+  } else {
+    island.alert("approval", false);
+  }
+
+  // 5. Per-request safety timeout
+  window.setTimeout(() => {
+    const removed = State.removeApproval(requestId);
+    if (removed && State.approvalQueue.length === 0) {
+      State.isPinned = false;
+      island.dropPin();
+      session.state = "working";
+      session.pillBadge = null;
+      if (State.view === "approval") island.setView(State.defaultView());
+      State.notify();
+    }
+  }, 110_000);
 }
 
 export function registerHookHandlers(island: Island) {
@@ -123,157 +162,153 @@ export function registerHookHandlers(island: Island) {
 
 function handleHook(island: Island, payload: HookPayload) {
   if (State.paused) {
-    // Silence here used to cost Claude Code nearly two minutes: the relay waited
-    // for a decision from an island that had already decided not to look. Say so,
-    // and the terminal takes the question immediately.
     if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
     return;
   }
 
   const name = payload.hook_event_name ?? "";
-  const cwd = payload.cwd ?? "";
-  const raw = lastPathComponent(cwd);
-  const projectName = aliasProjectName(raw || "Session");
-  const focused = State.focusId === CLAUDE_ID;
+  let cwd = payload.cwd ?? "";
+  if (!cwd && Array.isArray(payload.workspacePaths) && payload.workspacePaths.length > 0) {
+    cwd = payload.workspacePaths[0];
+  }
 
-  /** Alerts force the island open; work events only reveal the compact island. */
-  const surface = (view: Parameters<Island["alert"]>[0], isAlert: boolean) => {
-    if (State.mode === "expanded") {
-      if (isAlert) island.setView(view);
-    } else if (isAlert) {
-      island.alert(view);
-    } else if (State.mode === "hidden") {
-      island.reveal();
-    }
-  };
+  let source: AgentSource = "claudeCode";
+  if (payload.agent_source) {
+    source = payload.agent_source;
+  } else if (payload.conversationId || payload.toolCall) {
+    source = "agy";
+  } else if (
+    payload.session_id?.toLowerCase().includes("codex") ||
+    cwd.toLowerCase().includes(".codex")
+  ) {
+    source = "codex";
+  } else if (
+    payload.session_id?.toLowerCase().includes("hermes") ||
+    cwd.toLowerCase().includes(".hermes")
+  ) {
+    source = "hermes";
+  } else if (
+    payload.session_id?.toLowerCase().includes("opencode") ||
+    cwd.toLowerCase().includes("opencode")
+  ) {
+    source = "opencode";
+  }
+
+  const sessionId = payload.session_id || payload.conversationId || "default";
+  const session = State.getOrCreateSession(sessionId, cwd, source);
+  const taskId = session.id;
+
+  let tool = payload.tool_name ?? "";
+  let input = payload.tool_input ?? {};
+  if (!tool && payload.toolCall?.name) {
+    tool = payload.toolCall.name;
+    input = payload.toolCall.args ?? {};
+  }
+  if (!tool) tool = "Tool";
 
   switch (name) {
     case "SessionStart":
-      upsert(projectName, cwd);
-      surface("overview", false);
+      session.sessionCwd = cwd;
       Sound.play("work");
       break;
 
+    case "PreInvocation":
+      session.sessionCwd = cwd;
+      session.state = "thinking";
+      break;
+
+    case "PostInvocation":
+      session.state = "idle";
+      break;
+
     case "UserPromptSubmit": {
-      upsert(projectName, cwd);
-      State.updateTask(CLAUDE_ID, "thinking");
-      // The field is `prompt`; reading `message` meant this step was always blank.
+      session.sessionCwd = cwd;
+      session.state = "thinking";
       const asked = payload.prompt ?? payload.message;
-      if (asked) State.appendStep(CLAUDE_ID, asked.slice(0, 60));
-      surface("overview", false);
+      if (asked) State.appendStep(taskId, asked.slice(0, 80));
       break;
     }
 
     case "PreToolUse": {
-      upsert(projectName, cwd);
-      State.updateTask(CLAUDE_ID, "working");
-      const tool = payload.tool_name ?? "Tool";
-      State.appendStep(CLAUDE_ID, stepLabel(tool, payload.tool_input ?? {}));
-      surface("overview", false);
+      if (payload.request_id) {
+        queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input);
+      } else {
+        session.sessionCwd = cwd;
+        session.state = "working";
+        State.appendStep(taskId, stepLabel(tool, input));
+      }
       break;
     }
 
     case "PostToolUse":
-      State.updateTask(CLAUDE_ID, "working");
+      session.state = "working";
       break;
 
     case "PostToolUseFailure":
-      State.updateTask(CLAUDE_ID, "working");
-      State.appendStep(CLAUDE_ID, "⚠ failed");
+      session.state = "working";
+      State.appendStep(taskId, "⚠ failed");
       break;
 
     case "Notification": {
       const message = payload.message ?? "";
       const lower = message.toLowerCase();
       if (lower.includes("rate limit") || lower.includes("limite d")) {
-        State.updateTask(CLAUDE_ID, "ratelimit");
+        session.state = "ratelimit";
         Sound.play("rate");
+        island.toast("agents", 5);
       } else if (message.endsWith("?")) {
-        State.updateTask(CLAUDE_ID, "question");
-        State.appendStep(CLAUDE_ID, message);
+        session.state = "question";
+        State.appendStep(taskId, message);
+        island.toast("agents", 5);
       }
       break;
     }
 
     case "Stop":
-      State.updateTask(CLAUDE_ID, "finished");
-      if (payload.message) State.appendStep(CLAUDE_ID, payload.message.slice(0, 60));
+      session.state = "finished";
+      if (payload.message) State.appendStep(taskId, payload.message.slice(0, 80));
       Sound.play("finish");
-      if (focused) surface("finished", true);
-      else State.setPillBadge(CLAUDE_ID, "finished");
+      session.pillBadge = "finished";
+      if (State.mode === "expanded" && State.view === "agents") {
+        // stay on agents
+      } else {
+        island.toast("agents", 5);
+      }
       window.setTimeout(() => {
-        State.updateTask(CLAUDE_ID, "idle");
-        State.setPillBadge(CLAUDE_ID, null);
+        if (session.state === "finished") {
+          session.state = "idle";
+          session.pillBadge = null;
+          State.notify();
+        }
       }, 5200);
       break;
 
     case "StopFailure":
-      State.updateTask(CLAUDE_ID, "error");
+      session.state = "error";
       Sound.play("error");
-      if (focused) surface("error", true);
-      else State.setPillBadge(CLAUDE_ID, "error");
+      session.pillBadge = "error";
+      island.alert("error", true);
       break;
 
     case "SessionEnd":
-      State.updateTask(CLAUDE_ID, "idle");
-      clearSession();
+      session.state = "idle";
+      window.setTimeout(() => {
+        State.removeSession(sessionId);
+      }, 3000);
       break;
 
     case "SubagentStart":
-      State.appendStep(CLAUDE_ID, "+ subagent");
+      State.appendStep(taskId, "+ subagent");
       break;
 
     case "SubagentStop":
-      State.appendStep(CLAUDE_ID, "• subagent done");
+      State.appendStep(taskId, "• subagent done");
       break;
 
     case "PermissionRequest": {
-      const requestId = payload.request_id ?? "";
-      // One card, one request. A second one must never quietly replace the first
-      // — that would leave a human staring at request B while request A waits for
-      // a decision nobody can give. Hand it straight back to the terminal.
-      if (State.pendingApproval && State.pendingApproval.requestId !== requestId) {
-        if (requestId) void Bridge.approvalDecline(requestId);
-        break;
+      if (payload.request_id) {
+        queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input);
       }
-      upsert(projectName, cwd);
-      if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
-      const tool = payload.tool_name ?? "Tool";
-      const input = payload.tool_input ?? {};
-      State.pendingApproval = {
-        requestId,
-        sessionId: payload.session_id ?? "",
-        tool,
-        command: approvalTarget(tool, input),
-      };
-      // The relay's short ack window closes in 800 ms; everything below this
-      // line is synchronous, so the card really is up by the time it lands.
-      if (requestId) void Bridge.approvalAck(requestId);
-      State.updateTask(CLAUDE_ID, "approval");
-      State.isPinned = true;
-      Sound.play("approval");
-      if (focused) {
-        island.alert("approval");
-      } else {
-        // Another agent holds the view, so the card would yank it away. The badge
-        // is the signal instead — but it has to be on screen for that to mean
-        // anything, hence the reveal. We just told the relay a human can act.
-        State.setPillBadge(CLAUDE_ID, "approval");
-        island.reveal();
-      }
-      // Coucou answers within 108 s or not at all; after that the terminal has
-      // taken over and the card would be lying.
-      pendingTimeout = window.setTimeout(() => {
-        pendingTimeout = null;
-        if (!State.pendingApproval) return;
-        State.pendingApproval = null;
-        State.isPinned = false;
-        island.dropPin();
-        State.updateTask(CLAUDE_ID, "working");
-        State.setPillBadge(CLAUDE_ID, null);
-        if (State.view === "approval") island.setView(State.defaultView());
-        State.notify();
-      }, 110_000);
       break;
     }
 
@@ -282,3 +317,4 @@ function handleHook(island: Island, payload: HookPayload) {
   }
   State.notify();
 }
+

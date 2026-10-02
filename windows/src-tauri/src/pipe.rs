@@ -125,7 +125,11 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         .unwrap_or_default()
         .to_string();
 
-    if event != "PermissionRequest" {
+    let is_agy_pre_tool = event == "PreToolUse"
+        && payload.get("agent_source").and_then(Value::as_str) == Some("agy");
+    let waits_for_answer = event == "PermissionRequest" || is_agy_pre_tool;
+
+    if !waits_for_answer {
         log::line(format!("hook {event}"));
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
         let _ = pipe.disconnect();

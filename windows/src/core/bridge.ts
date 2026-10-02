@@ -60,7 +60,7 @@ export const Bridge = {
   /** Writes to %LOCALAPPDATA%\Coucou\coucou.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),
 
-  // ── Claude Code hooks ─────────────────────────────────────────────────────
+  // ── Agent hooks (Claude, Codex, AGY) ───────────────────────────────────────
   hooksStatus: () => call<HookStatus>("hooks_status"),
   /** Diff to show before anything is written. `install: false` previews removal. */
   hooksPreview: (install: boolean) => callOrThrow<HookPreview>("hooks_preview", { install }),
@@ -71,7 +71,38 @@ export const Bridge = {
   hooksApply: (install: boolean, fingerprint: string) =>
     callOrThrow<string>("hooks_apply", { install, fingerprint }),
 
-  approvalDecision: (requestId: string, decision: "allow" | "deny") =>
+  agentHooksStatus: async (agent: "claude" | "codex" | "agy"): Promise<HookStatus | null> => {
+    try {
+      const res = await call<HookStatus>("agent_hooks_status", { agent });
+      if (res) return res;
+    } catch {
+      // fallback to legacy
+    }
+    if (agent === "claude") return call<HookStatus>("hooks_status");
+    return null;
+  },
+  agentHooksPreview: async (agent: "claude" | "codex" | "agy", install: boolean): Promise<HookPreview> => {
+    try {
+      return await callOrThrow<HookPreview>("agent_hooks_preview", { agent, install });
+    } catch (err) {
+      if (agent === "claude") return callOrThrow<HookPreview>("hooks_preview", { install });
+      throw err;
+    }
+  },
+  agentHooksApply: async (
+    agent: "claude" | "codex" | "agy",
+    install: boolean,
+    fingerprint: string,
+  ): Promise<string> => {
+    try {
+      return await callOrThrow<string>("agent_hooks_apply", { agent, install, fingerprint });
+    } catch (err) {
+      if (agent === "claude") return callOrThrow<string>("hooks_apply", { install, fingerprint });
+      throw err;
+    }
+  },
+
+  approvalDecision: (requestId: string, decision: "allow" | "deny" | "always") =>
     call<void>("approval_decision", { requestId, decision }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
@@ -146,7 +177,9 @@ export type BridgeEvent =
   | { name: "tray"; payload: string }
   | { name: "hook"; payload: Record<string, unknown> }
   | { name: "screen-changed"; payload: null }
-  | { name: "click-outside"; payload: null };
+  | { name: "click-outside"; payload: null }
+  | { name: "notch-hover"; payload: null }
+  | { name: "notch-click"; payload: null };
 
 export interface DragDropPayload {
   type: "enter" | "over" | "drop" | "leave";

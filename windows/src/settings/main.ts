@@ -41,37 +41,42 @@ function renderDiff(text: string): HTMLElement {
   return box;
 }
 
-// ── Claude Code section ───────────────────────────────────────────────────────
+// ── Multi-Agent Hooks section (Claude, Codex, AGY) ────────────────────────────
 
-function claudeSection(status: HookStatus): HTMLElement {
+function agentHooksSection(
+  agent: "claude" | "codex" | "agy",
+  title: string,
+  fileName: string,
+  descInstalled: string,
+  descNotInstalled: string,
+  status: HookStatus,
+): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
     {},
-    h("h2", {}, statusDot(status.installed), h("span", { text: "Claude Code" })),
+    h("h2", {}, statusDot(status.installed), h("span", { text: title })),
     body,
   );
 
   const rebuild = async () => {
-    const fresh = await Bridge.hooksStatus();
+    const fresh = await Bridge.agentHooksStatus(agent);
     if (fresh) Object.assign(status, fresh);
     clear(body);
     draw();
     const head = section.querySelector("h2")!;
     clear(head);
-    head.append(statusDot(status.installed), h("span", { text: "Claude Code" }));
+    head.append(statusDot(status.installed), h("span", { text: title }));
   };
 
   function draw() {
     body.append(
       h("div", {
         class: "hint",
-        text: status.installed
-          ? "Awuuu is hooked into your Claude Code and AGY sessions. Tool calls, questions and permission requests show up in the island, and you can approve or answer them with 1-click."
-          : "Install the hooks to see your Claude Code and AGY sessions in the island and approve permissions without leaving what you are doing.",
+        text: status.installed ? descInstalled : descNotInstalled,
       }),
       h("div", { class: "row" },
-        h("label", { text: "settings.json" }),
+        h("label", { text: fileName }),
         h("span", { class: "path", text: status.settingsPath }),
       ),
       h("div", { class: "row" },
@@ -94,8 +99,6 @@ function claudeSection(status: HookStatus): HTMLElement {
       text: status.installed ? "Reinstall hooks…" : "Install hooks…",
       onclick: () => showPreview(true),
     });
-    // Writing hook commands that point at a relay which isn't there would give
-    // every Claude Code session a broken hook and nothing to show for it.
     if (!status.hookReady) {
       install.disabled = true;
       install.title = "The relay isn't installed yet.";
@@ -114,10 +117,8 @@ function claudeSection(status: HookStatus): HTMLElement {
   async function showPreview(install: boolean) {
     let preview;
     try {
-      preview = await Bridge.hooksPreview(install);
+      preview = await Bridge.agentHooksPreview(agent, install);
     } catch (err) {
-      // An unreadable or invalid settings.json stops here rather than being
-      // treated as empty and written over.
       clear(body);
       body.append(
         h("div", { class: "notice err", text: String(err).replace(/^Error:\s*/, "") }),
@@ -134,8 +135,8 @@ function claudeSection(status: HookStatus): HTMLElement {
       h("div", {
         class: "hint",
         text: install
-          ? "This is exactly what will change in your settings.json. Your own hooks are left untouched."
-          : "This removes Awuuu's entries only. Your own hooks are left untouched.",
+          ? `This is exactly what will change in your ${fileName}. Your other hooks and configurations are left untouched.`
+          : `This removes Awuuu's entries only. Your other hooks and configurations are left untouched.`,
       }),
       renderDiff(preview.diff),
       h("div", { class: "row" },
@@ -149,11 +150,11 @@ function claudeSection(status: HookStatus): HTMLElement {
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
       try {
-        const backup = await Bridge.hooksApply(install, preview.fingerprint);
+        const backup = await Bridge.agentHooksApply(agent, install, preview.fingerprint);
         clear(body);
         body.append(h("div", {
           class: "notice ok",
-          text: `Done. Previous settings saved as ${backup}. Open a new Claude Code or AGY session to pick the hooks up.`,
+          text: `Done. Previous settings saved as ${backup}. Open a new session to pick the hooks up.`,
         }));
         window.setTimeout(() => void rebuild(), 2600);
       } catch (err) {
@@ -171,7 +172,105 @@ function claudeSection(status: HookStatus): HTMLElement {
   return section;
 }
 
+// ── Always Allowed Rules section ──────────────────────────────────────────────
+
+function alwaysAllowSection(): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
+  const section = h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Always Allowed Commands" })),
+    body,
+  );
+
+  function loadRules(): { commandPrefix: string; sessionId?: string }[] {
+    try {
+      const raw = localStorage.getItem("awuuu_always_allowed");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRules(rules: { commandPrefix: string; sessionId?: string }[]) {
+    try {
+      localStorage.setItem("awuuu_always_allowed", JSON.stringify(rules));
+    } catch {
+      // ignore
+    }
+  }
+
+  function render() {
+    clear(body);
+    const rules = loadRules();
+    if (rules.length === 0) {
+      body.append(
+        h("div", {
+          class: "hint",
+          text: "No permanent permissions saved. When you click 'Always allow' on an approval card, the command prefix will appear here so it can execute automatically without prompting.",
+        }),
+      );
+      return;
+    }
+
+    body.append(
+      h("div", {
+        class: "hint",
+        text: "The following command prefixes are automatically approved. You can revoke them individually or clear all.",
+      }),
+    );
+
+    const list = h("div", { style: "display:flex;flex-direction:column;gap:6px" });
+    rules.forEach((rule, idx) => {
+      const row = h(
+        "div",
+        {
+          class: "row",
+          style: "justify-content:space-between;background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:6px",
+        },
+        h(
+          "div",
+          { style: "display:flex;flex-direction:column;gap:2px;overflow:hidden" },
+          h("code", { style: "font-family:var(--mono);font-size:12px;color:var(--ink)", text: rule.commandPrefix }),
+          rule.sessionId
+            ? h("span", { class: "hint", style: "font-size:11px", text: `Session: ${rule.sessionId}` })
+            : h("span", { class: "hint", style: "font-size:11px", text: "Global (all sessions)" }),
+        ),
+        h("button", {
+          class: "danger",
+          style: "padding:3px 8px;font-size:11px",
+          text: "Revoke",
+          onclick: () => {
+            rules.splice(idx, 1);
+            saveRules(rules);
+            render();
+          },
+        }),
+      );
+      list.append(row);
+    });
+    body.append(list);
+
+    const clearAllRow = h("div", { class: "row", style: "justify-content:flex-end;margin-top:4px" });
+    clearAllRow.append(
+      h("button", {
+        class: "danger",
+        text: "Clear all rules",
+        onclick: () => {
+          saveRules([]);
+          render();
+        },
+      }),
+    );
+    body.append(clearAllRow);
+  }
+
+  render();
+  return section;
+}
+
 // ── Agent / API section ────────────────────────────────────────────────────────
+
 
 const MODELS: [string, string][] = [
   ["hermes-agent", "Hermes Agent (Local :8642)"],
@@ -262,6 +361,13 @@ function hermesSection(): HTMLElement {
       say("ok", models.length
         ? `Connected — ${models.length} model${models.length > 1 ? "s" : ""}: ${models.slice(0, 6).join(", ")}`
         : "Connected.");
+      if (models.length > 0) {
+        for (const m of models) {
+          if (!Array.from(model.options).some((opt) => opt.value === m)) {
+            model.append(h("option", { value: m, text: m }));
+          }
+        }
+      }
     } catch (err) {
       dot.style.background = "#f0645a";
       say("err", String(err).replace(/^Error:\s*/, ""));
@@ -281,18 +387,68 @@ function hermesSection(): HTMLElement {
     void save();
   });
 
+  const presetsRow = h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:2px" });
+  const presets: [string, string][] = [
+    ["Hermes Agent", "http://127.0.0.1:8642/v1/chat/completions"],
+    ["OpenCode", "http://127.0.0.1:4096/v1/chat/completions"],
+    ["Ollama", "http://127.0.0.1:11434/v1/chat/completions"],
+    ["LM Studio", "http://127.0.0.1:1234/v1/chat/completions"],
+    ["OpenRouter", "https://openrouter.ai/api/v1/chat/completions"],
+  ];
+  presetsRow.append(h("span", { class: "hint", style: "font-size:11px;align-self:center", text: "Presets:" }));
+  for (const [name, pUrl] of presets) {
+    presetsRow.append(h("button", {
+      text: name,
+      style: "padding:2px 8px;font-size:11px",
+      onclick: () => {
+        url.value = pUrl;
+      },
+    }));
+  }
+
   void refreshKey();
 
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Chat — Hermes Agent" })),
+    h("h2", {}, dot, h("span", { text: "Chat & Gateway — Hermes Agent" })),
     state,
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
     h("div", { class: "row" }, h("label", { text: "Server" }), url, saveUrl),
+    presetsRow,
     h("div", { class: "row" }, h("label", { text: "API key" }), key, saveKey, clearKey),
     h("div", { class: "row" }, test),
     feedback,
+  );
+}
+
+function apiAgentsOverviewSection(): HTMLElement {
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Hermes Agent & OpenCode Gateway" })),
+    h("div", {
+      class: "hint",
+      text: "Hermes Agent and OpenCode connect over local HTTP/REST endpoints. Awuuu automatically unifies them alongside your CLI sessions with real-time approvals, chat streaming, and dynamic island notifications.",
+    }),
+    h("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:10px" },
+      h("div", { class: "row", style: "justify-content:space-between;background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:6px" },
+        h("div", { style: "display:flex;align-items:center;gap:8px" },
+          h("span", { style: "display:inline-block;width:8px;height:8px;border-radius:50%;background:#8B5CF6" }),
+          h("strong", { text: "Hermes Agent" }),
+          h("span", { class: "hint", text: "Port :8642 — Streaming chat, autonomous tool calling, system notifications" }),
+        ),
+        h("span", { class: "badge", style: "font-size:11px;background:rgba(139,92,246,0.15);color:#8B5CF6;padding:2px 6px;border-radius:4px", text: "Built-in" }),
+      ),
+      h("div", { class: "row", style: "justify-content:space-between;background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:6px" },
+        h("div", { style: "display:flex;align-items:center;gap:8px" },
+          h("span", { style: "display:inline-block;width:8px;height:8px;border-radius:50%;background:#00D26A" }),
+          h("strong", { text: "OpenCode" }),
+          h("span", { class: "hint", text: "Port :4096 — Local SSE event stream, permission prompts, multi-session" }),
+        ),
+        h("span", { class: "badge", style: "font-size:11px;background:rgba(0,210,106,0.15);color:#00D26A;padding:2px 6px;border-radius:4px", text: "Auto-detect" }),
+      ),
+    ),
   );
 }
 
@@ -489,13 +645,14 @@ function generalSection(): HTMLElement {
 
   const hide = h("select", {}) as HTMLSelectElement;
   hide.append(
-    h("option", { value: "0", text: "Never — Awuuu stays on screen" }),
+    h("option", { value: "3", text: "After 3 seconds" }),
+    h("option", { value: "5", text: "After 5 seconds (default)" }),
     h("option", { value: "10", text: "After 10 seconds" }),
     h("option", { value: "60", text: "After 1 minute" }),
-    h("option", { value: "300", text: "After 5 minutes" }),
+    h("option", { value: "0", text: "Never — stays on screen" }),
   );
-  hide.value = String(settings.hideAfter ?? 0);
-  if (hide.value === "") hide.value = "0";
+  hide.value = String(settings.hideAfter ?? 5);
+  if (hide.value === "") hide.value = "5";
   hide.addEventListener("change", () => {
     settings.hideAfter = Number(hide.value);
     void save();
@@ -538,7 +695,7 @@ function generalSection(): HTMLElement {
       h("span", { class: "hint", text: "seconds after you leave the island" }),
     ),
     h("div", { class: "row" },
-      h("label", { text: "Hide when idle" }),
+      h("label", { text: "Notification auto-hide" }),
       hide,
     ),
     h("div", { class: "row" },
@@ -570,7 +727,13 @@ async function main() {
     settings = { ...settings, ...boot.settings };
     version = boot.version;
   }
-  const status = (await Bridge.hooksStatus()) ?? {
+  const claudeStatus = (await Bridge.agentHooksStatus("claude")) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
+  const codexStatus = (await Bridge.agentHooksStatus("codex")) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
+  const agyStatus = (await Bridge.agentHooksStatus("agy")) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
 
@@ -586,7 +749,32 @@ async function main() {
   clear(root);
   root.append(
     h("h1", {}, h("span", { text: "Awuuu" }), h("span", { class: "version", text: version })),
-    claudeSection(status),
+    agentHooksSection(
+      "claude",
+      "Claude Code",
+      "settings.json",
+      "Awuuu is hooked into your Claude Code sessions (~/.claude/settings.json). Tool calls and permission requests appear in the island.",
+      "Install the hooks to see your Claude Code sessions in the island and approve permissions with 1-click.",
+      claudeStatus,
+    ),
+    agentHooksSection(
+      "codex",
+      "Codex CLI",
+      "hooks.json",
+      "Awuuu is hooked into your Codex CLI sessions (~/.codex/hooks.json). Tool runs and permission requests appear in the island.",
+      "Install the hooks to see your Codex CLI sessions in the island and approve permissions with 1-click.",
+      codexStatus,
+    ),
+    agentHooksSection(
+      "agy",
+      "Antigravity CLI (AGY)",
+      "hooks.json",
+      "Awuuu is hooked into your Antigravity CLI sessions (~/.gemini/config/hooks.json). Tool executions appear in the island.",
+      "Install the hooks to see your Antigravity CLI sessions in the island and approve tool calls with 1-click.",
+      agyStatus,
+    ),
+    apiAgentsOverviewSection(),
+    alwaysAllowSection(),
     hermesSection(),
     apiSection(hasKey),
     integrationsSection(present),

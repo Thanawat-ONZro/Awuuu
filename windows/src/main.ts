@@ -52,6 +52,10 @@ async function main() {
 
   await onEvent<null>("screen-changed", () => void Bridge.reposition());
 
+  // Win32 cursor poll detected notch hover or click while collapsed
+  await onEvent<null>("notch-hover", () => island.onNotchHover());
+  await onEvent<null>("notch-click", () => island.onNotchClick());
+
   // A click anywhere off the island closes it; alerts waiting for an answer stay.
   await onEvent<null>("click-outside", () => {
     if (State.mode === "expanded" && !State.isPinned) island.collapse();
