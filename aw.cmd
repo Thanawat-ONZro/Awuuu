@@ -22,7 +22,7 @@ shift
 goto args_loop
 
 :start_awuuu
-tasklist /FI "IMAGENAME eq awuuu.exe" 2>nul | "%SystemRoot%\System32ind.exe" /I "awuuu.exe" >nul
+tasklist /FI "IMAGENAME eq awuuu.exe" 2>nul | "%SystemRoot%\System32\find.exe" /I "awuuu.exe" >nul
 if errorlevel 1 (
   if exist "%AWUUU_EXE%" (
     start "" "%AWUUU_EXE%"
