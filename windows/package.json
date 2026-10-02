@@ -11,7 +11,8 @@
     "tauri": "tauri",
     "predev": "cargo build --release -p awuuu-hook",
     "prebuild": "cargo build --release -p awuuu-hook",
-    "pack": "tauri build && node scripts/pack.mjs"
+    "pack": "node scripts/pack.mjs --build",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

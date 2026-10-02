@@ -94,6 +94,8 @@ export interface Settings {
   model: string;
   /** Seconds before the idle compact island hides; 0 = never. */
   hideAfter: number;
+  /** Automatic update checks; null = not asked yet. */
+  updateCheck: boolean | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -109,6 +111,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hooksInstalled: false,
   model: "hermes-agent",
   hideAfter: 0,
+  updateCheck: null,
 };
 
 type Listener = () => void;

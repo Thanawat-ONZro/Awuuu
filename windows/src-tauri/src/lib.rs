@@ -8,6 +8,7 @@ mod island;
 mod log;
 mod pipe;
 mod secrets;
+mod updater;
 mod settings;
 mod tray;
 mod win_user;
@@ -257,6 +258,12 @@ async fn chat_send(
     claude::send(&chat, &model, query, context, &on_delta).await
 }
 
+/// Settings → "Check for updates…" (the tray item calls the same thing).
+#[tauri::command]
+fn update_check_now(app: AppHandle) {
+    updater::check_now(&app);
+}
+
 /// Settings → "Test connection" for the Hermes gateway.
 #[tauri::command]
 async fn hermes_status() -> Result<Vec<String>, String> {
@@ -389,6 +396,7 @@ pub fn run() {
             let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
@@ -415,6 +423,7 @@ pub fn run() {
             chat_send,
             chat_reset,
             hermes_status,
+            update_check_now,
             ingest_file,
             secret_present,
             secret_set,
@@ -448,6 +457,7 @@ pub fn run() {
             hooks::ensure_hook_exe(&handle);
             pipe::start(handle.clone());
             integrations::start(handle.clone());
+            updater::start(handle.clone());
             Ok(())
         })
         .run(context)

@@ -24,6 +24,9 @@ pub struct Settings {
     /// hides; 0 = never hide. Missing in older settings.json → 0.
     #[serde(default)]
     pub hide_after: f64,
+    /// Automatic update checks: None = not asked yet (asked once at launch).
+    #[serde(default)]
+    pub update_check: Option<bool>,
 }
 
 fn default_model() -> String {
@@ -48,6 +51,7 @@ impl Default for Settings {
             hooks_installed: false,
             model: default_model(),
             hide_after: 0.0,
+            update_check: None,
         }
     }
 }

@@ -85,6 +85,8 @@ export const Bridge = {
   chatReset: () => call<void>("chat_reset"),
   /** Settings → "Test connection": model ids offered by the Hermes gateway. */
   hermesStatus: () => callOrThrow<string[]>("hermes_status"),
+  /** Check GitHub for a newer Awuuu now; Rust shows the result natively. */
+  updateCheckNow: () => call<void>("update_check_now"),
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
   /** Only ever tells you whether a key exists — never its value. */

@@ -2,11 +2,38 @@
 // windows/release/, with the name it ships under. Used by `npm run pack` and by
 // the release workflow, so both produce exactly the same file names.
 
-import { readFileSync, mkdirSync, copyFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// `--build` runs `tauri build` first. With the updater key at hand (env or
+// %USERPROFILE%/.tauri/awuuu-updater.key) the installer is signed for
+// self-update; without it (CI, another machine) signing is switched off so the
+// build still works — such an installer just can't be published as an update.
+if (process.argv.includes("--build")) {
+  const keyFile = join(homedir(), ".tauri", "awuuu-updater.key");
+  const env = { ...process.env };
+  const args = ["tauri", "build"];
+  // AWUUU_UNSIGNED=1 forces an unsigned build even where the key exists.
+  if (env.AWUUU_UNSIGNED === "1") delete env.TAURI_SIGNING_PRIVATE_KEY;
+  else if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(keyFile)) {
+    env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyFile, "utf8");
+    env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
+  }
+  if (!env.TAURI_SIGNING_PRIVATE_KEY) {
+    console.log("  No updater key — building unsigned (fine for testing, not for release).");
+    // Passed as a file: cmd.exe would mangle inline JSON.
+    const override = join(root, "target", "no-updater.conf.json");
+    mkdirSync(dirname(override), { recursive: true });
+    writeFileSync(override, JSON.stringify({ bundle: { createUpdaterArtifacts: false } }));
+    args.push("--config", override);
+  }
+  execFileSync("npx", args, { cwd: root, stdio: "inherit", env, shell: process.platform === "win32" });
+}
 const bundleDir = join(root, "target", "release", "bundle", "nsis");
 const outDir = join(root, "release");
 

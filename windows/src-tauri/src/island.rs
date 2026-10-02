@@ -275,6 +275,11 @@ fn current_screen_key(app: &AppHandle) -> Option<(i32, i32, u32, u32, u64)> {
 pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
     std::thread::spawn(move || {
         let mut was_down = false;
+        // Where the current left-button press began: outside the panel means it
+        // may be a file being dragged in; under the panel (window click-through at
+        // that moment) means it belongs to the app beneath until released.
+        let mut pressed_outside = false;
+        let mut pressed_under = false;
         // Remembered across wakes so a display change while hidden is noticed the
         // moment the island comes back.
         let mut last_screen: Option<(i32, i32, u32, u32, u64)> = None;
@@ -312,6 +317,21 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                     Ok(s) => (s.width as f64 / scale, s.height as f64 / scale),
                     Err(_) => (PANEL_W, PANEL_H),
                 };
+                let in_window = x >= 0.0 && x <= size.0 && y >= 0.0 && y <= size.1;
+
+                // Button edges are tracked before the "cursor didn't move" skip,
+                // so a press is seen where it happened, not after the first move.
+                // A press may be the start of a drag: make sure the drop target is
+                // ours before the file arrives.
+                let down = left_button_down();
+                if down && !was_down {
+                    pressed_outside = !in_window;
+                    pressed_under = in_window && gate.ignoring.load(Ordering::Relaxed);
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || unblock_webview_drops(&handle));
+                }
+                was_down = down;
+
                 if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 {
                     continue;
                 }
@@ -332,24 +352,16 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 // WindowFromPoint, so OLE finds no drop target and shows the "no
                 // drop" cursor. macOS has no such problem: AppKit delivers drags to
                 // registered destinations whatever ignoresMouseEvents says. So while
-                // a button is held anywhere over the panel, the whole panel takes
-                // the mouse, which also makes the drop zone as forgiving as the Mac's.
-                // A press may be the start of a drag: make sure the drop target is
-                // ours before the file arrives.
-                let down = left_button_down();
-                if down && !was_down {
-                    let handle = app.clone();
-                    let _ = app.run_on_main_thread(move || unblock_webview_drops(&handle));
-                }
-                was_down = down;
+                // a drag that *came from outside* is over the panel, the whole panel
+                // takes the mouse, which also makes the drop zone as forgiving as the
+                // Mac's. A press that starts under the panel — selecting text, moving
+                // a window, dragging a browser tab — is never captured: it belongs to
+                // whatever sits beneath the island.
+                let dragging = down && pressed_outside && in_window;
 
-                let dragging = down
-                    && x >= 0.0
-                    && x <= size.0
-                    && y >= 0.0
-                    && y <= size.1;
-
-                let accept = on_island || dragging;
+                // A press that went to the app beneath keeps going there, even if the
+                // drag then crosses the island.
+                let accept = !(down && pressed_under) && (on_island || dragging);
                 if gate.ignoring.load(Ordering::Relaxed) == accept {
                     gate.ignoring.store(!accept, Ordering::Relaxed);
                     let _ = win.set_ignore_cursor_events(!accept);

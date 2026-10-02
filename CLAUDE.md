@@ -57,6 +57,7 @@ Awuuu is a top-of-screen dynamic island AI dog companion for Windows: Awuuu the 
   - 0% CPU when hidden. `AudioContext` is suspended when idle.
   - Window must never steal focus from active applications (`WS_EX_NOACTIVATE`, `WS_EX_TOOLWINDOW`).
 - **No telemetry**: 100% local operation with your local Hermes Agent.
+- **Self-update** (`src-tauri/src/updater.rs`): the only call to a service the user didn't configure is the GitHub `latest.json` check, and it runs only after the user says yes (asked once at first launch, `updateCheck` setting) or clicks "Check for updates". Installers are minisign-signed; the private key lives in `%USERPROFILE%\.tauri\awuuu-updater.key`, never in git. Release with `npm run release -- <version> "notes"`.
 
 ## Credits & Attribution
 - Forked from Coucou by Louis Raillé (https://github.com/Louis-CFM/coucou) under MIT License.
