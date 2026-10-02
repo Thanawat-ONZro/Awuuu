@@ -20,16 +20,36 @@ export function timeAgo(value: unknown): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
-function header(color: string, name: string, kind: string, extra?: Node): HTMLElement {
+function header(color: string, name: string, kind: string, extra?: Node, id?: string): HTMLElement {
   const row = h("div", { class: "int-head" }, dot(color, 7), h("b", { text: name }), h("span", { text: kind }));
   if (extra) row.append(extra);
+  if (id) {
+    // Refresh now instead of waiting for the next poll.
+    const refresh = h("button", { class: "int-refresh", title: "Refresh" }, svg(ICONS.refresh, 9, { stroke: 2.2 }));
+    refresh.addEventListener("click", (e) => {
+      e.stopPropagation();
+      refresh.classList.add("spin");
+      void Bridge.refreshIntegration(id).finally(() => window.setTimeout(() => refresh.classList.remove("spin"), 400));
+    });
+    row.append(refresh);
+  }
   return row;
 }
 
-/** Highlighted first row + plain rows, the layout every list card shares. */
+/** Highlighted first row + plain rows, the layout every list card shares. A
+ * row with a link opens it in the browser. */
 function listRow(accent: string, first: boolean, ...children: Node[]): HTMLElement {
   const row = h("div", { class: first ? "int-row first" : "int-row" }, dot(accent, 5), ...children);
   if (first) row.style.background = `${accent}14`;
+  return row;
+}
+
+function linked(row: HTMLElement, url: string | null | undefined): HTMLElement {
+  if (url) {
+    row.classList.add("link");
+    row.title = url;
+    row.addEventListener("click", () => void Bridge.openUrl(url));
+  }
   return row;
 }
 
@@ -173,8 +193,8 @@ function resendCard(): HTMLElement {
       : undefined;
   const rows = h("div", { class: "int-rows" });
   emails.slice(0, 3).forEach((e, i) => {
-    const delivered = e.lastEvent === "delivered";
-    const accent = delivered ? "#22C55E" : "#F0645A";
+    const bad = e.lastEvent === "bounced" || e.lastEvent === "complained";
+    const accent = e.lastEvent === "delivered" ? "#22C55E" : bad ? "#F4505E" : "#F5A524";
     const to = Array.isArray(e.to) ? String(e.to[0] ?? "?") : "?";
     const short = to.split("@")[0];
     const cells: Node[] = [
@@ -182,9 +202,10 @@ function resendCard(): HTMLElement {
       h("span", { class: "int-ago", text: timeAgo(e.createdAt) }),
     ];
     if (i === 0 && e.subject) cells.push(h("span", { class: "int-sub", text: String(e.subject) }));
-    rows.append(listRow(accent, i === 0, ...cells));
+    if (bad) cells.push(h("span", { class: "int-tag bad", text: String(e.lastEvent) }));
+    rows.append(linked(listRow(accent, i === 0, ...cells), e.id ? `https://resend.com/emails/${e.id}` : null));
   });
-  return h("div", { class: "int-card" }, header("#22C55E", "Resend", "Emails", extra), rows);
+  return h("div", { class: "int-card" }, header("#22C55E", "Resend", "Emails", extra, "integration_resend"), rows);
 }
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
@@ -203,18 +224,20 @@ function githubCard(): HTMLElement {
   const d = get("integration_github");
   const stars = Number(d.totalStars ?? 0);
   const repos = Number(d.totalRepos ?? 0);
+  const login = typeof d.login === "string" ? d.login : "";
   const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-  return h(
+  const stats = h(
     "div",
-    { class: "int-card" },
-    header("#F0645A", "GitHub", "Overview"),
-    h(
-      "div",
-      { class: "int-stats" },
-      statRow(ICONS.star, "#F5A524", "Total stars", fmt(stars)),
-      statRow(ICONS.stack, "#7D7062", "Repositories", String(repos)),
-    ),
+    { class: "int-stats" },
+    linked(statRow(ICONS.star, "#F5A524", "Total stars", fmt(stars)), login ? `https://github.com/${login}?tab=repositories` : null),
+    linked(statRow(ICONS.stack, "#7D7062", "Repositories", String(repos)), login ? `https://github.com/${login}` : null),
+    linked(statRow(ICONS.bang, "#60A5FA", "Notifications", String(Number(d.notifications ?? 0))), "https://github.com/notifications"),
   );
+  const failing = Array.isArray(d.failingRuns) ? (d.failingRuns as Record<string, unknown>[]) : [];
+  for (const f of failing.slice(0, 2)) {
+    stats.append(linked(statRow(ICONS.xmark, "#F4505E", `${String(f.repo).split("/").pop()} · ${f.workflow}`, "failed"), String(f.url ?? "")));
+  }
+  return h("div", { class: "int-card" }, header("#F0645A", "GitHub", login || "Overview", undefined, "integration_github"), stats);
 }
 
 // ── Stripe ────────────────────────────────────────────────────────────────────
@@ -225,27 +248,30 @@ function stripeCard(): HTMLElement {
   const currency = String(d.currency ?? "eur").toUpperCase();
   const rows = h("div", { class: "int-rows tight" });
   for (const p of arr("integration_stripe", "payments")) {
-    const success = p.status === "succeeded";
-    const accent = success ? "#22C55E" : "#F0645A";
+    const failed = p.status === "failed";
+    const accent = failed ? "#F4505E" : p.status === "succeeded" ? "#22C55E" : "#F5A524";
     rows.append(
-      h(
-        "div",
-        { class: "int-row" },
-        dot(accent, 5),
-        h("span", { class: "int-name", text: String(p.description ?? "Payment") }),
-        h("span", {
-          class: "int-amount",
-          style: "color:#22c55e",
-          text: `+${(Number(p.amount ?? 0) / 100).toFixed(2)}`,
-        }),
-        h("span", { class: "int-ago", text: timeAgo(p.createdAt) }),
+      linked(
+        h(
+          "div",
+          { class: "int-row" },
+          dot(accent, 5),
+          h("span", { class: "int-name", text: String(p.description ?? "Payment") }),
+          h("span", {
+            class: "int-amount",
+            style: `color:${failed ? "#f4505e" : "#22c55e"}`,
+            text: failed ? "failed" : `+${(Number(p.amount ?? 0) / 100).toFixed(2)}`,
+          }),
+          h("span", { class: "int-ago", text: timeAgo(p.createdAt) }),
+        ),
+        p.id ? `https://dashboard.stripe.com/payments/${p.id}` : null,
       ),
     );
   }
   return h(
     "div",
     { class: "int-card" },
-    header("#0570DE", "Stripe", "Payments"),
+    header("#0570DE", "Stripe", "Payments", undefined, "integration_stripe"),
     h("div", { class: "int-balance" }, h("span", { text: balance }), h("i", { text: currency })),
     rows,
   );
@@ -273,7 +299,7 @@ function notionCard(): HTMLElement {
       ),
     );
   }
-  return h("div", { class: "int-card" }, header("#E8E8E8", "Notion", "Recent"), rows);
+  return h("div", { class: "int-card" }, header("#E8E8E8", "Notion", "Recent", undefined, "integration_notion"), rows);
 }
 
 // ── Cal.com ───────────────────────────────────────────────────────────────────
@@ -290,17 +316,23 @@ function calcomCard(): HTMLElement {
     const when = new Date(String(b.start));
     const day = when.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
     const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const meeting = typeof b.meetingUrl === "string" && /^https?:/.test(b.meetingUrl) ? b.meetingUrl : null;
+    const page = b.uid ? `https://app.cal.com/booking/${b.uid}` : null;
     rows.append(
-      h(
-        "div",
-        { class: "int-row" },
-        dot("#C9956A", 4),
-        h("span", { class: "int-time", text: `${day} ${time}` }),
-        h("span", { class: "int-name", text: String(b.title ?? "Meeting") }),
+      linked(
+        h(
+          "div",
+          { class: "int-row" },
+          dot("#C9956A", 4),
+          h("span", { class: "int-time", text: `${day} ${time}` }),
+          h("span", { class: "int-name", text: String(b.title ?? "Meeting") }),
+          b.attendeeName ? h("span", { class: "int-ago", text: String(b.attendeeName) }) : null,
+        ),
+        meeting ?? page,
       ),
     );
   }
-  return h("div", { class: "int-card" }, header("#C9956A", "Cal.com", "Schedule"), rows);
+  return h("div", { class: "int-card" }, header("#C9956A", "Cal.com", "Schedule", undefined, "integration_calcom"), rows);
 }
 
 // ── n8n ───────────────────────────────────────────────────────────────────────

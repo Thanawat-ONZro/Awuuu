@@ -1197,6 +1197,50 @@ input[type="range"]::-webkit-slider-thumb {
   padding-right: 24px;
 }
 
+.int-refresh {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim-3);
+  display: grid;
+  place-items: center;
+  cursor: default;
+}
+
+.int-refresh:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+.int-refresh.spin svg {
+  animation: int-spin 0.6s linear infinite;
+}
+
+@keyframes int-spin {
+  to { transform: rotate(360deg); }
+}
+
+.int-row.link,
+.int-stat.link {
+  cursor: pointer;
+}
+
+.int-row.link:hover,
+.int-stat.link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.int-tag.bad {
+  font: 600 9.5px var(--font);
+  color: #f4505e;
+  background: rgba(244, 80, 94, 0.14);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
 .int-head b {
   font: 600 12px var(--font);
   color: var(--ink);

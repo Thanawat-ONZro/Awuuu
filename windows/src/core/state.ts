@@ -423,10 +423,10 @@ class AppState {
     this.notify();
   }
 
-  /** loadIntegrationTasks() — load enabled integration pollers. */
+  /** loadIntegrationTasks() — a pill for every integration whose key is saved. */
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
-      const shouldLoad = this.settings.activeIntegrations.includes(proto.id);
+      const shouldLoad = this.integrations[proto.id]?.configured === true;
       const idx = this.tasks.findIndex((t) => t.id === proto.id);
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);

@@ -46,5 +46,6 @@ export const ICONS = {
   // doc.text
   doc: "M6.5 2.6h7l4 4v14.8h-11V2.6zm6.6 1.6v3.3h3.3l-3.3-3.3zM8.6 11h6.8v1.5H8.6V11zm0 3.4h6.8v1.5H8.6v-1.5z",
   // terminal prompt >_
+  refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   terminal: "M4 5h16c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2zm2 4.5l3.5 2.5L6 14.5l1.2 1.6L12 12 7.2 7.9 6 9.5zm6 6.5h6v-2h-6v2z",
 } as const;

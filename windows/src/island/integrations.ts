@@ -12,7 +12,7 @@ const KEY_FOR: Record<string, string> = {
   integration_stripe: "stripe-api-key",
   integration_github: "github-token",
   integration_vercel: "vercel-token",
-  integration_n8n: "n8n-api-key",
+  integration_n8n: "n8n-api-key", // and n8n-url, checked below
   integration_resend: "resend-api-key",
   integration_notion: "notion-api-key",
   integration_calcom: "calcom-api-key",
@@ -22,16 +22,20 @@ const clearTimers = new Map<string, number>();
 
 export function registerIntegrationHandlers(island: Island) {
   void onEvent<IntegrationUpdate>("integration", (update) => handle(island, update));
+  // A key saved or removed in Settings shows or hides the pill at once.
+  void onEvent<null>("secrets-changed", () => void refreshConfigured());
   void refreshConfigured();
 }
 
 /** Asks Rust which keys exist so the idle cards can say so. */
 export async function refreshConfigured() {
   for (const [id, key] of Object.entries(KEY_FOR)) {
-    const present = (await Bridge.secretPresent(key)) ?? false;
+    let present = (await Bridge.secretPresent(key)) ?? false;
+    if (id === "integration_n8n") present = present && ((await Bridge.secretPresent("n8n-url")) ?? false);
     const info = State.integrations[id] ?? { data: {}, error: null, loaded: false, configured: false };
     State.integrations[id] = { ...info, configured: present };
   }
+  State.loadIntegrationTasks();
   State.notify();
 }
 

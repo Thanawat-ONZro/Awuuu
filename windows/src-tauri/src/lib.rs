@@ -438,13 +438,24 @@ fn secret_present(key: String) -> bool {
 }
 
 #[tauri::command]
-fn secret_set(key: String, value: String) -> Result<(), String> {
-    secrets::set(&key, &value)
+fn secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    secrets::set(&key, &value)?;
+    // The island shows or hides the integration's pill at once.
+    let _ = app.emit("secrets-changed", ());
+    Ok(())
 }
 
 #[tauri::command]
-fn secret_clear(key: String) -> Result<(), String> {
-    secrets::clear(&key)
+fn secret_clear(app: AppHandle, key: String) -> Result<(), String> {
+    secrets::clear(&key)?;
+    let _ = app.emit("secrets-changed", ());
+    Ok(())
+}
+
+/// Settings → Test on an integration.
+#[tauri::command]
+async fn integration_test(id: String) -> Result<String, String> {
+    integrations::test(&id).await
 }
 
 /// Opens the configured n8n instance — the URL lives in the Credential Manager.
@@ -587,6 +598,7 @@ pub fn run() {
             secret_set,
             secret_clear,
             refresh_integration,
+            integration_test,
             open_n8n,
             open_settings_window,
             set_paused,

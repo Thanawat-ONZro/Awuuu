@@ -643,31 +643,27 @@ const INTEGRATIONS: IntegrationDef[] = [
     fields: [{ key: "calcom-api-key", label: "API key", placeholder: "cal_…", secret: true }] },
 ];
 
-const MAX_ACTIVE = 4;
 
 function integrationsSection(present: Record<string, boolean>): HTMLElement {
-  const note = h("div", { class: "hint" });
+  const note = h("div", {
+    class: "hint",
+    text: "An integration turns on as soon as its key is saved, and off when you remove it. Keys are stored in the Windows Credential Manager, never on disk.",
+  });
   const list = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
 
-  function updateNote() {
-    const used = settings.activeIntegrations.length;
-    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Awuuu — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
-  }
-
   for (const def of INTEGRATIONS) {
-    const active = settings.activeIntegrations.includes(def.id);
-    const sw = h("button", { class: active ? "switch on" : "switch" });
-    sw.addEventListener("click", () => {
-      const on = settings.activeIntegrations.includes(def.id);
-      if (on) {
-        settings.activeIntegrations = settings.activeIntegrations.filter((x) => x !== def.id);
-      } else {
-        if (settings.activeIntegrations.length >= MAX_ACTIVE) return;
-        settings.activeIntegrations = [...settings.activeIntegrations, def.id];
+    const result = h("span", { class: "hint", style: "font-size:11.5px" });
+    const test = h("button", { text: "Test" });
+    test.addEventListener("click", async () => {
+      result.textContent = "Testing…";
+      result.style.color = "";
+      try {
+        result.textContent = await Bridge.integrationTest(def.id);
+        result.style.color = "#22c55e";
+      } catch (err) {
+        result.textContent = String(err).replace(/^Error:\s*/, "");
+        result.style.color = "#f4505e";
       }
-      sw.classList.toggle("on", !on);
-      updateNote();
-      void save();
     });
 
     const rows = h("div", { style: "display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-width:0" });
@@ -686,6 +682,7 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
         try {
           await Bridge.secretSet(field.key, value);
           present[field.key] = value.length > 0;
+          if (value) test.click();
           input.value = "";
           input.placeholder = value ? "••••••••  (stored)" : field.placeholder;
           dotEl.style.background = value ? "#22c55e" : "#f4505e";
@@ -704,16 +701,17 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
     list.append(
       h("div", { style: "display:flex;gap:12px;align-items:flex-start" },
         h("div", { style: "display:flex;align-items:center;gap:8px;min-width:132px;padding-top:4px" },
-          sw,
           h("i", { class: "dot", style: `background:${def.color}` }),
           h("span", { style: "font-size:12.5px", text: def.name }),
         ),
-        rows,
+        h("div", { style: "display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-width:0" },
+          rows,
+          h("div", { class: "row" }, test, result),
+        ),
       ),
     );
   }
 
-  updateNote();
   return h("section", {}, h("h2", {}, h("span", { text: "Integrations" })), note, list);
 }
 

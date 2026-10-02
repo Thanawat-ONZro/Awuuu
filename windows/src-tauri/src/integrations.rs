@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 use crate::island::WINDOW_LABEL;
 use crate::log;
@@ -71,15 +71,92 @@ pub fn start(app: AppHandle) {
     spawn(app, "integration_notion", 9, 300, poll_notion);
 }
 
-/// True when the user has this integration switched on in settings.
-fn enabled(app: &AppHandle, id: &str) -> bool {
-    app.try_state::<crate::Shared>()
-        .map(|shared| {
-            let settings = shared.settings.lock().unwrap();
-            settings.active_integrations.iter().any(|x| x == id)
-        })
-        .unwrap_or(false)
+/// An integration is on when its key is saved (n8n needs its URL too). There
+/// is no separate switch: saving a key is the opt-in, removing it the opt-out.
+pub fn configured(id: &str) -> bool {
+    match id {
+        "integration_n8n" => secrets::present("n8n-url") && secrets::present("n8n-api-key"),
+        _ => key_for(id).is_some_and(secrets::present),
+    }
 }
+
+fn key_for(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "integration_stripe" => "stripe-api-key",
+        "integration_github" => "github-token",
+        "integration_vercel" => "vercel-token",
+        "integration_resend" => "resend-api-key",
+        "integration_notion" => "notion-api-key",
+        "integration_calcom" => "calcom-api-key",
+        "integration_n8n" => "n8n-api-key",
+        _ => return None,
+    })
+}
+
+fn enabled(_app: &AppHandle, id: &str) -> bool {
+    configured(id)
+}
+
+/// The service could not be reached at all: the card says so instead of
+/// silently keeping old data.
+fn net_error(app: &AppHandle, id: &'static str, e: &reqwest::Error) {
+    let why = if e.is_timeout() { "timed out".to_string() } else { "no connection".to_string() };
+    emit(app, IntegrationUpdate { id, data: json!({}), error: Some(format!("Network error: {why}")), event: None });
+}
+
+/// Settings → Test: the integration's first request, with the reason it
+/// failed in plain words.
+pub async fn test(id: &str) -> Result<String, String> {
+    let http = client();
+    let req = match id {
+        "integration_stripe" => {
+            let key = secrets::get("stripe-api-key").ok_or("No key saved.")?;
+            let auth = format!("Basic {}", crate::claude::base64_for(format!("{key}:").as_bytes()));
+            http.get("https://api.stripe.com/v1/balance").header("Authorization", auth)
+        }
+        "integration_github" => http
+            .get("https://api.github.com/user")
+            .bearer_auth(secrets::get("github-token").ok_or("No token saved.")?)
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "Awuuu"),
+        "integration_vercel" => http
+            .get("https://api.vercel.com/v2/user")
+            .bearer_auth(secrets::get("vercel-token").ok_or("No token saved.")?),
+        "integration_resend" => http
+            .get("https://api.resend.com/domains")
+            .bearer_auth(secrets::get("resend-api-key").ok_or("No key saved.")?),
+        "integration_notion" => http
+            .get("https://api.notion.com/v1/users/me")
+            .bearer_auth(secrets::get("notion-api-key").ok_or("No key saved.")?)
+            .header("Notion-Version", "2022-06-28"),
+        "integration_calcom" => http
+            .get("https://api.cal.com/v2/me")
+            .bearer_auth(secrets::get("calcom-api-key").ok_or("No key saved.")?)
+            .header("cal-api-version", "2024-08-13"),
+        "integration_n8n" => {
+            let base = secrets::get("n8n-url").ok_or("No n8n URL saved.")?;
+            let key = secrets::get("n8n-api-key").ok_or("No n8n API key saved.")?;
+            http.get(format!("{}/api/v1/workflows?limit=1", base.trim_end_matches('/'))).header("X-N8N-API-KEY", key)
+        }
+        _ => return Err("Unknown integration.".into()),
+    };
+    let res = req.send().await.map_err(|e| {
+        if e.is_timeout() { "Network error: timed out.".to_string() } else { format!("Network error: {e}") }
+    })?;
+    let code = res.status().as_u16();
+    match code {
+        200..=299 => Ok("Connected.".into()),
+        401 => Err("Invalid key (401) — check that you pasted the whole key.".into()),
+        403 => Err("The key works but lacks permission (403).".into()),
+        404 => Err("Not found (404) — check the URL.".into()),
+        429 => Err("Rate limited (429) — try again in a minute.".into()),
+        _ => Err(format!("The service answered {code}.")),
+    }
+}
+
+/// Bookings already announced as starting soon.
+static ANNOUNCED: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
 
 fn spawn<F, Fut>(app: AppHandle, id: &'static str, delay_secs: u64, every_secs: u64, poll: F)
 where
@@ -201,7 +278,13 @@ async fn poll_stripe(app: AppHandle) {
         .header("Authorization", &auth)
         .send()
         .await;
-    let Ok(response) = charges else { return };
+    let response = match charges {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_stripe", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         return;
     }
@@ -249,7 +332,13 @@ async fn poll_stripe(app: AppHandle) {
                 let cents = payments[0].get("amount").and_then(Value::as_i64).unwrap_or(0);
                 format!("{:.2}", cents as f64 / 100.0)
             });
-        Some(IntegrationEvent { success: true, label, detail: None })
+        // A failed charge is news too — in red.
+        let failed = payments[0].get("status").and_then(Value::as_str) == Some("failed");
+        Some(IntegrationEvent {
+            success: !failed,
+            label: if failed { format!("Payment failed · {label}") } else { label },
+            detail: None,
+        })
     } else {
         None
     };
@@ -275,7 +364,13 @@ async fn poll_github(app: AppHandle) {
         .header("User-Agent", "Awuuu")
         .send()
         .await;
-    let Ok(response) = user else { return };
+    let response = match user {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_github", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         emit(&app, IntegrationUpdate {
             id: "integration_github",
@@ -300,26 +395,61 @@ async fn poll_github(app: AppHandle) {
         .header("User-Agent", "Awuuu")
         .send()
         .await;
-    let stars: i64 = match repos {
-        Ok(r) if r.status().is_success() => r
-            .json::<Value>()
-            .await
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .map(|list| {
-                list.iter()
-                    .filter_map(|r| r.get("stargazers_count").and_then(Value::as_i64))
-                    .sum()
-            })
-            .unwrap_or(0),
+    let repo_list: Vec<Value> = match repos {
+        Ok(r) if r.status().is_success() => r.json::<Value>().await.ok().and_then(|v| v.as_array().cloned()).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let stars: i64 = repo_list.iter().filter_map(|r| r.get("stargazers_count").and_then(Value::as_i64)).sum();
+    let login = json.get("login").and_then(Value::as_str).unwrap_or("").to_string();
+
+    let gh = |url: String| {
+        http.get(url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "Awuuu")
+    };
+    // Unread notifications (needs the notifications scope; quietly 0 without it).
+    let notifications = match gh("https://api.github.com/notifications?per_page=50".into()).send().await {
+        Ok(r) if r.status().is_success() => r.json::<Value>().await.ok().and_then(|v| v.as_array().map(Vec::len)).unwrap_or(0),
         _ => 0,
     };
 
+    // The latest Actions run of the three most recently pushed repos: a new
+    // failure is an event.
+    let mut event = None;
+    let mut failing: Vec<Value> = Vec::new();
+    for repo in repo_list.iter().take(3) {
+        let Some(full) = repo.get("full_name").and_then(Value::as_str) else { continue };
+        let Ok(r) = gh(format!("https://api.github.com/repos/{full}/actions/runs?per_page=1")).send().await else { continue };
+        if !r.status().is_success() {
+            continue;
+        }
+        let Ok(v) = r.json::<Value>().await else { continue };
+        let Some(run) = v.get("workflow_runs").and_then(Value::as_array).and_then(|a| a.first()) else { continue };
+        if run.get("conclusion").and_then(Value::as_str) != Some("failure") {
+            continue;
+        }
+        let id = run.get("id").map(|v| v.to_string()).unwrap_or_default();
+        let name = run.get("name").and_then(Value::as_str).unwrap_or("workflow");
+        let url = run.get("html_url").and_then(Value::as_str).unwrap_or("");
+        failing.push(json!({ "repo": full, "workflow": name, "url": url }));
+        let mut seen = ANNOUNCED.lock().unwrap();
+        if seen.insert(format!("gh-run-{id}")) && event.is_none() {
+            event = Some(IntegrationEvent { success: false, label: format!("{full}: {name} failed"), detail: None });
+        }
+    }
+
     emit(&app, IntegrationUpdate {
         id: "integration_github",
-        data: json!({ "totalRepos": public + private, "totalStars": stars }),
+        data: json!({
+            "totalRepos": public + private,
+            "totalStars": stars,
+            "login": login,
+            "notifications": notifications,
+            "failingRuns": failing,
+        }),
         error: None,
-        event: None,
+        event,
     });
 }
 
@@ -333,7 +463,13 @@ async fn poll_vercel(app: AppHandle) {
         .header("Accept", "application/json")
         .send()
         .await;
-    let Ok(response) = response else { return };
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_vercel", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         emit(&app, IntegrationUpdate {
             id: "integration_vercel",
@@ -405,7 +541,13 @@ async fn poll_resend(app: AppHandle) {
         .header("Accept", "application/json")
         .send()
         .await;
-    let Ok(response) = response else { return };
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_resend", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         emit(&app, IntegrationUpdate {
             id: "integration_resend",
@@ -444,11 +586,29 @@ async fn poll_resend(app: AppHandle) {
         })
         .unwrap_or_default();
 
+    // A bounce or a spam complaint on a recent email is worth a red badge.
+    let mut event = None;
+    for e in &emails {
+        let last = e.get("lastEvent").and_then(Value::as_str).unwrap_or("");
+        if last != "bounced" && last != "complained" {
+            continue;
+        }
+        let id = e.get("id").and_then(Value::as_str).unwrap_or("");
+        if ANNOUNCED.lock().unwrap().insert(format!("resend-{id}-{last}")) && event.is_none() {
+            let subject = e.get("subject").and_then(Value::as_str).unwrap_or("email");
+            event = Some(IntegrationEvent {
+                success: false,
+                label: format!("{} · {subject}", if last == "bounced" { "Bounced" } else { "Marked as spam" }),
+                detail: None,
+            });
+        }
+    }
+
     emit(&app, IntegrationUpdate {
         id: "integration_resend",
         data: json!({ "emails": emails, "total": total }),
         error: None,
-        event: None,
+        event,
     });
 }
 
@@ -467,7 +627,13 @@ async fn poll_notion(app: AppHandle) {
         }))
         .send()
         .await;
-    let Ok(response) = response else { return };
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_notion", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         emit(&app, IntegrationUpdate {
             id: "integration_notion",
@@ -554,7 +720,13 @@ async fn poll_calcom(app: AppHandle) {
         .header("cal-api-version", "2024-08-13")
         .send()
         .await;
-    let Ok(response) = response else { return };
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            net_error(&app, "integration_calcom", &e);
+            return;
+        }
+    };
     if !response.status().is_success() {
         emit(&app, IntegrationUpdate {
             id: "integration_calcom",
@@ -584,6 +756,8 @@ async fn poll_calcom(app: AppHandle) {
                         .or_else(|| b.get("description").and_then(Value::as_str))
                         .filter(|s| !s.is_empty());
                     Some(json!({
+                        "uid": b.get("uid").and_then(Value::as_str),
+                        "meetingUrl": b.get("meetingUrl").or_else(|| b.get("location")).and_then(Value::as_str),
                         "id": b.get("id").map(|v| v.to_string()).unwrap_or_default(),
                         "title": b.get("title").and_then(Value::as_str).unwrap_or("Meeting"),
                         "start": start,
@@ -597,11 +771,35 @@ async fn poll_calcom(app: AppHandle) {
         })
         .unwrap_or_default();
 
+    // "Starting in 10 minutes": once per booking, when it is that close.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let mut event = None;
+    for b in &bookings {
+        let Some(start) = b.get("start").and_then(Value::as_str).and_then(parse_rfc3339) else { continue };
+        let mins = (start - now) / 60;
+        if !(0..=10).contains(&mins) {
+            continue;
+        }
+        let id = b.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+        if ANNOUNCED.lock().unwrap().insert(format!("cal-{id}")) && event.is_none() {
+            let title = b.get("title").and_then(Value::as_str).unwrap_or("Meeting");
+            let who = b.get("attendeeName").and_then(Value::as_str);
+            event = Some(IntegrationEvent {
+                success: true,
+                label: format!("Starting in {mins} min · {title}"),
+                detail: who.map(|w| format!("with {w}")),
+            });
+        }
+    }
+
     emit(&app, IntegrationUpdate {
         id: "integration_calcom",
         data: json!({ "bookings": bookings }),
         error: None,
-        event: None,
+        event,
     });
 }
 
@@ -761,5 +959,48 @@ fn fmt_value(v: &Value) -> String {
         Value::Array(a) => format!("[{}]", a.len()),
         Value::Object(_) => "{…}".into(),
         other => other.to_string(),
+    }
+}
+
+/// Seconds since the epoch for an RFC 3339 time ("2026-10-03T09:30:00Z",
+/// "...+07:00", "...000Z"). Just enough for Cal.com's start times.
+fn parse_rfc3339(s: &str) -> Option<i64> {
+    let b = s.as_bytes();
+    if b.len() < 19 {
+        return None;
+    }
+    let num = |a: usize, n: usize| s.get(a..a + n)?.parse::<i64>().ok();
+    let (y, mo, d, h, mi, se) = (num(0, 4)?, num(5, 2)?, num(8, 2)?, num(11, 2)?, num(14, 2)?, num(17, 2)?);
+    // Days from civil (Howard Hinnant).
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let mut t = days * 86400 + h * 3600 + mi * 60 + se;
+    // Offset: after the seconds and an optional fraction.
+    let rest = &s[19..];
+    let rest = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    if let Some(sign) = rest.chars().next().filter(|c| *c == '+' || *c == '-') {
+        let oh = rest.get(1..3)?.parse::<i64>().ok()?;
+        let om = rest.get(4..6).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
+        let off = oh * 3600 + om * 60;
+        t -= if sign == '+' { off } else { -off };
+    }
+    Some(t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_rfc3339;
+
+    #[test]
+    fn rfc3339_times() {
+        assert_eq!(parse_rfc3339("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_rfc3339("2026-10-03T09:30:00.000Z"), Some(1_791_019_800));
+        assert_eq!(parse_rfc3339("2026-10-03T16:30:00+07:00"), Some(1_791_019_800));
+        assert_eq!(parse_rfc3339("bad"), None);
     }
 }
