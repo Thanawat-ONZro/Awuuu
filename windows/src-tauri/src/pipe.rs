@@ -13,9 +13,9 @@
 //   * whatever happens we drop the connection after the decision timeout, and
 //     the terminal takes over.
 //
-// What we write back is the bare word `allow` or `deny`. Turning that into the
-// documented hookSpecificOutput JSON is awuuu-hook's job, so the wire format
-// Claude Code expects lives in exactly one place.
+// What we write back is one JSON line, `{"decision":"allow|deny","answers":{…},
+// "reason":"…"}`. Turning that into the JSON each agent expects is awuuu-hook's
+// job, so those wire formats live in exactly one place.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -44,8 +44,8 @@ const MAX_PAYLOAD: usize = 1 << 20;
 pub enum Reply {
     /// The card is on screen and a human can act on it.
     Ack,
-    /// A human clicked: `allow` or `deny`.
-    Decision(String),
+    /// A human clicked: the JSON line for awuuu-hook.
+    Decision(Value),
     /// Nobody can act on it — paused, or another request already holds the card.
     Decline,
 }
@@ -159,12 +159,12 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
 }
 
 /// Two waits: a short one for "the card is up", then the long one for a human.
-async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<String> {
+async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<Value> {
     match tokio::time::timeout(ACK_TIMEOUT, rx.recv()).await {
         Ok(Some(Reply::Ack)) => {}
         // A click that beats the ack is still a click.
         Ok(Some(Reply::Decision(d))) => {
-            log::line(format!("hook id={id} answered {d}"));
+            log::line(format!("hook id={id} answered {}", d["decision"]));
             return Some(d);
         }
         Ok(Some(Reply::Decline)) => {
@@ -180,7 +180,7 @@ async fn wait_for_decision(id: &str, rx: &mut mpsc::Receiver<Reply>) -> Option<S
 
     match tokio::time::timeout(DECISION_TIMEOUT, rx.recv()).await {
         Ok(Some(Reply::Decision(d))) => {
-            log::line(format!("hook id={id} answered {d}"));
+            log::line(format!("hook id={id} answered {}", d["decision"]));
             Some(d)
         }
         Ok(Some(Reply::Decline)) => {
@@ -219,13 +219,33 @@ pub fn decline(app: &AppHandle, request_id: &str) {
     send(app, request_id, Reply::Decline, false);
 }
 
-/// Called by the island's Allow / Deny buttons. Only ever a bare word: turning
-/// it into Claude Code's JSON is awuuu-hook's job.
-pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
+/// Called by the island's Allow / Deny buttons and question cards. `answers`
+/// are keyed by question text.
+pub fn answer(
+    app: &AppHandle,
+    request_id: &str,
+    decision: &str,
+    answers: Option<Value>,
+    reason: Option<String>,
+) {
     let word = match decision {
         "allow" | "always" => "allow",
         _ => "deny",
     };
-    log::line(format!("decision id={request_id} {word}"));
-    send(app, request_id, Reply::Decision(word.to_string()), false);
+    log::line(format!(
+        "decision id={request_id} {word}{}",
+        if answers.is_some() { " with answers" } else { "" }
+    ));
+    send(app, request_id, Reply::Decision(reply_line(word, answers, reason)), false);
+}
+
+fn reply_line(word: &str, answers: Option<Value>, reason: Option<String>) -> Value {
+    let mut line = json!({ "decision": word });
+    if let Some(a) = answers.filter(|a| a.as_object().is_some_and(|m| !m.is_empty())) {
+        line["answers"] = a;
+    }
+    if let Some(r) = reason.filter(|r| !r.trim().is_empty()) {
+        line["reason"] = json!(r);
+    }
+    line
 }

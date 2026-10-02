@@ -3,7 +3,20 @@
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 
-export type AgentSource = "claudeCode" | "agy" | "hermes" | "opencode" | "n8n";
+export type AgentSource = "claude" | "agy" | "hermes" | "opencode" | "codex" | "integration";
+
+/** Display name, short tag and colour of each agent. */
+export const AGENT_INFO: Record<Exclude<AgentSource, "integration">, { name: string; short: string; color: string }> = {
+  claude: { name: "Claude Code", short: "Claude", color: "#F06543" },
+  agy: { name: "Antigravity CLI", short: "AGY", color: "#4285F4" },
+  hermes: { name: "Hermes Agent", short: "Hermes", color: "#8B5CF6" },
+  opencode: { name: "OpenCode", short: "OpenCode", color: "#00D26A" },
+  codex: { name: "Codex CLI", short: "Codex", color: "#10A37F" },
+};
+
+export function agentInfo(source: AgentSource) {
+  return source === "integration" ? AGENT_INFO.claude : AGENT_INFO[source];
+}
 export type PillBadge = "approval" | "finished" | "error";
 
 export interface AgentTask {
@@ -74,13 +87,13 @@ const task = (
 
 /** AgentTask.integrationAgents — pure integrations without static VS Code. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
-  task("integration_resend", "Resend", "#22C55E", "n8n"),
-  task("integration_n8n", "n8n", "#F29B38", "n8n"),
-  task("integration_vercel", "Vercel", "#7C5CFF", "n8n"),
-  task("integration_github", "GitHub", "#F0645A", "n8n"),
-  task("integration_notion", "Notion", "#8C8C8C", "n8n"),
-  task("integration_calcom", "Cal.com", "#C9956A", "n8n"),
-  task("integration_stripe", "Stripe", "#0570DE", "n8n"),
+  task("integration_resend", "Resend", "#22C55E", "integration"),
+  task("integration_n8n", "n8n", "#F29B38", "integration"),
+  task("integration_vercel", "Vercel", "#7C5CFF", "integration"),
+  task("integration_github", "GitHub", "#F0645A", "integration"),
+  task("integration_notion", "Notion", "#8C8C8C", "integration"),
+  task("integration_calcom", "Cal.com", "#C9956A", "integration"),
+  task("integration_stripe", "Stripe", "#0570DE", "integration"),
 ];
 
 
@@ -246,32 +259,16 @@ class AppState {
     this.notify();
   }
 
-  getOrCreateSession(sessionId: string, cwd: string, source: AgentSource = "claudeCode"): AgentTask {
+  getOrCreateSession(sessionId: string, cwd: string, source: AgentSource = "claude"): AgentTask {
     const id = `session_${sessionId}`;
-    const agentColor = (s: AgentSource) => {
-      switch (s) {
-        case "agy": return "#4285F4";
-        case "hermes": return "#8B5CF6";
-        case "opencode": return "#00D26A";
-        default: return "#F06543";
-      }
-    };
-    const defaultName = (s: AgentSource) => {
-      switch (s) {
-        case "agy": return "AGY";
-        case "hermes": return "Hermes";
-        case "opencode": return "OpenCode";
-        default: return "Claude";
-      }
-    };
 
     let existing = this.agentSessions.find((s) => s.id === id);
     if (!existing) {
       const cleaned = cwd.replace(/[\\/]+$/, "");
       const idx = Math.max(cleaned.lastIndexOf("\\"), cleaned.lastIndexOf("/"));
       const dirName = idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
-      const name = dirName || defaultName(source);
-      const color = agentColor(source);
+      const name = dirName || agentInfo(source).short;
+      const color = agentInfo(source).color;
       existing = {
         id,
         name,
@@ -289,9 +286,9 @@ class AppState {
       this.notify();
     } else {
       if (cwd && !existing.sessionCwd) existing.sessionCwd = cwd;
-      if (source && source !== "claudeCode" && existing.source === "claudeCode") {
+      if (source && existing.source !== source) {
         existing.source = source;
-        existing.color = agentColor(source);
+        existing.color = agentInfo(source).color;
       }
     }
     return existing;

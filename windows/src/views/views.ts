@@ -5,7 +5,8 @@
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
-import { State, type AgentTask } from "../core/state";
+import { State, agentInfo, type AgentTask } from "../core/state";
+import { Bridge } from "../core/bridge";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -21,7 +22,8 @@ export interface ViewActions {
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
-  decide(d: "allow" | "deny" | "always", answers?: Record<string, unknown>): void;
+  /** `answers` are keyed by question text. */
+  decide(d: "allow" | "deny" | "always", answers?: Record<string, string>): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -282,14 +284,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         leftBody.append(tickerBody);
       }
 
-      const agentLabel =
-        focused.source === "hermes"
-          ? "Hermes Agent"
-          : focused.source === "opencode"
-          ? "OpenCode"
-          : focused.source === "agy"
-          ? "Antigravity CLI"
-          : "Claude Code";
+      const agentLabel = agentInfo(focused.source).name;
 
       clear(who);
       who.append(
@@ -329,14 +324,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
 function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
   const label = task.name;
   const canvas = createMiniBot(task, 24);
-  const tagText =
-    task.source === "hermes"
-      ? "Hermes"
-      : task.source === "opencode"
-      ? "OpenCode"
-      : task.source === "agy"
-      ? "AGY"
-      : "Claude";
+  const tagText = agentInfo(task.source).short;
   const pill = h(
     "div",
     { class: "pill", onclick: () => actions.setFocus(task.id) },
@@ -406,11 +394,62 @@ function buildApproval(actions: ViewActions): ViewHost {
   const who = h("div");
   const code = h("div", {
     class: "code",
-    style: "white-space:pre-wrap;max-height:64px;overflow-y:auto;word-break:break-all;font-size:12px;line-height:1.4",
+    style: "white-space:pre-wrap;max-height:96px;overflow-y:auto;word-break:break-word;font-size:13px;line-height:1.45",
   });
-  const row = h("div", { class: "actions", style: "flex-wrap:wrap;gap:8px" });
-  const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row)));
+  const row = h("div", { class: "actions", style: "flex-wrap:wrap;gap:8px;max-height:120px;overflow-y:auto" });
+  const other = h("input", {
+    type: "text",
+    class: "chat-input",
+    placeholder: "Other answer…",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const otherSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
+  const otherBar = h("div", { class: "chat-bar", style: "margin-top:6px" }, other, otherSend);
+  const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row, otherBar)));
   let lastReqKey = "";
+
+  // An agent can ask several questions at once; they are answered one after
+  // another and sent back together.
+  let questionIndex = 0;
+  let answers: Record<string, string> = {};
+  let picked = new Set<string>();
+  let currentRequest = "";
+
+  // The island never takes focus on its own (WS_EX_NOACTIVATE): the text field
+  // asks for it while it is being typed in, and hands it back after.
+  other.addEventListener("mousedown", () => {
+    void Bridge.focusWindow(true);
+    window.setTimeout(() => other.focus(), 30);
+  });
+  other.addEventListener("blur", () => void Bridge.focusWindow(false));
+  other.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") answerOther();
+    if (e.key === "Escape") other.blur();
+  });
+  otherSend.addEventListener("click", () => answerOther());
+
+  function answerOther() {
+    const text = other.value.trim();
+    if (!text) return;
+    other.value = "";
+    other.blur();
+    answer(text);
+  }
+
+  function answer(text: string) {
+    const req = State.pendingApproval;
+    const q = req?.questions?.[questionIndex];
+    if (!req || !q) return;
+    answers[q.question] = text;
+    picked = new Set();
+    if (questionIndex + 1 < (req.questions?.length ?? 0)) {
+      questionIndex++;
+      lastReqKey = "";
+      State.notify();
+    } else {
+      actions.decide("allow", answers);
+    }
+  }
 
   return {
     el,
@@ -418,33 +457,54 @@ function buildApproval(actions: ViewActions): ViewHost {
       const req = State.pendingApproval;
       if (!req) return;
 
+      if (req.requestId !== currentRequest) {
+        currentRequest = req.requestId;
+        questionIndex = 0;
+        answers = {};
+        picked = new Set();
+      }
+
       const session = State.agentSessions.find((s) => s.id === `session_${req.sessionId}`);
       const qCount = State.approvalQueue.length > 1 ? ` (${State.approvalQueue.length} pending)` : "";
+      const questions = req.isQuestion ? (req.questions ?? []) : [];
+      const q = questions[questionIndex];
 
       clear(who);
-      if (req.isQuestion) {
-        who.append(agentWho(session ?? State.focusTask, `asks a question${qCount}`));
-        const qItem = req.questions?.[0];
-        code.textContent = qItem?.question || req.command || "Claude has a question:";
+      if (q) {
+        const step = questions.length > 1 ? ` ${questionIndex + 1}/${questions.length}` : "";
+        who.append(agentWho(session ?? State.focusTask, `asks a question${step}${qCount}`));
+        code.textContent = q.header ? `${q.header} — ${q.question}` : q.question;
       } else {
         who.append(agentWho(session ?? State.focusTask, `needs permission${qCount}`));
         code.textContent = req.command || req.tool || "…";
       }
 
-      const reqKey = `${req.requestId}:${req.isQuestion ? "q" : "p"}`;
+      const reqKey = `${req.requestId}:${q ? `q${questionIndex}:${[...picked].join("|")}` : "p"}`;
       if (lastReqKey === reqKey) return;
       lastReqKey = reqKey;
 
       clear(row);
-      if (req.isQuestion && req.questions && req.questions[0]?.options?.length) {
-        const options = req.questions[0].options;
-        for (const opt of options) {
-          row.append(
-            btn(opt.label, "primary", () => {
-              actions.decide("allow", { answer: opt.label });
-            })
-          );
+      otherBar.style.display = q ? "" : "none";
+      if (q) {
+        for (const opt of q.options ?? []) {
+          const on = picked.has(opt.label);
+          const b = btn(opt.label, q.multiSelect && !on ? "secondary" : "primary", () => {
+            if (!q.multiSelect) return answer(opt.label);
+            if (picked.has(opt.label)) picked.delete(opt.label);
+            else picked.add(opt.label);
+            State.notify();
+          });
+          if (opt.description) b.title = opt.description;
+          row.append(b);
         }
+        if (q.multiSelect) {
+          const done = btn(questionIndex + 1 < questions.length ? "Next" : "Send", "primary", () => {
+            if (picked.size) answer([...picked].join(", "));
+          });
+          if (!picked.size) done.style.opacity = "0.5";
+          row.append(done);
+        }
+        row.append(btn("Answer in terminal", "secondary", () => actions.decide("deny")));
       } else {
         row.append(
           btn("Deny", "secondary", () => actions.decide("deny"), "N"),
@@ -492,8 +552,9 @@ function buildError(actions: ViewActions): ViewHost {
     sync() {
       const task = State.focusTask;
       clear(who);
-      who.append(agentWho(task, task?.source === "n8n" ? "n8n" : "Claude Code"));
-      title.textContent = task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.";
+      const n8n = task?.id === "integration_n8n";
+      who.append(agentWho(task, n8n ? "n8n" : task ? agentInfo(task.source).name : "Agent"));
+      title.textContent = n8n ? "Workflow stopped." : "Session stopped on an error.";
       detail.textContent = task?.steps.at(-1) ?? "No detail available.";
     },
   };

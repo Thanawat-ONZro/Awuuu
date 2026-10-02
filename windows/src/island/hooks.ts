@@ -21,8 +21,10 @@ interface HookPayload {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   toolCall?: { name?: string; args?: Record<string, unknown> }; // AGY
-  agent_source?: AgentSource;
+  agent_source?: string;
 }
+
+const KNOWN_SOURCES = new Set<AgentSource>(["claude", "agy", "hermes", "opencode", "codex"]);
 
 function lastPathComponent(p: string): string {
   const cleaned = p.replace(/[\\/]+$/, "");
@@ -101,8 +103,9 @@ function queueApprovalRequest(
   const target = approvalTarget(tool, input);
   const ruleKey = `${tool}:${target}`;
 
-  // 1. Check Always-Allowed rule: auto-approve immediately
-  if (State.isAlwaysAllowed(ruleKey)) {
+  // 1. Check Always-Allowed rule: auto-approve immediately. A question always
+  // needs a human: allowing it blind would send back no answers.
+  if (tool !== "AskUserQuestion" && State.isAlwaysAllowed(ruleKey)) {
     void Bridge.log(`Auto-allowed always-rule: ${ruleKey}`);
     void Bridge.approvalAck(requestId);
     void Bridge.approvalDecision(requestId, "allow");
@@ -172,22 +175,11 @@ function handleHook(island: Island, payload: HookPayload) {
     cwd = payload.workspacePaths[0];
   }
 
-  let source: AgentSource = "claudeCode";
-  if (payload.agent_source) {
-    source = payload.agent_source;
-  } else if (payload.conversationId || payload.toolCall) {
-    source = "agy";
-  } else if (
-    payload.session_id?.toLowerCase().includes("hermes") ||
-    cwd.toLowerCase().includes(".hermes")
-  ) {
-    source = "hermes";
-  } else if (
-    payload.session_id?.toLowerCase().includes("opencode") ||
-    cwd.toLowerCase().includes("opencode")
-  ) {
-    source = "opencode";
-  }
+  // awuuu-hook always says who is calling (`--agent`, or Claude Code for
+  // installs that predate the flag).
+  const source: AgentSource = KNOWN_SOURCES.has(payload.agent_source as AgentSource)
+    ? (payload.agent_source as AgentSource)
+    : "claude";
 
   const sessionId = payload.session_id || payload.conversationId || "default";
   const session = State.getOrCreateSession(sessionId, cwd, source);

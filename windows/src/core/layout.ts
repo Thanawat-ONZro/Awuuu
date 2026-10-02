@@ -104,10 +104,19 @@ export function chatPromptHeight(messageCount: number): number {
   return Math.min(300, 240 + messageCount * 40);
 }
 
+/**
+ * An approval card has to be readable at a glance: a long command needs a few
+ * lines, and a question needs its text, every option and a field for "Other".
+ */
+export function approvalHeight(isQuestion: boolean): number {
+  return isQuestion ? PANEL_H - 20 : 200;
+}
+
 export function islandSize(
   mode: IslandMode,
   view: IslandViewName,
   chatCount = 0,
+  approvalIsQuestion = false,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
@@ -116,7 +125,12 @@ export function islandSize(
     case "compact":
       return { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
-      const h = view === "prompt" ? chatPromptHeight(chatCount) : VIEW_LAYOUTS[view].height;
+      const h =
+        view === "prompt"
+          ? chatPromptHeight(chatCount)
+          : view === "approval"
+          ? approvalHeight(approvalIsQuestion)
+          : VIEW_LAYOUTS[view].height;
       return { w: EXPANDED_W, h };
     }
   }

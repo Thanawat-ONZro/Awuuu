@@ -351,6 +351,8 @@ struct Watch {
     pressed_off_island: bool,
     press_at: (f64, f64),
     hovered_notch: bool,
+    /// The current press is a drag from outside that has reached the panel.
+    drag_in: bool,
     last: (f64, f64),
     geometry: Option<Geometry>,
     last_screen: Option<(i32, i32, u32, u32, u64)>,
@@ -370,6 +372,7 @@ impl Watch {
             pressed_off_island: false,
             press_at: (0.0, 0.0),
             hovered_notch: false,
+            drag_in: false,
             last: (f64::MIN, f64::MIN),
             geometry: None,
             last_screen: None,
@@ -377,6 +380,11 @@ impl Watch {
             cursor_sent: Instant::now(),
             cursor_pending: None,
         }
+    }
+
+    fn unblock_drops(&self) {
+        let handle = self.app.clone();
+        let _ = self.app.run_on_main_thread(move || unblock_webview_drops(&handle));
     }
 
     fn cursor_due(&self) -> Option<Duration> {
@@ -446,6 +454,11 @@ impl Watch {
                 self.down = left_button_down();
                 if self.gate.is_active() {
                     self.check_screen(true);
+                    // The island opened mid-drag (a file dragged onto the notch):
+                    // the drop target has to be ours before the file arrives.
+                    if self.down {
+                        self.unblock_drops();
+                    }
                 }
                 let Some((x, y)) = cursor_physical() else { return };
                 (x, y, None, true)
@@ -453,13 +466,7 @@ impl Watch {
         };
         let Some(win) = window(&self.app) else { return };
         let Some(g) = self.geometry(&win) else { return };
-
-        if !self.gate.is_active() {
-            self.collapsed_event(&win, g, cx, cy, edge);
-            return;
-        }
-        self.hovered_notch = false;
-        self.check_screen(false);
+        let active = self.gate.is_active();
 
         let x = (cx - g.origin.x as f64) / g.scale;
         let y = (cy - g.origin.y as f64) / g.scale;
@@ -477,15 +484,23 @@ impl Watch {
             && y <= r.y + r.h + HIT_MARGIN;
 
         // A press may be the start of a drag: make sure the drop target is ours
-        // before the file arrives.
+        // before the file arrives. Recorded while collapsed too — a file is
+        // usually picked up while the island sleeps, then dragged onto the notch.
         if edge == Some(true) {
             self.pressed_outside = !in_window;
-            self.pressed_under = in_window && self.gate.ignoring.load(Ordering::Relaxed);
-            self.pressed_off_island = !on_island;
+            self.pressed_under = active && in_window && self.gate.ignoring.load(Ordering::Relaxed);
+            self.pressed_off_island = active && !on_island;
             self.press_at = (cx, cy);
-            let handle = self.app.clone();
-            let _ = self.app.run_on_main_thread(move || unblock_webview_drops(&handle));
+            self.drag_in = false;
+            self.unblock_drops();
         }
+
+        if !active {
+            self.collapsed_event(&win, g, cx, cy, edge);
+            return;
+        }
+        self.hovered_notch = false;
+        self.check_screen(false);
         // The click itself still lands on whatever is beneath: the window is
         // click-through there. This only tells the island about it.
         if edge == Some(false)
@@ -512,6 +527,10 @@ impl Watch {
         // browser tab — is never captured: it belongs to whatever sits beneath
         // the island.
         let dragging = self.down && self.pressed_outside && in_window;
+        if dragging && !self.drag_in {
+            self.drag_in = true;
+            crate::log::line("file drag reached the island".to_string());
+        }
 
         // A press that went to the app beneath keeps going there, even if the
         // drag then crosses the island.

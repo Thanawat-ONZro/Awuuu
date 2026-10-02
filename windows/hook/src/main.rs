@@ -13,7 +13,9 @@
 //!   island is the whole point. No answer means empty stdout, and Claude Code
 //!   asks in the terminal exactly as if Awuuu were not installed.
 //!
-//! Usage: `awuuu-hook <EventName>` (the name is also read from the JSON).
+//! Usage: `awuuu-hook [--agent <claude|agy|hermes|opencode|codex>] <EventName>`
+//! (the event name is also read from the JSON). Without `--agent` the caller is
+//! Claude Code, which is what installs older than the flag wrote.
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -71,16 +73,111 @@ fn connect() -> Option<std::fs::File> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Agent {
+    Claude,
+    Agy,
+    Hermes,
+    OpenCode,
+    Codex,
+}
+
+impl Agent {
+    fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "claude" => Some(Self::Claude),
+            "agy" => Some(Self::Agy),
+            "hermes" => Some(Self::Hermes),
+            "opencode" => Some(Self::OpenCode),
+            "codex" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Agy => "agy",
+            Self::Hermes => "hermes",
+            Self::OpenCode => "opencode",
+            Self::Codex => "codex",
+        }
+    }
+
+    /// The one event per agent that holds the agent until a human decides.
+    fn waits_on(self, event: &str) -> bool {
+        match self {
+            Self::Agy => event == "PreToolUse",
+            _ => event == "PermissionRequest",
+        }
+    }
+}
+
+/// `--agent <id>` and the event name, in any order.
+struct Args {
+    agent: Option<Agent>,
+    event: String,
+}
+
+fn parse_args(args: impl IntoIterator<Item = String>) -> Args {
+    let mut agent = None;
+    let mut event = String::new();
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--agent" {
+            agent = it.next().as_deref().and_then(Agent::parse);
+        } else if let Some(v) = a.strip_prefix("--agent=") {
+            agent = Agent::parse(v);
+        } else if event.is_empty() && !a.starts_with("--") {
+            event = a;
+        }
+    }
+    Args { agent, event }
+}
+
 struct HookEvent {
     payload: String,
     event: String,
-    is_agy: bool,
+    agent: Agent,
+    /// The tool input as the agent sent it, before truncation: answers go back
+    /// as an edited copy of it.
+    tool_input: Option<serde_json::Value>,
+}
+
+/// What the island decided, as sent over the pipe.
+#[derive(Debug, Default, PartialEq)]
+struct Answer {
+    allow: bool,
+    /// Answers to an agent's questions, keyed by question text.
+    answers: Option<serde_json::Map<String, serde_json::Value>>,
+    reason: Option<String>,
+}
+
+/// The island sends a JSON line; builds before 0.3 sent a bare word.
+fn parse_answer(line: &str) -> Option<Answer> {
+    let line = line.trim();
+    let (word, answers, reason) = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(serde_json::Value::Object(o)) => (
+            o.get("decision").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            o.get("answers").and_then(|v| v.as_object()).cloned().filter(|m| !m.is_empty()),
+            o.get("reason").and_then(|v| v.as_str()).map(str::to_string).filter(|r| !r.is_empty()),
+        ),
+        Ok(_) => return None,
+        Err(_) => (line.to_string(), None, None),
+    };
+    let allow = match word.as_str() {
+        "allow" | "always" => true,
+        "deny" => false,
+        _ => return None,
+    };
+    Some(Answer { allow, answers, reason })
 }
 
 fn main() {
-    let Some(ev) = read_event() else { std::process::exit(0) };
+    let args = parse_args(std::env::args().skip(1));
+    let Some(ev) = read_event(&args) else { std::process::exit(0) };
 
-    let waits_for_answer = ev.event == "PermissionRequest" || (ev.is_agy && ev.event == "PreToolUse");
+    let waits_for_answer = ev.agent.waits_on(&ev.event);
     let budget = if waits_for_answer { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
 
     let (tx, rx) = mpsc::channel::<Option<String>>();
@@ -89,8 +186,9 @@ fn main() {
         let _ = tx.send(talk(&payload, waits_for_answer));
     });
 
-    if let Ok(Some(decision)) = rx.recv_timeout(budget) {
-        if let Some(json) = decision_json(&decision, ev.is_agy) {
+    let answer = rx.recv_timeout(budget).ok().flatten().as_deref().and_then(parse_answer);
+    if waits_for_answer {
+        if let Some(json) = output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref()) {
             let mut out = std::io::stdout();
             let _ = writeln!(out, "{json}");
             let _ = out.flush();
@@ -99,32 +197,51 @@ fn main() {
     std::process::exit(0);
 }
 
-fn decision_json(decision: &str, is_agy: bool) -> Option<String> {
-    let behavior = match decision.trim() {
-        "allow" | "always" => "allow",
-        "deny" => "deny",
-        _ => return None,
-    };
-    if is_agy {
-        if behavior == "allow" {
-            Some(r#"{"decision":"allow"}"#.to_string())
-        } else {
-            Some(r#"{"decision":"deny","reason":"Denied from Awuuu"}"#.to_string())
+/// What the agent reads on stdout. `None` prints nothing: the agent asks in its
+/// own UI exactly as if Awuuu were not installed.
+fn output_json(
+    agent: Agent,
+    answer: Option<&Answer>,
+    tool_input: Option<&serde_json::Value>,
+) -> Option<String> {
+    use serde_json::json;
+    if agent == Agent::Agy {
+        // AGY's hook spec wants a decision every time; "ask" hands the call
+        // back to AGY's own prompt.
+        let v = match answer {
+            Some(a) if a.allow => json!({"decision": "allow"}),
+            Some(a) => json!({
+                "decision": "deny",
+                "reason": a.reason.clone().unwrap_or_else(|| "Denied from Awuuu".into()),
+            }),
+            None => json!({"decision": "ask"}),
+        };
+        return Some(v.to_string());
+    }
+
+    let a = answer?;
+    let decision = if a.allow {
+        match (&a.answers, tool_input) {
+            // AskUserQuestion takes the answers as part of its input, keyed by
+            // question text — what Claude Code's own dialog fills in.
+            (Some(answers), Some(serde_json::Value::Object(input))) => {
+                let mut input = input.clone();
+                input.insert("answers".into(), serde_json::Value::Object(answers.clone()));
+                json!({"behavior": "allow", "updatedInput": input})
+            }
+            _ => json!({"behavior": "allow"}),
         }
     } else {
-        let dec_val = if behavior == "allow" {
-            r#"{"behavior":"allow"}"#
-        } else {
-            r#"{"behavior":"deny","message":"Denied from Awuuu"}"#
-        };
-        Some(format!(
-            r#"{{"hookSpecificOutput":{{"hookEventName":"PermissionRequest","decision":{dec_val}}}}}"#
-        ))
-    }
+        json!({
+            "behavior": "deny",
+            "message": a.reason.clone().unwrap_or_else(|| "Denied from Awuuu".into()),
+        })
+    };
+    Some(json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}).to_string())
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
-fn read_event() -> Option<HookEvent> {
+fn read_event(args: &Args) -> Option<HookEvent> {
     let mut raw = Vec::new();
     if std::io::stdin().read_to_end(&mut raw).is_err() || raw.is_empty() {
         return None;
@@ -137,9 +254,17 @@ fn read_event() -> Option<HookEvent> {
     let mut payload = serde_json::from_slice::<serde_json::Value>(&raw).ok()?;
     let map = payload.as_object_mut()?;
 
-    let is_agy = map.contains_key("conversationId") || map.contains_key("toolCall");
-    if is_agy {
-        map.insert("agent_source".into(), serde_json::Value::String("agy".into()));
+    // The installer says who is calling. Old installs don't: their AGY payloads
+    // are still recognisable by shape, and everything else was Claude Code.
+    let agent = args.agent.unwrap_or_else(|| {
+        if map.contains_key("conversationId") || map.contains_key("toolCall") {
+            Agent::Agy
+        } else {
+            Agent::Claude
+        }
+    });
+    map.insert("agent_source".into(), serde_json::Value::String(agent.id().into()));
+    if agent == Agent::Agy {
         if let Some(cid) = map.get("conversationId").and_then(|v| v.as_str()) {
             if !map.contains_key("session_id") {
                 map.insert("session_id".into(), serde_json::Value::String(cid.into()));
@@ -176,9 +301,9 @@ fn read_event() -> Option<HookEvent> {
                 }
     }
 
-    // The event name is passed as argv[1] by the hook command; the JSON usually
-    // carries it too. Trust argv when the JSON is missing it.
-    let arg_event = std::env::args().nth(1).unwrap_or_default();
+    // The event name is passed on the command line by the hook command; the JSON
+    // usually carries it too. Trust the command line when the JSON is missing it.
+    let arg_event = args.event.clone();
     let event = map
         .get("hook_event_name")
         .and_then(|v| v.as_str())
@@ -220,11 +345,13 @@ fn read_event() -> Option<HookEvent> {
         }
     }
 
+    let tool_input = map.get("tool_input").cloned();
+
     truncate_strings(&mut payload);
 
     let mut line = payload.to_string();
     line.push('\n');
-    Some(HookEvent { payload: line, event, is_agy })
+    Some(HookEvent { payload: line, event, agent, tool_input })
 }
 
 /// Caps every string in the payload. A single Write can carry a whole file.
@@ -282,30 +409,70 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn out(agent: Agent, line: &str, input: Option<serde_json::Value>) -> Option<String> {
+        output_json(agent, parse_answer(line).as_ref(), input.as_ref())
+    }
+
+    fn val(s: &str) -> serde_json::Value {
+        serde_json::from_str(s).unwrap()
+    }
+
     #[test]
-    fn decision_json_matches_the_documented_shape() {
+    fn claude_decisions_match_the_documented_shape() {
         assert_eq!(
-            decision_json("allow", false).unwrap(),
-            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
+            val(&out(Agent::Claude, "allow", None).unwrap()),
+            serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}})
         );
         assert_eq!(
-            decision_json("deny", false).unwrap(),
-            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Awuuu"}}}"#
+            val(&out(Agent::Claude, r#"{"decision":"deny"}"#, None).unwrap()),
+            serde_json::json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denied from Awuuu"}}})
         );
         // "always" is an island concept; Claude Code just gets an allow.
-        assert!(decision_json("always", false).unwrap().contains(r#""behavior":"allow""#));
+        assert!(out(Agent::Claude, "always", None).unwrap().contains(r#""behavior":"allow""#));
+    }
 
-        // AGY shape
-        assert_eq!(decision_json("allow", true).unwrap(), r#"{"decision":"allow"}"#);
-        assert_eq!(decision_json("deny", true).unwrap(), r#"{"decision":"deny","reason":"Denied from Awuuu"}"#);
+    #[test]
+    fn answers_go_back_inside_the_tool_input() {
+        let input = serde_json::json!({"questions": [{"question": "Which?", "options": []}]});
+        let json = out(
+            Agent::Claude,
+            r#"{"decision":"allow","answers":{"Which?":"Blue"}}"#,
+            Some(input),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let d = &v["hookSpecificOutput"]["decision"];
+        assert_eq!(d["behavior"], "allow");
+        assert_eq!(d["updatedInput"]["answers"]["Which?"], "Blue");
+        assert_eq!(d["updatedInput"]["questions"][0]["question"], "Which?");
+    }
+
+    #[test]
+    fn agy_always_gets_a_decision() {
+        assert_eq!(out(Agent::Agy, "allow", None).unwrap(), r#"{"decision":"allow"}"#);
+        assert_eq!(
+            val(&out(Agent::Agy, r#"{"decision":"deny","reason":"no"}"#, None).unwrap()),
+            serde_json::json!({"decision": "deny", "reason": "no"})
+        );
+        assert_eq!(output_json(Agent::Agy, None, None).unwrap(), r#"{"decision":"ask"}"#);
     }
 
     #[test]
     fn anything_unrecognised_prints_nothing() {
-        assert!(decision_json("", false).is_none());
-        assert!(decision_json("maybe", false).is_none());
+        assert!(out(Agent::Claude, "", None).is_none());
+        assert!(out(Agent::Claude, "maybe", None).is_none());
         // The shape the app used to send must not be mistaken for a decision.
-        assert!(decision_json(r#"{"permissionDecision":"allow"}"#, false).is_none());
+        assert!(out(Agent::Claude, r#"{"permissionDecision":"allow"}"#, None).is_none());
+    }
+
+    #[test]
+    fn agent_flag_in_any_position() {
+        let a = parse_args(["--agent".into(), "agy".into(), "PreToolUse".into()]);
+        assert_eq!((a.agent, a.event.as_str()), (Some(Agent::Agy), "PreToolUse"));
+        let a = parse_args(["Stop".into(), "--agent=hermes".into()]);
+        assert_eq!((a.agent, a.event.as_str()), (Some(Agent::Hermes), "Stop"));
+        let a = parse_args(["SessionStart".into()]);
+        assert_eq!((a.agent, a.event.as_str()), (None, "SessionStart"));
     }
 
     #[test]

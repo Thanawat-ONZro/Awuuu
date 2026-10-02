@@ -140,13 +140,13 @@ fn hook_command(agent: HookAgent, event: &str) -> String {
         HookAgent::Claude => {
             // Claude Code on Windows runs hooks via Git Bash (MSYS2), where forward slashes are required.
             let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
-            format!("\"{exe}\" {event}")
+            format!("\"{exe}\" --agent claude {event}")
         }
         HookAgent::Agy => {
             // Antigravity CLI on Windows executes commands via cmd.exe / PowerShell.
             // Native backslashes and standard Windows path formatting are mandatory.
             let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
-            format!("\"{exe}\" {event}")
+            format!("\"{exe}\" --agent agy {event}")
         }
     }
 }

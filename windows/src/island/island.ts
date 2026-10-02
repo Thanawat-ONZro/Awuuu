@@ -154,9 +154,9 @@ export class Island {
       openUrl: (url) => {
         if (url) void Bridge.openUrl(url);
       },
-      decide: (d, _answers) => {
+      decide: (d, answers) => {
         const req = State.pendingApproval;
-        void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}`);
+        void Bridge.log(`decide ${d} req=${req?.requestId ?? "none"}${answers ? " with answers" : ""}`);
         if (!req) return;
         Sound.play(d === "deny" ? "blip" : "approve");
         if (d === "always") {
@@ -164,7 +164,9 @@ export class Island {
           State.addAlwaysAllowed(ruleKey);
           void Bridge.saveSettings(State.settings);
         }
-        void Bridge.approvalDecision(req.requestId, d);
+        // Declining a question hands it back to the agent's own prompt.
+        if (d === "deny" && req.isQuestion) void Bridge.approvalDecline(req.requestId);
+        else void Bridge.approvalDecision(req.requestId, d, answers);
         State.removeApproval(req.requestId);
         const next = State.pendingApproval;
         if (next) {
@@ -347,7 +349,7 @@ export class Island {
       State.notify();
       return;
     }
-    const grew = VIEW_LAYOUTS[view].height >= VIEW_LAYOUTS[State.view].height;
+    const grew = view === "approval" || VIEW_LAYOUTS[view].height >= VIEW_LAYOUTS[State.view].height;
     State.view = view;
     State.lastActivity = performance.now();
     this.animateGeometry(!grew);
@@ -506,7 +508,12 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
-    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
+    const { w, h } = islandSize(
+      State.mode,
+      State.view,
+      State.chatHistory.length,
+      !!State.pendingApproval?.isQuestion,
+    );
     const r = State.mode === "expanded"
       ? EXPANDED_CORNER
       : State.mode === "hidden"

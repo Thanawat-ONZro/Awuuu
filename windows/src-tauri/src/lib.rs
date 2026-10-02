@@ -230,8 +230,14 @@ fn agent_hooks_apply(
 }
 
 #[tauri::command]
-fn approval_decision(app: AppHandle, request_id: String, decision: String) {
-    pipe::answer(&app, &request_id, &decision);
+fn approval_decision(
+    app: AppHandle,
+    request_id: String,
+    decision: String,
+    answers: Option<serde_json::Value>,
+    reason: Option<String>,
+) {
+    pipe::answer(&app, &request_id, &decision, answers, reason);
 }
 
 /// The island has the card on screen, so the long wait for a human may begin.

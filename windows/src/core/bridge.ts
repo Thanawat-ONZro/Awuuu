@@ -73,8 +73,13 @@ export const Bridge = {
   agentHooksApply: (agent: "claude" | "agy", install: boolean, fingerprint: string) =>
     callOrThrow<string>("agent_hooks_apply", { agent, install, fingerprint }),
 
-  approvalDecision: (requestId: string, decision: "allow" | "deny" | "always") =>
-    call<void>("approval_decision", { requestId, decision }),
+  /** `answers` are keyed by question text; `reason` goes back with a deny. */
+  approvalDecision: (
+    requestId: string,
+    decision: "allow" | "deny" | "always",
+    answers?: Record<string, string>,
+    reason?: string,
+  ) => call<void>("approval_decision", { requestId, decision, answers: answers ?? null, reason: reason ?? null }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
   /** "Nobody can act on this" — Claude Code asks in the terminal right away. */
