@@ -203,7 +203,8 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
 }
 
 /// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
-pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
+/// `bottom` glues it to the bottom of the work area (just above the taskbar).
+pub fn apply_geometry(app: &AppHandle, pref: &str, bottom: bool, collapsed: bool) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
 
@@ -215,7 +216,12 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     let pw = (lw * scale).round().max(1.0) as u32;
     let ph = (lh * scale).round().max(1.0) as u32;
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    let y = mp.y;
+    let y = if bottom {
+        let wa = m.work_area();
+        wa.position.y + wa.size.height as i32 - ph as i32
+    } else {
+        mp.y
+    };
 
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     let _ = win.set_position(PhysicalPosition::new(x, y));
@@ -280,6 +286,10 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
         // that moment) means it belongs to the app beneath until released.
         let mut pressed_outside = false;
         let mut pressed_under = false;
+        // A press that began off the island, and where: released without moving,
+        // it is a click outside, which closes an open island.
+        let mut pressed_off_island = false;
+        let mut press_at = (0.0, 0.0);
         // Remembered across wakes so a display change while hidden is noticed the
         // moment the island comes back.
         let mut last_screen: Option<(i32, i32, u32, u32, u64)> = None;
@@ -319,24 +329,6 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 };
                 let in_window = x >= 0.0 && x <= size.0 && y >= 0.0 && y <= size.1;
 
-                // Button edges are tracked before the "cursor didn't move" skip,
-                // so a press is seen where it happened, not after the first move.
-                // A press may be the start of a drag: make sure the drop target is
-                // ours before the file arrives.
-                let down = left_button_down();
-                if down && !was_down {
-                    pressed_outside = !in_window;
-                    pressed_under = in_window && gate.ignoring.load(Ordering::Relaxed);
-                    let handle = app.clone();
-                    let _ = app.run_on_main_thread(move || unblock_webview_drops(&handle));
-                }
-                was_down = down;
-
-                if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 {
-                    continue;
-                }
-                last = (x, y);
-
                 // Click-through: the window only takes the mouse over the island
                 // shape. A small entry margin means the flag is already off by the
                 // time a moving cursor reaches a button.
@@ -346,6 +338,34 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                     && x <= r.x + r.w + HIT_MARGIN
                     && y >= r.y - HIT_MARGIN
                     && y <= r.y + r.h + HIT_MARGIN;
+
+                // Button edges are tracked before the "cursor didn't move" skip,
+                // so a press is seen where it happened, not after the first move.
+                // A press may be the start of a drag: make sure the drop target is
+                // ours before the file arrives.
+                let down = left_button_down();
+                if down && !was_down {
+                    pressed_outside = !in_window;
+                    pressed_under = in_window && gate.ignoring.load(Ordering::Relaxed);
+                    pressed_off_island = !on_island;
+                    press_at = (cx, cy);
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || unblock_webview_drops(&handle));
+                }
+                // The click itself still lands on whatever is beneath: the window is
+                // click-through there. This only tells the island about it.
+                if !down && was_down && pressed_off_island
+                    && (cx - press_at.0).abs() < 6.0
+                    && (cy - press_at.1).abs() < 6.0
+                {
+                    let _ = win.emit("click-outside", ());
+                }
+                was_down = down;
+
+                if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 {
+                    continue;
+                }
+                last = (x, y);
 
                 // A file being dragged has to be able to find us. WS_EX_TRANSPARENT
                 // — what click-through is on Windows — hides the window from

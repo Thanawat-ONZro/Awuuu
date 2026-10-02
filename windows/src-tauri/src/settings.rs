@@ -14,6 +14,9 @@ pub struct Settings {
     pub active_integrations: Vec<String>,
     /// "primary" = the main display, "cursor" = whichever display the mouse is on.
     pub screen: String,
+    /// "top" or "bottom" (just above the taskbar). Missing in older settings.json → top.
+    #[serde(default = "default_position")]
+    pub position: String,
     pub autostart: bool,
     pub hooks_installed: bool,
     /// Claude model used by the chat. Changeable in the settings window.
@@ -27,6 +30,10 @@ pub struct Settings {
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+}
+
+fn default_position() -> String {
+    "top".into()
 }
 
 fn default_model() -> String {
@@ -47,10 +54,11 @@ impl Default for Settings {
                 "integration_github".into(),
             ],
             screen: "primary".into(),
+            position: default_position(),
             autostart: false,
             hooks_installed: false,
             model: default_model(),
-            hide_after: 0.0,
+            hide_after: 10.0,
             update_check: None,
         }
     }

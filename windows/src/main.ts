@@ -52,6 +52,11 @@ async function main() {
 
   await onEvent<null>("screen-changed", () => void Bridge.reposition());
 
+  // A click anywhere off the island closes it; alerts waiting for an answer stay.
+  await onEvent<null>("click-outside", () => {
+    if (State.mode === "expanded" && !State.isPinned) island.collapse();
+  });
+
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
     State.settings = { ...State.settings, ...s };
