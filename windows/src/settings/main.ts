@@ -490,6 +490,7 @@ function generalSection(): HTMLElement {
   const hide = h("select", {}) as HTMLSelectElement;
   hide.append(
     h("option", { value: "0", text: "Never — Awuuu stays on screen" }),
+    h("option", { value: "10", text: "After 10 seconds" }),
     h("option", { value: "60", text: "After 1 minute" }),
     h("option", { value: "300", text: "After 5 minutes" }),
   );
@@ -497,6 +498,17 @@ function generalSection(): HTMLElement {
   if (hide.value === "") hide.value = "0";
   hide.addEventListener("change", () => {
     settings.hideAfter = Number(hide.value);
+    void save();
+  });
+
+  const position = h("select", {}) as HTMLSelectElement;
+  position.append(
+    h("option", { value: "top", text: "Top of the screen" }),
+    h("option", { value: "bottom", text: "Bottom, above the taskbar" }),
+  );
+  position.value = settings.position ?? "top";
+  position.addEventListener("change", () => {
+    settings.position = position.value as Settings["position"];
     void save();
   });
 
@@ -532,6 +544,10 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Island lives on" }),
       screen,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Position" }),
+      position,
     ),
     h("div", { class: "row" },
       h("label", { text: "Updates" }),

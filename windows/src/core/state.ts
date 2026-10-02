@@ -88,6 +88,8 @@ export interface Settings {
   absenceInterval: number;
   activeIntegrations: string[];
   screen: "primary" | "cursor";
+  /** Top edge of the screen, or bottom (just above the taskbar). */
+  position: "top" | "bottom";
   autostart: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
@@ -107,10 +109,11 @@ export const DEFAULT_SETTINGS: Settings = {
     "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   ],
   screen: "primary",
+  position: "top",
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",
-  hideAfter: 0,
+  hideAfter: 10,
   updateCheck: null,
 };
 
