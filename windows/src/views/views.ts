@@ -254,7 +254,9 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     h("div", { class: "title", text: "No active agent sessions." }),
     h("div", { class: "sub", text: "Start Claude Code, AGY or another agent and it shows up here." }),
   );
-  const body = h("div", { class: "hub" }, pills, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
+  // A request waiting for an answer is never hidden behind the hub.
+  const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
+  const body = h("div", { class: "hub" }, pills, waiting, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
   const el = h("div", { class: "view hub-view" }, card(null, body));
   let sending = false;
 
@@ -310,6 +312,9 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     sync() {
       const sessions = State.activeAgentSessions;
       const focused = State.focusedAgentSession;
+      const nWaiting = State.approvalQueue.length;
+      waiting.style.display = nWaiting ? "" : "none";
+      waiting.textContent = nWaiting === 1 ? "1 request waiting for you — Review" : `${nWaiting} requests waiting for you — Review`;
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
       for (const part of [pills, who.parentElement!, steps, promptBar]) part.style.display = none ? "none" : "";
@@ -625,46 +630,42 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
   };
 }
 
-// ── Question ──────────────────────────────────────────────────────────────────
-
-function buildQuestion(): ViewHost {
-  const who = h("div");
-  const title = h("div", { class: "title" });
-  const row = h("div", { class: "actions" });
-  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, who, title, row)));
-  return {
-    el,
-    sync() {
-      clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code is asking a question"));
-      const task = State.focusTask;
-      title.textContent = task?.steps.at(-1) ?? "Claude needs an answer.";
-      clear(row);
-      row.append(h("div", { class: "sub", text: "Answer in your terminal — Awuuu can't reply for you yet." }));
-    },
-  };
-}
-
 // ── Error ─────────────────────────────────────────────────────────────────────
 
 function buildError(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title", text: "Workflow stopped." });
   const detail = h("div", { class: "detail" });
-  const row = h("div", { class: "actions" },
-    btn("Retry", "primary", () => actions.setView(State.defaultView())),
-    btn("Open in n8n", "secondary", () => actions.openUrl("")),
-  );
+  const row = h("div", { class: "actions" });
   const el = h("div", { class: "view" }, card("red", stack(116, 16, who, title, detail, row)));
+  let rowKey = "";
   return {
     el,
     sync() {
-      const task = State.focusTask;
+      const task = State.alertTask;
       clear(who);
       const n8n = task?.id === "integration_n8n";
       who.append(agentWho(task, n8n ? "n8n" : task ? agentInfo(task.source).name : "Agent"));
       title.textContent = n8n ? "Workflow stopped." : "Session stopped on an error.";
       detail.textContent = task?.steps.at(-1) ?? "No detail available.";
+      const key = `${task?.id}:${n8n}`;
+      if (key === rowKey) return;
+      rowKey = key;
+      clear(row);
+      if (n8n) {
+        row.append(
+          btn("Retry", "primary", () => actions.setView(State.defaultView())),
+          btn("Open in n8n", "secondary", () => actions.openUrl("")),
+        );
+      } else {
+        row.append(
+          btn("Show log", "primary", () => {
+            if (task) actions.setAgentFocus(task.id);
+            actions.setView("agents");
+          }),
+          btn("Open terminal", "secondary", () => actions.openTerminal(task?.sessionCwd ?? null)),
+        );
+      }
     },
   };
 }
@@ -675,7 +676,7 @@ function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title" });
   const row = h("div", { class: "actions" },
-    btn("Open terminal", "primary", () => actions.openTerminal()),
+    btn("Open terminal", "primary", () => actions.openTerminal(State.alertTask?.sessionCwd ?? null)),
     btn("OK", "secondary", () => actions.collapse()),
   );
   const el = h("div", { class: "view" }, card("green", stack(116, 16, who, title, row)));
@@ -683,8 +684,9 @@ function buildFinished(actions: ViewActions): ViewHost {
     el,
     sync() {
       clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code finished"));
-      title.textContent = State.focusTask?.steps.at(-1) ?? "Session finished";
+      const task = State.alertTask;
+      who.append(agentWho(task, task && !task.isIntegration ? `${agentInfo(task.source).name} finished` : "Finished"));
+      title.textContent = task?.steps.at(-1) ?? "Session finished";
     },
   };
 }
@@ -802,7 +804,6 @@ export function buildViews(
   map.set("agents", buildAgentsHub(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions, onApprovalHeightChange));
-  map.set("question", buildQuestion());
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());

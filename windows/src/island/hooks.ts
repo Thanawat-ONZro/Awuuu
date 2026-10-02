@@ -5,7 +5,7 @@
 
 import { Bridge, IS_TAURI, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { State, type QuestionItem, type AgentSource } from "../core/state";
+import { State, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
 
 interface HookPayload {
@@ -116,6 +116,30 @@ function approvalTarget(tool: string, input: Record<string, unknown>): string {
   return value ? `${tool} · ${value}` : tool;
 }
 
+function callSig(tool: string, input: Record<string, unknown>): string {
+  return `${tool}:${JSON.stringify(input).slice(0, 400)}`;
+}
+
+/**
+ * A card whose request was settled somewhere else — answered in the terminal
+ * (the tool ran), or the turn/session ended — leaves the island instead of
+ * waiting for its 110 s timeout (Coucou #117).
+ */
+function settleElsewhere(island: Island, sessionId: string, match: (a: ApprovalInfo) => boolean, note: string) {
+  const gone = State.approvalQueue.filter((a) => a.sessionId === sessionId && match(a));
+  if (gone.length === 0) return;
+  for (const a of gone) {
+    State.removeApproval(a.requestId);
+    void Bridge.approvalDecline(a.requestId);
+  }
+  State.appendStep(`session_${sessionId}`, note, "info");
+  if (State.approvalQueue.length === 0) {
+    State.isPinned = false;
+    island.dropPin();
+    if (State.view === "approval") island.setView(State.defaultView());
+  }
+}
+
 /** Identifies one tool call across the events that report it. */
 function callKey(payload: HookPayload, tool: string, input: Record<string, unknown>): string {
   if (payload.tool_use_id) return payload.tool_use_id;
@@ -200,6 +224,8 @@ function queueApprovalRequest(
     isQuestion,
     questions,
     createdAt: performance.now(),
+    callKey: key,
+    callSig: callSig(tool, input),
   });
 
   session.state = "approval";
@@ -329,7 +355,8 @@ function handleHook(island: Island, payload: HookPayload) {
     }
 
     case "PostToolUse":
-      if (session.state !== "approval") session.state = "working";
+      settleElsewhere(island, sessionId, (a) => a.callKey === key || a.callSig === callSig(tool, input), "Answered in the terminal");
+      if (!State.approvalQueue.some((a) => a.sessionId === sessionId)) session.state = "working";
       if (payload.error) State.appendStep(taskId, `${toolVerb(tool)} failed · ${payload.error.slice(0, 300)}`, "error");
       pullTranscript(taskId, source, transcript);
       break;
@@ -356,6 +383,7 @@ function handleHook(island: Island, payload: HookPayload) {
     }
 
     case "Stop":
+      settleElsewhere(island, sessionId, () => true, "Request closed — the turn ended");
       session.state = "finished";
       pullTranscript(taskId, source, transcript, payload.last_assistant_message ?? payload.message, () =>
         State.appendStep(taskId, "Done", "done"),
@@ -381,10 +409,12 @@ function handleHook(island: Island, payload: HookPayload) {
       State.appendStep(taskId, payload.message ? `Stopped · ${payload.message}` : "Stopped with an error", "error");
       Sound.play("error");
       session.pillBadge = "error";
+      State.alertTaskId = taskId;
       island.alert("error", true);
       break;
 
     case "SessionEnd":
+      settleElsewhere(island, sessionId, () => true, "Request closed — the session ended");
       session.state = "idle";
       window.setTimeout(() => {
         State.removeSession(sessionId);

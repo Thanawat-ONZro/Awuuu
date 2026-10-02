@@ -9,7 +9,6 @@ export type IslandViewName =
   | "agents"
   | "empty"
   | "approval"
-  | "question"
   | "error"
   | "finished"
   | "confused"
@@ -77,7 +76,6 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   agents: { height: 290, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
   approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  question: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
   error: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
   finished: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
   confused: { height: 160, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },

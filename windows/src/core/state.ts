@@ -69,6 +69,9 @@ export interface ApprovalInfo {
   isQuestion?: boolean;
   questions?: QuestionItem[];
   createdAt?: number;
+  /** The tool call this card is about (tool_use_id, AGY step, or tool+input). */
+  callKey?: string;
+  callSig?: string;
 }
 
 export interface ChatMessage {
@@ -242,6 +245,12 @@ class AppState {
 
   get focusTask(): AgentTask | null {
     return this.tasks.find((t) => t.id === this.focusId) ?? this.tasks[0] ?? null;
+  }
+
+  /** The task an alert view (error, finished) is about. */
+  alertTaskId: string | null = null;
+  get alertTask(): AgentTask | null {
+    return this.tasks.find((t) => t.id === this.alertTaskId) ?? this.focusTask;
   }
 
   get effectiveState(): BotStateName {
