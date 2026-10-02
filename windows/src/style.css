@@ -246,6 +246,7 @@ body {
 }
 
 #header {
+  position: relative;
   height: 34px;
   flex: 0 0 34px;
   display: flex;
@@ -280,6 +281,112 @@ body {
 .tab.on {
   background: var(--tab-on);
   color: var(--ink);
+}
+
+#resize-grip {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  z-index: 20;
+  display: none;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.7) 50%, rgba(255, 255, 255, 0.7) 58%, transparent 58%,
+      transparent 70%, rgba(255, 255, 255, 0.7) 70%, rgba(255, 255, 255, 0.7) 78%, transparent 78%);
+}
+
+#resize-grip:hover,
+#root.resizing #resize-grip {
+  opacity: 0.9;
+}
+
+#resize-grip[data-v="top"][data-h="right"] { right: 2px; bottom: 2px; cursor: nwse-resize; }
+#resize-grip[data-v="top"][data-h="left"] { left: 2px; bottom: 2px; cursor: nesw-resize; transform: scaleX(-1); }
+#resize-grip[data-v="bottom"][data-h="right"] { right: 2px; top: 2px; cursor: nesw-resize; transform: scaleY(-1); }
+#resize-grip[data-v="bottom"][data-h="left"] { left: 2px; top: 2px; cursor: nwse-resize; transform: scale(-1, -1); }
+
+.grip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  gap: 3px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: grab;
+  opacity: 0.45;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.grip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.grip:hover {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#root.dragging #resize-grip {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  z-index: 20;
+  display: none;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.7) 50%, rgba(255, 255, 255, 0.7) 58%, transparent 58%,
+      transparent 70%, rgba(255, 255, 255, 0.7) 70%, rgba(255, 255, 255, 0.7) 78%, transparent 78%);
+}
+
+#resize-grip:hover,
+#root.resizing #resize-grip {
+  opacity: 0.9;
+}
+
+#resize-grip[data-v="top"][data-h="right"] { right: 2px; bottom: 2px; cursor: nwse-resize; }
+#resize-grip[data-v="top"][data-h="left"] { left: 2px; bottom: 2px; cursor: nesw-resize; transform: scaleX(-1); }
+#resize-grip[data-v="bottom"][data-h="right"] { right: 2px; top: 2px; cursor: nesw-resize; transform: scaleY(-1); }
+#resize-grip[data-v="bottom"][data-h="left"] { left: 2px; top: 2px; cursor: nwse-resize; transform: scale(-1, -1); }
+
+.grip {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+#root.dragging #island {
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+/* Docked to a side, or floating: borders on the sides that face the screen. */
+#root[data-edge="left"] #island,
+#root[data-edge="right"] #island,
+#root[data-edge="free"] #island {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#root[data-edge="left"] #island {
+  border-left: none;
+}
+
+#root[data-edge="right"] #island {
+  border-right: none;
+}
+
+#root[data-edge="left"] #notch-nub,
+#root[data-edge="right"] #notch-nub {
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 28px;
+  transform: translate(-50%, -50%);
 }
 
 .header-actions {
@@ -1437,7 +1544,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-who .name {
-  font: 600 15px var(--font);
+  font: 600 calc(15px * var(--hub-scale, 1)) var(--font);
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -1488,7 +1595,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-step .ago {
-  font-size: 10px;
+  font-size: calc(10px * var(--hub-scale, 1));
   color: var(--dim-3);
   padding-top: 2px;
 }
@@ -1545,6 +1652,10 @@ input[type="range"]::-webkit-slider-thumb {
 .hub.hide-think .hub-step.k-think,
 .hub.hide-time .hub-step .ago {
   display: none;
+}
+
+.hub-prompt .chat-input {
+  font-size: calc(13px * var(--hub-scale, 1));
 }
 
 .hub-prompt {

@@ -5,6 +5,7 @@ import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
 import { Island } from "./island/island";
+import type { IslandLayout } from "./core/layout";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
 
@@ -25,6 +26,11 @@ async function main() {
     State.settings = { ...State.settings, ...boot.settings };
   }
   island.applySettings();
+  if (boot?.layout) island.setLayout(boot.layout);
+  await onEvent<IslandLayout>("layout", (l) => island.setLayout(l));
+  // Moving the island (grip or Alt + drag): a click must not also land on a button.
+  await onEvent<boolean>("island-drag", (on) => root.classList.toggle("dragging", on));
+  root.addEventListener("click", (e) => { if (e.altKey) { e.stopPropagation(); e.preventDefault(); } }, true);
   State.loadIntegrationTasks();
 
   await onEvent<{ x: number; y: number }>("cursor", ({ x, y }) => island.onCursor(x, y));

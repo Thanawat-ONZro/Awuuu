@@ -47,6 +47,7 @@ pub struct BootInfo {
     screen: ScreenInfo,
     version: String,
     hook_path: String,
+    layout: Option<island::Layout>,
 }
 
 #[tauri::command]
@@ -55,9 +56,13 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
     // The real state of ~/.claude/settings.json wins over whatever we stored.
     settings.hooks_installed = hooks::status_for(hooks::HookAgent::Claude).installed;
     let screen = island::screen_info(&app, &settings.screen);
+    let layout = island::monitor_rects(&app, &settings.screen).map(|(screen, work, scale)| {
+        island::compute(&settings, screen, work, scale, shared.gate.collapsed.load(Ordering::Relaxed)).1
+    });
     BootInfo {
         settings,
         screen,
+        layout,
         version: env!("CARGO_PKG_VERSION").to_string(),
         hook_path: settings::hook_exe_path().to_string_lossy().to_string(),
     }
@@ -67,8 +72,13 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     let (screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
-        let screen_changed =
-            current.screen != settings.screen || current.position != settings.position;
+        let screen_changed = current.screen != settings.screen
+            || current.position != settings.position
+            || current.placement != settings.placement
+            || current.along != settings.along
+            || current.free_x != settings.free_x
+            || current.free_y != settings.free_y
+            || current.panel_size() != settings.panel_size();
         let autostart_changed = current.autostart != settings.autostart;
         *current = settings.clone();
         (screen_changed, autostart_changed)
@@ -85,25 +95,19 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     }
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
-        island::apply_geometry(&app, &settings.screen, settings.position == "bottom", collapsed);
+        island::apply_geometry(&app, &settings, collapsed);
     }
     // Keep the other window in step (island ⇄ settings window).
     let _ = app.emit("settings-changed", settings);
-}
-
-/// Which display the island lives on, and whether it sits at the bottom of it.
-fn screen_pref(shared: &State<Shared>) -> (String, bool) {
-    let s = shared.settings.lock().unwrap();
-    (s.screen.clone(), s.position == "bottom")
 }
 
 /// Hidden island → shrink the window to the invisible wake strip and park the
 /// cursor poll; anything else → full panel and 60 Hz polling.
 #[tauri::command]
 fn set_collapsed(app: AppHandle, shared: State<Shared>, collapsed: bool) {
-    let (pref, bottom) = screen_pref(&shared);
+    let settings = shared.settings.lock().unwrap().clone();
     shared.gate.collapsed.store(collapsed, Ordering::Relaxed);
-    island::apply_geometry(&app, &pref, bottom, collapsed);
+    island::apply_geometry(&app, &settings, collapsed);
     // The wake strip must always take the mouse, and a resize invalidates the flag.
     island::set_ignore_cursor(&app, false);
     shared.gate.forget_ignore_state();
@@ -127,9 +131,71 @@ fn focus_window(app: AppHandle, focused: bool) {
 
 #[tauri::command]
 fn reposition(app: AppHandle, shared: State<Shared>) {
-    let (pref, bottom) = screen_pref(&shared);
+    let settings = shared.settings.lock().unwrap().clone();
     let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
-    island::apply_geometry(&app, &pref, bottom, collapsed);
+    island::apply_geometry(&app, &settings, collapsed);
+}
+
+/// The grip on the island was pressed: the window follows the mouse until the
+/// button is released, then docks (see island.rs `Watch::end_drag`).
+#[tauri::command]
+fn island_drag_begin(shared: State<Shared>) {
+    shared.gate.begin_drag();
+}
+
+/// Resizing the island by its corner: the window takes the largest size for
+/// the duration, so the island can grow under the cursor. Saving the new size
+/// (save_settings) puts the window back to fit.
+#[tauri::command]
+fn island_resize_mode(app: AppHandle, shared: State<Shared>, on: bool) {
+    let mut s = shared.settings.lock().unwrap().clone();
+    if on {
+        s.island_width = settings::ISLAND_WIDTH.2;
+        s.hub_height = settings::HUB_HEIGHT.2;
+    }
+    island::apply_geometry(&app, &s, false);
+}
+
+/// Back to the default spot: top edge, centred.
+#[tauri::command]
+fn reset_position(app: AppHandle) {
+    reset_island_position(&app);
+}
+
+pub fn reset_island_position(app: &AppHandle) {
+    let Some(shared) = app.try_state::<Shared>() else { return };
+    let settings = {
+        let mut s = shared.settings.lock().unwrap();
+        s.position = "top".into();
+        s.along = 0.5;
+        s.free_x = 0.5;
+        s.free_y = 0.0;
+        s.clone()
+    };
+    commit_settings(app, shared.inner(), settings);
+}
+
+/// Tray: docked to an edge ⇄ free anywhere.
+pub fn toggle_placement(app: &AppHandle) {
+    let Some(shared) = app.try_state::<Shared>() else { return };
+    let settings = {
+        let mut s = shared.settings.lock().unwrap();
+        s.placement = if s.placement == "free" { "edge".into() } else { "free".into() };
+        s.clone()
+    };
+    commit_settings(app, shared.inner(), settings);
+}
+
+/// Saves settings changed on the Rust side, re-places the island and tells
+/// both windows.
+pub fn commit_settings(app: &AppHandle, shared: &Shared, settings: Settings) {
+    *shared.settings.lock().unwrap() = settings.clone();
+    if let Err(err) = settings::save(&settings) {
+        log::line(format!("could not save settings: {err}"));
+    }
+    let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
+    island::apply_geometry(app, &settings, collapsed);
+    let _ = app.emit("settings-changed", settings);
 }
 
 #[tauri::command]
@@ -446,6 +512,9 @@ pub fn run() {
             set_island_rect,
             focus_window,
             reposition,
+            island_drag_begin,
+            reset_position,
+            island_resize_mode,
             open_url,
             open_in_vscode,
             quit_app,
@@ -482,7 +551,7 @@ pub fn run() {
 
             if let Some(win) = island::window(&handle) {
                 island::make_non_activating(&win);
-                island::apply_geometry(&handle, &loaded.screen, loaded.position == "bottom", false);
+                island::apply_geometry(&handle, &loaded, false);
                 let _ = win.show();
             } else {
                 log::line("WARNING: island window not found by label");

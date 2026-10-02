@@ -128,8 +128,23 @@ export interface Settings {
   autoCloseInterval: number;
   activeIntegrations: string[];
   screen: "primary" | "cursor";
-  /** Top edge of the screen, or bottom (just above the taskbar). */
-  position: "top" | "bottom";
+  /** Edge the island docks to in "edge" placement. */
+  position: "top" | "bottom" | "left" | "right";
+  /** "edge": docked to `position` at `along`; "free": anywhere at (freeX, freeY). */
+  placement: "edge" | "free";
+  along: number;
+  freeX: number;
+  freeY: number;
+  /** Width of the open island, px. */
+  islandWidth: number;
+  /** Height of the Agents hub, px. */
+  hubHeight: number;
+  /** Agents hub text size, 1 = normal. */
+  hubScale: number;
+  /** Log lines kept on screen in the hub; 0 = all. */
+  logLines: number;
+  showThinking: boolean;
+  showTime: boolean;
   autostart: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
@@ -151,6 +166,16 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   screen: "primary",
   position: "top",
+  placement: "edge",
+  along: 0.5,
+  freeX: 0.5,
+  freeY: 0,
+  islandWidth: 640,
+  hubHeight: 290,
+  hubScale: 1,
+  logLines: 40,
+  showThinking: true,
+  showTime: true,
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",

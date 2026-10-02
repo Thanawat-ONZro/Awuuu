@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
+import type { IslandLayout } from "./layout";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -26,6 +27,7 @@ export interface BootInfo {
   screen: { x: number; y: number; width: number; height: number; scale: number };
   version: string;
   hookPath: string;
+  layout: IslandLayout | null;
 }
 
 export const Bridge = {
@@ -47,6 +49,10 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
+  /** The grip was pressed: Rust moves the window until the button is released. */
+  islandDragBegin: () => call<void>("island_drag_begin"),
+  resetPosition: () => call<void>("reset_position"),
+  islandResizeMode: (on: boolean) => call<void>("island_resize_mode", { on }),
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 

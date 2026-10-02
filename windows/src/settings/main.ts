@@ -658,17 +658,6 @@ function generalSection(): HTMLElement {
     void save();
   });
 
-  const position = h("select", {}) as HTMLSelectElement;
-  position.append(
-    h("option", { value: "top", text: "Top of the screen" }),
-    h("option", { value: "bottom", text: "Bottom, above the taskbar" }),
-  );
-  position.value = settings.position ?? "top";
-  position.addEventListener("change", () => {
-    settings.position = position.value as Settings["position"];
-    void save();
-  });
-
   const screen = h("select", {}) as HTMLSelectElement;
   screen.append(
     h("option", { value: "primary", text: "Main display" }),
@@ -703,10 +692,6 @@ function generalSection(): HTMLElement {
       screen,
     ),
     h("div", { class: "row" },
-      h("label", { text: "Position" }),
-      position,
-    ),
-    h("div", { class: "row" },
       h("label", { text: "Updates" }),
       toggle(settings.updateCheck === true, (v) => { settings.updateCheck = v; void save(); }),
       h("span", { class: "hint", text: "check automatically" }),
@@ -716,6 +701,104 @@ function generalSection(): HTMLElement {
       h("label", { text: "Launch at startup" }),
       toggle(settings.autostart, (v) => { settings.autostart = v; void save(); }),
     ),
+  );
+}
+
+// ── Layout: where the island sits, how big it is, what the hub shows ──────────
+
+/** Controls that must follow changes made elsewhere (dragging the island). */
+const layoutRefreshers: (() => void)[] = [];
+
+function select(options: [string, string][], get: () => string, set: (v: string) => void): HTMLSelectElement {
+  const el = h("select", {}) as HTMLSelectElement;
+  for (const [value, text] of options) el.append(h("option", { value, text }));
+  const refresh = () => (el.value = get());
+  refresh();
+  layoutRefreshers.push(refresh);
+  el.addEventListener("change", () => {
+    set(el.value);
+    void save();
+  });
+  return el;
+}
+
+function slider(min: number, max: number, step: number, get: () => number, set: (v: number) => void, unit = "px") {
+  const input = h("input", { type: "range", min: String(min), max: String(max), step: String(step) }) as HTMLInputElement;
+  const out = h("span", { class: "hint" });
+  const refresh = () => {
+    input.value = String(get());
+    out.textContent = `${Math.round(get())} ${unit}`;
+  };
+  refresh();
+  layoutRefreshers.push(refresh);
+  input.addEventListener("input", () => {
+    set(Number(input.value));
+    out.textContent = `${input.value} ${unit}`;
+  });
+  input.addEventListener("change", () => void save());
+  return h("span", { class: "slider" }, input, out);
+}
+
+const SIZE_PRESETS: Record<string, [number, number]> = { S: [560, 240], M: [640, 290], L: [820, 420], XL: [1000, 560] };
+
+function layoutSection(): HTMLElement {
+  const mode = select(
+    [["edge", "Docked to a screen edge"], ["free", "Free — anywhere on the screen"]],
+    () => settings.placement ?? "edge",
+    (v) => (settings.placement = v as Settings["placement"]),
+  );
+  const edge = select(
+    [["top", "Top"], ["bottom", "Bottom (above the taskbar)"], ["left", "Left"], ["right", "Right"]],
+    () => settings.position ?? "top",
+    (v) => (settings.position = v as Settings["position"]),
+  );
+  const presets = h("span", { class: "row-buttons" });
+  for (const [name, [w, hh]] of Object.entries(SIZE_PRESETS)) {
+    presets.append(h("button", {
+      text: name,
+      onclick: () => {
+        settings.islandWidth = w;
+        settings.hubHeight = hh;
+        layoutRefreshers.forEach((f) => f());
+        void save();
+      },
+    }));
+  }
+  const scale = select(
+    [["0.9", "Small"], ["1", "Normal"], ["1.15", "Large"], ["1.3", "Extra large"]],
+    () => String(settings.hubScale ?? 1),
+    (v) => (settings.hubScale = Number(v)),
+  );
+  const lines = select(
+    [["8", "8 lines"], ["15", "15 lines"], ["40", "40 lines"], ["0", "Everything kept (80)"]],
+    () => String(settings.logLines ?? 40),
+    (v) => (settings.logLines = Number(v)),
+  );
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Island layout" })),
+    h("div", { class: "row" }, h("label", { text: "Placement" }), mode),
+    h("div", { class: "row" }, h("label", { text: "Edge" }), edge,
+      h("span", { class: "hint", text: "edge mode" })),
+    h("div", { class: "row" },
+      h("label", { text: "Move" }),
+      h("span", { class: "hint", text: "drag the ⋮⋮ grip on the open island, or Alt + drag it" }),
+      h("button", { text: "Reset position", onclick: () => void Bridge.resetPosition() }),
+    ),
+    h("div", { class: "row" }, h("label", { text: "Size" }), presets,
+      h("span", { class: "hint", text: "or drag the island's bottom-right corner" })),
+    h("div", { class: "row" }, h("label", { text: "Width" }),
+      slider(520, 1100, 10, () => settings.islandWidth ?? 640, (v) => (settings.islandWidth = v))),
+    h("div", { class: "row" }, h("label", { text: "Hub height" }),
+      slider(220, 640, 10, () => settings.hubHeight ?? 290, (v) => (settings.hubHeight = v))),
+    h("h2", {}, h("span", { text: "Agents hub" })),
+    h("div", { class: "row" }, h("label", { text: "Text size" }), scale),
+    h("div", { class: "row" }, h("label", { text: "Log" }), lines),
+    h("div", { class: "row" }, h("label", { text: "Show thinking" }),
+      toggle(settings.showThinking ?? true, (v) => { settings.showThinking = v; void save(); })),
+    h("div", { class: "row" }, h("label", { text: "Show times" }),
+      toggle(settings.showTime ?? true, (v) => { settings.showTime = v; void save(); })),
   );
 }
 
@@ -768,6 +851,7 @@ async function main() {
     apiSection(hasKey),
     integrationsSection(present),
     generalSection(),
+    layoutSection(),
     h("div", {
       class: "hint",
       text: "No telemetry. Network requests only go to the services you configure yourself.",
@@ -776,6 +860,7 @@ async function main() {
 
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };
+    layoutRefreshers.forEach((f) => f());
   });
 }
 

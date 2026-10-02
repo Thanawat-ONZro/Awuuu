@@ -4,7 +4,7 @@
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, PANEL_H, PANEL_W,
+  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
   type IslandMode, type IslandViewName,
@@ -46,6 +46,8 @@ export class Island {
   private miniGrid!: HTMLElement;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
+  private resizeGrip!: HTMLElement;
+  private resizing: { sx: number; sy: number; w: number; h: number } | null = null;
   private notchNub!: HTMLElement;
 
   private header!: ViewHost;
@@ -211,6 +213,8 @@ export class Island {
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
     this.countdown = h("div", { id: "countdown" });
+    this.resizeGrip = h("div", { id: "resize-grip", title: "Drag to resize" });
+    this.wireResize();
 
     this.header = buildHeader(actions);
     this.views = buildViews(actions, () => this.animateGeometry(false), (shrinking) => {
@@ -248,6 +252,7 @@ export class Island {
       this.botCanvas,
       this.miniGrid,
       this.countdown,
+      this.resizeGrip,
     );
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -544,8 +549,30 @@ export class Island {
     const r = this.radius.value;
     this.islandEl.style.width = `${w}px`;
     this.islandEl.style.height = `${hh}px`;
-    this.islandEl.style.borderRadius = this.atBottom ? `${r}px ${r}px 0 0` : `0 0 ${r}px ${r}px`;
-    this.islandEl.style.transform = `translateX(-50%)`;
+    const rect0 = this.islandRect();
+    // The resize grip sits on the corner away from the docked edge.
+    const L0 = geo.layout;
+    const showGrip = State.mode === "expanded" && State.view === "agents";
+    this.resizeGrip.style.display = showGrip ? "block" : "none";
+    this.resizeGrip.dataset.v = L0.v;
+    this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
+    // The wake strip fills the window while it is only the strip.
+    this.wakeStrip.style.cssText = this.collapsed
+      ? "left:0;top:0;width:100%;height:100%;transform:none;display:block"
+      : "display:none";
+    this.islandEl.style.left = `${rect0.x}px`;
+    this.islandEl.style.top = `${rect0.y}px`;
+    this.islandEl.style.bottom = "auto";
+    this.islandEl.style.transform = "none";
+    // Round every corner that does not touch the screen edge it is docked to.
+    const edge = geo.layout.edge;
+    const [tl, tr, br, bl] =
+      edge === "top" ? [0, 0, r, r]
+      : edge === "bottom" ? [r, r, 0, 0]
+      : edge === "left" ? [0, r, r, 0]
+      : edge === "right" ? [r, 0, 0, r]
+      : [r, r, r, r];
+    this.islandEl.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
     this.miniGrid.style.left = `${w - 40 - 14.5}px`;
@@ -568,15 +595,80 @@ export class Island {
   private islandRect(): { x: number; y: number; w: number; h: number } {
     const w = this.width.value;
     const hh = this.height.value;
+    const L = geo.layout;
     if (this.collapsed) {
-      return { x: (WAKE_STRIP_W - w) / 2, y: this.atBottom ? WAKE_STRIP_H - hh : 0, w, h: hh };
+      // The window is only the wake strip; the tab sits in it.
+      const sw = L.vertical ? WAKE_STRIP_H : WAKE_STRIP_W;
+      const sh = L.vertical ? WAKE_STRIP_W : WAKE_STRIP_H;
+      const x = L.h === "left" ? 0 : L.h === "right" ? sw - w : (sw - w) / 2;
+      const y = L.vertical ? (sh - hh) / 2 : L.v === "bottom" ? sh - hh : 0;
+      return { x, y, w, h: hh };
     }
-    return { x: (PANEL_W - w) / 2, y: this.atBottom ? PANEL_H - hh : 0, w, h: hh };
+    const x =
+      L.h === "left" ? 0
+      : L.h === "right" ? L.panelW - w
+      : Math.min(Math.max(L.anchorX - w / 2, 0), Math.max(0, L.panelW - w));
+    return { x, y: this.atBottom ? L.panelH - hh : 0, w, h: hh };
   }
 
-  /** At the bottom of the screen the island hangs from the window's bottom edge. */
+  /**
+   * The corner grip (Agents hub): drag to set the island's width and the hub's
+   * height. Rust gives the window its largest size meanwhile; the new size is
+   * saved on release, which fits the window to it again.
+   */
+  private wireResize() {
+    const g = this.resizeGrip;
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      g.setPointerCapture(e.pointerId);
+      this.resizing = { sx: e.screenX, sy: e.screenY, w: geo.expandedW, h: geo.hubH };
+      State.isPinned = true;
+      this.fsm.pinned = true;
+      this.root.classList.add("resizing");
+      void Bridge.islandResizeMode(true);
+    });
+    g.addEventListener("pointermove", (e) => {
+      const r = this.resizing;
+      if (!r) return;
+      const L = geo.layout;
+      const dx = e.screenX - r.sx;
+      const dy = e.screenY - r.sy;
+      const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
+      const dh = L.v === "bottom" ? -dy : dy;
+      geo.expandedW = Math.round(Math.min(1100, Math.max(520, r.w + dw)));
+      geo.hubH = Math.round(Math.min(640, Math.max(220, r.h + dh)));
+      this.animateGeometry(false);
+    });
+    const end = (e: PointerEvent) => {
+      if (!this.resizing) return;
+      this.resizing = null;
+      if (g.hasPointerCapture(e.pointerId)) g.releasePointerCapture(e.pointerId);
+      this.root.classList.remove("resizing");
+      State.isPinned = State.approvalQueue.length > 0;
+      this.fsm.pinned = State.isPinned;
+      State.settings.islandWidth = geo.expandedW;
+      State.settings.hubHeight = geo.hubH;
+      void Bridge.saveSettings(State.settings);
+    };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+  }
+
+  /** The island grows up from its anchor (bottom edge, or low on the screen). */
   private get atBottom(): boolean {
-    return State.settings.position === "bottom";
+    return geo.layout.v === "bottom";
+  }
+
+  /** Rust placed the window: draw the island where it now belongs. */
+  setLayout(layout: IslandLayout) {
+    geo.layout = layout;
+    this.root.classList.toggle("at-bottom", this.atBottom);
+    this.root.dataset.edge = layout.edge;
+    this.applyGeometry();
+    this.animateGeometry(false);
+    State.notify();
   }
 
   // ── Window collapse (hidden → tiny wake strip, zero polling) ────────────────
@@ -1000,13 +1092,16 @@ export class Island {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
+    geo.expandedW = State.settings.islandWidth ?? 640;
+    geo.hubH = State.settings.hubHeight ?? 290;
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
+    this.animateGeometry(false);
     State.notify();
   }
 
   get panelSize() {
-    return { w: PANEL_W, h: PANEL_H };
+    return { w: geo.layout.panelW, h: geo.layout.panelH };
   }
 
   get chatHeight() {

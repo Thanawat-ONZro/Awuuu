@@ -19,16 +19,13 @@ use windows::Win32::Foundation::{HWND, POINT};
 use windows::core::BOOL;
 use windows::Win32::Foundation::LPARAM;
 use windows::Win32::System::Ole::RevokeDragDrop;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_MENU};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW,
 };
 
-/// Logical size of the full window — the largest island view, like the macOS panel.
-pub const PANEL_W: f64 = 720.0;
-pub const PANEL_H: f64 = 320.0;
 /// Logical size of the subtle notch tab when the island is in hidden/idle state.
 pub const STRIP_W: f64 = 140.0;
 pub const STRIP_H: f64 = 14.0;
@@ -73,6 +70,8 @@ pub struct PollGate {
     rect: Mutex<IslandRect>,
     /// Mirrors the window flag so we only call into Win32 when it changes.
     ignoring: AtomicBool,
+    /// The island's grip was pressed: the watcher starts moving the window.
+    drag_requested: AtomicBool,
 }
 
 impl PollGate {
@@ -82,6 +81,7 @@ impl PollGate {
             collapsed: AtomicBool::new(true),
             rect: Mutex::new(IslandRect::default()),
             ignoring: AtomicBool::new(false),
+            drag_requested: AtomicBool::new(false),
         }
     }
 
@@ -98,6 +98,11 @@ impl PollGate {
 
     pub fn set_active(&self, on: bool) {
         self.active.store(on, Ordering::Relaxed);
+        crate::mouse::poke();
+    }
+
+    pub fn begin_drag(&self) {
+        self.drag_requested.store(true, Ordering::Relaxed);
         crate::mouse::poke();
     }
 
@@ -155,6 +160,10 @@ fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
+fn alt_down() -> bool {
+    unsafe { (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000) != 0 }
+}
+
 fn monitor_contains(m: &Monitor, x: f64, y: f64) -> bool {
     let p = m.position();
     let s = m.size();
@@ -198,32 +207,185 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
     }
 }
 
-/// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
-/// `bottom` glues it to the bottom of the work area (just above the taskbar).
-pub fn apply_geometry(app: &AppHandle, pref: &str, bottom: bool, collapsed: bool) {
-    let Some(win) = window(app) else { return };
-    let Some(m) = target_monitor(app, pref) else { return };
+/// Where the island sits inside its window — sent to the front end, which
+/// draws the island there (and pushes back the exact rect for hit testing).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Layout {
+    /// Island centre x in window-logical px (`h == "center"`).
+    pub anchor_x: f64,
+    /// "center" | "left" | "right"
+    pub h: &'static str,
+    /// "top" (grows down) | "bottom" (grows up)
+    pub v: &'static str,
+    /// "top" | "bottom" | "left" | "right" | "free"
+    pub edge: String,
+    /// The hidden tab stands upright (left/right edges).
+    pub vertical: bool,
+    /// Window size while open, logical px.
+    pub panel_w: f64,
+    pub panel_h: f64,
+}
 
-    let scale = m.scale_factor();
-    let mp = *m.position();
-    let ms = *m.size();
+/// A rectangle in physical px.
+#[derive(Clone, Copy, Debug)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
 
-    let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
-    let pw = (lw * scale).round().max(1.0) as u32;
-    let ph = (lh * scale).round().max(1.0) as u32;
-    let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    let y = if bottom {
-        let wa = m.work_area();
-        wa.position.y + wa.size.height as i32 - ph as i32
-    } else {
-        mp.y
+/// Window position/size (physical) and island layout for a placement.
+/// `screen` is the monitor, `work` its work area (without the taskbar).
+pub fn compute(
+    s: &crate::settings::Settings,
+    screen: Rect,
+    work: Rect,
+    scale: f64,
+    collapsed: bool,
+) -> ((f64, f64, f64, f64), Layout) {
+    let (panel_w, panel_h) = s.panel_size();
+    let free = s.placement == "free";
+    let edge = if free { "free".to_string() } else { s.position.clone() };
+    let vertical = matches!(edge.as_str(), "left" | "right");
+    let (lw, lh) = match (collapsed, vertical) {
+        (true, true) => (STRIP_H, STRIP_W),
+        (true, false) => (STRIP_W, STRIP_H),
+        _ => (panel_w, panel_h),
     };
+    let (pw, ph) = ((lw * scale).round().max(1.0), (lh * scale).round().max(1.0));
+    let clamp_x = |x: f64| x.clamp(screen.x, (screen.x + screen.w - pw).max(screen.x));
+    let clamp_y = |y: f64| y.clamp(work.y, (work.y + work.h - ph).max(work.y));
+    let along = s.along.clamp(0.0, 1.0);
+    // Half the compact island's height: a side-docked island centres on `along`.
+    let half_compact = 16.0 * scale;
 
-    let _ = win.set_size(PhysicalSize::new(pw, ph));
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    let (x, y, h, v) = if free {
+        let px = work.x + s.free_x.clamp(0.0, 1.0) * work.w;
+        let fy = s.free_y.clamp(0.0, 1.0);
+        let py = work.y + fy * work.h;
+        let x = clamp_x(px - pw / 2.0);
+        if fy > 0.5 {
+            (x, clamp_y(py - ph), "center", "bottom")
+        } else {
+            (x, clamp_y(py), "center", "top")
+        }
+    } else {
+        match edge.as_str() {
+            "bottom" => {
+                let ax = screen.x + along * screen.w;
+                (clamp_x(ax - pw / 2.0), work.y + work.h - ph, "center", "bottom")
+            }
+            "left" | "right" => {
+                let x = if edge == "left" { work.x } else { work.x + work.w - pw };
+                let ay = work.y + along * work.h;
+                let side = if edge == "left" { "left" } else { "right" };
+                if collapsed {
+                    (x, clamp_y(ay - ph / 2.0), side, "top")
+                } else if along > 0.6 {
+                    (x, clamp_y(ay + half_compact - ph), side, "bottom")
+                } else {
+                    (x, clamp_y(ay - half_compact), side, "top")
+                }
+            }
+            _ => {
+                let ax = screen.x + along * screen.w;
+                (clamp_x(ax - pw / 2.0), screen.y, "center", "top")
+            }
+        }
+    };
+    // Where the island's centre falls inside the window (it may sit off-centre
+    // when the window is held back by the screen edge).
+    let target_x = if free {
+        work.x + s.free_x.clamp(0.0, 1.0) * work.w
+    } else {
+        screen.x + along * screen.w
+    };
+    let anchor_x = ((target_x - x) / scale).clamp(0.0, lw);
+    let layout = Layout {
+        anchor_x,
+        h,
+        v,
+        edge,
+        vertical,
+        panel_w,
+        panel_h,
+    };
+    ((x.round(), y.round(), pw, ph), layout)
+}
+
+fn rect_of(m: &Monitor) -> (Rect, Rect) {
+    let p = m.position();
+    let sz = m.size();
+    let wa = m.work_area();
+    (
+        Rect { x: p.x as f64, y: p.y as f64, w: sz.width as f64, h: sz.height as f64 },
+        Rect {
+            x: wa.position.x as f64,
+            y: wa.position.y as f64,
+            w: wa.size.width as f64,
+            h: wa.size.height as f64,
+        },
+    )
+}
+
+/// Places and sizes the window for the current placement. `collapsed` picks
+/// the wake strip instead of the panel. Tells the island where to draw itself.
+pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed: bool) -> Option<Layout> {
+    let win = window(app)?;
+    let m = target_monitor(app, &s.screen)?;
+    let (screen, work) = rect_of(&m);
+    let ((x, y, pw, ph), layout) = compute(s, screen, work, m.scale_factor(), collapsed);
+    let size = PhysicalSize::new(pw as u32, ph as u32);
+    let _ = win.set_size(size);
+    let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
     // Moving across displays can rescale the window: re-assert the physical size.
-    let _ = win.set_size(PhysicalSize::new(pw, ph));
+    let _ = win.set_size(size);
     let _ = win.set_always_on_top(true);
+    let _ = win.emit("layout", layout.clone());
+    Some(layout)
+}
+
+/// Where the island should go after being dropped: the dragged island's rect
+/// in screen physical px → new placement fields in `s`.
+pub fn place_from_drop(s: &mut crate::settings::Settings, island: Rect, screen: Rect, work: Rect, scale: f64) {
+    let cx = island.x + island.w / 2.0;
+    let cy = island.y + island.h / 2.0;
+    if s.placement == "free" {
+        s.free_x = ((cx - work.x) / work.w).clamp(0.0, 1.0);
+        let snap = 24.0 * scale;
+        let top = island.y;
+        let bottom = island.y + island.h;
+        // Upper half: remember the top edge (grows down); lower: the bottom one.
+        s.free_y = if (top - work.y) / work.h <= 0.5 {
+            if top - work.y < snap { 0.0 } else { ((top - work.y) / work.h).clamp(0.0, 1.0) }
+        } else if work.y + work.h - bottom < snap {
+            1.0
+        } else {
+            ((bottom - work.y) / work.h).clamp(0.0, 1.0)
+        };
+        return;
+    }
+    // Edge: the nearest edge wins; slide along it to where it was dropped.
+    let d = [
+        ("top", (cy - screen.y).abs()),
+        ("bottom", (work.y + work.h - cy).abs()),
+        ("left", (cx - work.x).abs()),
+        ("right", (work.x + work.w - cx).abs()),
+    ];
+    let edge = d.iter().min_by(|a, b| a.1.total_cmp(&b.1)).map(|e| e.0).unwrap_or("top");
+    s.position = edge.to_string();
+    s.along = match edge {
+        "left" | "right" => ((cy - work.y) / work.h).clamp(0.0, 1.0),
+        _ => ((cx - screen.x) / screen.w).clamp(0.0, 1.0),
+    };
+}
+
+pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
+    let m = target_monitor(app, pref)?;
+    let (screen, work) = rect_of(&m);
+    Some((screen, work, m.scale_factor()))
 }
 
 fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
@@ -359,6 +521,8 @@ struct Watch {
     screen_checked: Instant,
     cursor_sent: Instant,
     cursor_pending: Option<CursorPayload>,
+    /// Moving the island: cursor minus window origin (physical px).
+    drag: Option<(f64, f64)>,
 }
 
 impl Watch {
@@ -379,7 +543,41 @@ impl Watch {
             screen_checked: Instant::now(),
             cursor_sent: Instant::now(),
             cursor_pending: None,
+            drag: None,
         }
+    }
+
+    fn start_drag(&mut self, win: &WebviewWindow, cx: f64, cy: f64) {
+        let Ok(o) = win.outer_position() else { return };
+        self.drag = Some((cx - o.x as f64, cy - o.y as f64));
+        self.pressed_off_island = false;
+        let _ = win.emit("island-drag", true);
+    }
+
+    /// While moving: the window follows the cursor. Released: dock it.
+    fn drag_event(&mut self, win: &WebviewWindow, cx: f64, cy: f64, edge: Option<bool>) {
+        let Some((ox, oy)) = self.drag else { return };
+        let _ = win.set_position(PhysicalPosition::new((cx - ox).round() as i32, (cy - oy).round() as i32));
+        if edge == Some(false) || !left_button_down() {
+            self.drag = None;
+            self.geometry = None;
+            self.end_drag(win, cx - ox, cy - oy);
+        }
+    }
+
+    fn end_drag(&mut self, win: &WebviewWindow, wx: f64, wy: f64) {
+        let _ = win.emit("island-drag", false);
+        let Some(shared) = self.app.try_state::<crate::Shared>() else { return };
+        let mut settings = shared.settings.lock().unwrap().clone();
+        let Some((screen, work, scale)) = monitor_rects(&self.app, &settings.screen) else { return };
+        let r = *self.gate.rect.lock().unwrap();
+        let island = Rect { x: wx + r.x * scale, y: wy + r.y * scale, w: r.w * scale, h: r.h * scale };
+        place_from_drop(&mut settings, island, screen, work, scale);
+        crate::log::line(format!(
+            "island moved: {} {} along={:.2} free=({:.2},{:.2})",
+            settings.placement, settings.position, settings.along, settings.free_x, settings.free_y
+        ));
+        crate::commit_settings(&self.app, shared.inner(), settings);
     }
 
     fn unblock_drops(&self) {
@@ -465,6 +663,13 @@ impl Watch {
             }
         };
         let Some(win) = window(&self.app) else { return };
+        if self.gate.drag_requested.swap(false, Ordering::Relaxed) && left_button_down() && self.drag.is_none() {
+            self.start_drag(&win, cx, cy);
+        }
+        if self.drag.is_some() {
+            self.drag_event(&win, cx, cy, edge);
+            return;
+        }
         let Some(g) = self.geometry(&win) else { return };
         let active = self.gate.is_active();
 
@@ -486,6 +691,11 @@ impl Watch {
         // A press may be the start of a drag: make sure the drop target is ours
         // before the file arrives. Recorded while collapsed too — a file is
         // usually picked up while the island sleeps, then dragged onto the notch.
+        // Alt + drag anywhere on the open island moves it.
+        if edge == Some(true) && active && on_island && alt_down() {
+            self.start_drag(&win, cx, cy);
+            return;
+        }
         if edge == Some(true) {
             self.pressed_outside = !in_window;
             self.pressed_under = active && in_window && self.gate.ignoring.load(Ordering::Relaxed);
@@ -574,5 +784,62 @@ impl Watch {
 pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {
     if let Some(win) = window(app) {
         let _ = win.set_ignore_cursor_events(ignore);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::Settings;
+
+    const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0 };
+    const WORK: Rect = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1032.0 };
+
+    #[test]
+    fn default_is_top_centre() {
+        let ((x, y, w, _), l) = compute(&Settings::default(), SCREEN, WORK, 1.0, false);
+        assert_eq!((x, y, w), (600.0, 0.0, 720.0));
+        assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", 360.0));
+    }
+
+    #[test]
+    fn slid_to_the_right_end_stays_on_screen() {
+        let s = Settings { along: 1.0, ..Settings::default() };
+        let ((x, _, w, _), l) = compute(&s, SCREEN, WORK, 1.0, false);
+        assert_eq!(x + w, 1920.0);
+        assert_eq!(l.anchor_x, 720.0); // the front end keeps the island inside
+    }
+
+    #[test]
+    fn right_edge_is_vertical_and_hangs_from_the_side() {
+        let s = Settings { position: "right".into(), along: 0.5, ..Settings::default() };
+        let ((x, _, w, h), l) = compute(&s, SCREEN, WORK, 1.0, true);
+        assert_eq!((x + w, w, h), (1920.0, STRIP_H, STRIP_W));
+        assert!(l.vertical);
+        assert_eq!(l.h, "right");
+    }
+
+    #[test]
+    fn free_lower_half_grows_up() {
+        let s = Settings { placement: "free".into(), free_x: 0.25, free_y: 0.9, ..Settings::default() };
+        let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
+        assert_eq!(l.v, "bottom");
+        assert!((y + h - 0.9 * 1032.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn dropping_near_the_left_side_docks_left() {
+        let mut s = Settings::default();
+        place_from_drop(&mut s, Rect { x: 5.0, y: 600.0, w: 288.0, h: 32.0 }, SCREEN, WORK, 1.0);
+        // Centre x = 149 is nearer the left side (149) than the top (616).
+        assert_eq!(s.position, "left");
+        assert!((s.along - 616.0 / 1032.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn free_drop_near_the_top_snaps_to_it() {
+        let mut s = Settings { placement: "free".into(), ..Settings::default() };
+        place_from_drop(&mut s, Rect { x: 100.0, y: 10.0, w: 288.0, h: 32.0 }, SCREEN, WORK, 1.0);
+        assert_eq!(s.free_y, 0.0);
     }
 }

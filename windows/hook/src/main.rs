@@ -36,8 +36,9 @@ const DECISION_BUDGET: Duration = Duration::from_secs(110);
 const ERROR_PIPE_BUSY: i32 = 231;
 
 /// Fields that are pointless to forward and can be enormous (a whole file read,
-/// a full command output). The island never shows them.
-const DROPPED_FIELDS: &[&str] = &["tool_response", "transcript_path"];
+/// a full command output). The island never shows them. (`transcript_path` is
+/// kept: the island reads what the agent said from it.)
+const DROPPED_FIELDS: &[&str] = &["tool_response"];
 /// Longest string forwarded for any single field; the island truncates to far
 /// less than this anyway.
 const MAX_FIELD_LEN: usize = 2_000;

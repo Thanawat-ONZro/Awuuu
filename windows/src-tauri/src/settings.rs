@@ -13,9 +13,36 @@ pub struct Settings {
     pub active_integrations: Vec<String>,
     /// "primary" = the main display, "cursor" = whichever display the mouse is on.
     pub screen: String,
-    /// "top" or "bottom" (just above the taskbar). Missing in older settings.json → top.
+    /// The edge the island docks to in "edge" placement: "top", "bottom" (just
+    /// above the taskbar), "left" or "right". Missing in older settings.json → top.
     #[serde(default = "default_position")]
     pub position: String,
+    /// "edge": docked to `position`, slid to `along` (0..1) along that edge.
+    /// "free": anywhere, at (`free_x`, `free_y`) as fractions of the work area.
+    #[serde(default = "default_placement")]
+    pub placement: String,
+    #[serde(default = "half")]
+    pub along: f64,
+    #[serde(default = "half")]
+    pub free_x: f64,
+    #[serde(default)]
+    pub free_y: f64,
+    /// Width of the open island, logical px.
+    #[serde(default = "default_island_width")]
+    pub island_width: f64,
+    /// Height of the Agents hub, logical px.
+    #[serde(default = "default_hub_height")]
+    pub hub_height: f64,
+    /// Agents hub text size, 1.0 = normal.
+    #[serde(default = "one")]
+    pub hub_scale: f64,
+    /// Log lines kept on screen in the hub (0 = all).
+    #[serde(default = "default_log_lines")]
+    pub log_lines: u32,
+    #[serde(default = "yes")]
+    pub show_thinking: bool,
+    #[serde(default = "yes")]
+    pub show_time: bool,
     pub autostart: bool,
     pub hooks_installed: bool,
     /// Claude model used by the chat. Changeable in the settings window.
@@ -39,6 +66,47 @@ fn default_position() -> String {
     "top".into()
 }
 
+fn default_placement() -> String {
+    "edge".into()
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_log_lines() -> u32 {
+    40
+}
+
+pub const ISLAND_WIDTH: (f64, f64, f64) = (520.0, 640.0, 1100.0); // min, default, max
+pub const HUB_HEIGHT: (f64, f64, f64) = (220.0, 290.0, 640.0);
+
+fn default_island_width() -> f64 {
+    ISLAND_WIDTH.1
+}
+
+fn default_hub_height() -> f64 {
+    HUB_HEIGHT.1
+}
+
+impl Settings {
+    /// Size of the window that holds the open island (logical px): the island
+    /// plus room for its shadow, never smaller than the classic 720×320.
+    pub fn panel_size(&self) -> (f64, f64) {
+        let w = self.island_width.clamp(ISLAND_WIDTH.0, ISLAND_WIDTH.2);
+        let h = self.hub_height.clamp(HUB_HEIGHT.0, HUB_HEIGHT.2);
+        ((w + 80.0).max(720.0), (h + 30.0).max(320.0))
+    }
+}
+
 fn default_model() -> String {
     crate::claude::DEFAULT_MODEL.to_string()
 }
@@ -57,6 +125,16 @@ impl Default for Settings {
             ],
             screen: "primary".into(),
             position: default_position(),
+            placement: default_placement(),
+            along: 0.5,
+            free_x: 0.5,
+            free_y: 0.0,
+            island_width: default_island_width(),
+            hub_height: default_hub_height(),
+            hub_scale: 1.0,
+            log_lines: default_log_lines(),
+            show_thinking: true,
+            show_time: true,
             autostart: false,
             hooks_installed: false,
             model: default_model(),
@@ -92,7 +170,8 @@ fn settings_path() -> PathBuf {
 
 pub fn load() -> Settings {
     match std::fs::read(settings_path()) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        // Notepad and PowerShell like to add a UTF-8 BOM, which serde rejects.
+        Ok(bytes) => serde_json::from_slice(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes)).unwrap_or_default(),
         Err(_) => Settings::default(),
     }
 }

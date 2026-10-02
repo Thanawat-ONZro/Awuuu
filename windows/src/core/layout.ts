@@ -48,10 +48,34 @@ export interface ViewLayout {
   agentMode: AgentLayoutMode;
 }
 
-// The window is a fixed 720×320 (largest view) like the macOS panel; the island is
-// drawn inside it, glued to the top edge and horizontally centred.
-export const PANEL_W = 720;
-export const PANEL_H = 320;
+// The window holds the open island (720×320 by default, bigger when the user
+// makes the island bigger); the island is drawn inside it where `IslandLayout`
+// says — Rust decides that from the placement (edge or free, see island.rs).
+export interface IslandLayout {
+  /** Island centre x in window px (h = "center"). */
+  anchorX: number;
+  h: "center" | "left" | "right";
+  /** "top": hangs down from its anchor; "bottom": grows up. */
+  v: "top" | "bottom";
+  edge: "top" | "bottom" | "left" | "right" | "free";
+  /** Hidden tab stands upright (left/right edges). */
+  vertical: boolean;
+  panelW: number;
+  panelH: number;
+}
+
+export const DEFAULT_LAYOUT: IslandLayout = {
+  anchorX: 360, h: "center", v: "top", edge: "top", vertical: false, panelW: 720, panelH: 320,
+};
+
+/** Current layout and user sizes; island.ts keeps these up to date. */
+export const geo = {
+  layout: { ...DEFAULT_LAYOUT },
+  /** Width of the open island. */
+  expandedW: 640,
+  /** Height of the Agents hub. */
+  hubH: 290,
+};
 
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
 export const NOTCH_W = 184;
@@ -107,7 +131,9 @@ export const HEADER_BOTTOM = 42;
 /** Space under the card, inside the island. */
 export const CARD_BOTTOM_GAP = 14;
 export const APPROVAL_MIN_H = 160;
-export const APPROVAL_MAX_H = PANEL_H - 12;
+export function approvalMaxH(): number {
+  return geo.layout.panelH - 12;
+}
 
 /**
  * An approval card fits its content: a long command or a question with many
@@ -117,7 +143,7 @@ export const APPROVAL_MAX_H = PANEL_H - 12;
 export function approvalHeight(fit: number): number {
   if (fit <= 0) return 200;
   const h = HEADER_BOTTOM + fit + CARD_BOTTOM_GAP;
-  return Math.round(Math.min(APPROVAL_MAX_H, Math.max(APPROVAL_MIN_H, h)));
+  return Math.round(Math.min(approvalMaxH(), Math.max(APPROVAL_MIN_H, h)));
 }
 
 export function islandSize(
@@ -129,7 +155,7 @@ export function islandSize(
   switch (mode) {
     case "hidden":
       // Subtle notch tab protruding slightly from the screen edge
-      return { w: NOTCH_TAB_W, h: NOTCH_TAB_H };
+      return geo.layout.vertical ? { w: NOTCH_TAB_H, h: NOTCH_TAB_W } : { w: NOTCH_TAB_W, h: NOTCH_TAB_H };
     case "compact":
       return { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
@@ -138,8 +164,10 @@ export function islandSize(
           ? chatPromptHeight(chatCount)
           : view === "approval"
           ? approvalHeight(approvalFit)
+          : view === "agents"
+          ? geo.hubH
           : VIEW_LAYOUTS[view].height;
-      return { w: EXPANDED_W, h };
+      return { w: geo.expandedW, h };
     }
   }
 }

@@ -109,10 +109,20 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  // Grip: press and drag to move the island (Alt + drag works anywhere on it).
+  const grip = h("div", { class: "grip", title: "Drag to move the island (or Alt + drag)" },
+    ...Array.from({ length: 6 }, () => h("i")));
+  grip.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    void Bridge.islandDragBegin();
+  });
+
   const el = h(
     "div",
     { id: "header" },
     h("div", { class: "tabs" }, tabAgents, tabChat, tabHome, tabDrop),
+    grip,
     h("div", { class: "header-actions" }, soundBtn, gearBtn, collapseBtn),
   );
 
@@ -305,7 +315,22 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
   let pillKey = "";
   let stepsKey = "";
   let lastStepsFocus = "";
-  let wasOn = false;
+  // The log follows the newest line unless the user scrolled up to read.
+  let readingBack = false;
+  let programmatic = false;
+  const toBottom = () => {
+    programmatic = true;
+    steps.scrollTop = steps.scrollHeight;
+    requestAnimationFrame(() => (programmatic = false));
+  };
+  steps.addEventListener("scroll", () => {
+    if (programmatic || steps.clientHeight < 40) return;
+    readingBack = steps.scrollHeight - steps.scrollTop - steps.clientHeight > 24;
+  });
+  // The island opens, closes and gets resized under the log: stay on the newest line.
+  new ResizeObserver(() => {
+    if (!readingBack) toBottom();
+  }).observe(steps);
 
   return {
     el,
@@ -340,26 +365,25 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       if (folder) who.title = folder;
 
       const log = focused.log ?? [];
-      const key = `${focused.id}:${log.length}:${log.at(-1)?.at ?? 0}:${focused.state}:${Math.floor(Date.now() / 30000)}`;
+      const key = `${focused.id}:${log.length}:${log.at(-1)?.at ?? 0}:${focused.state}:${Math.floor(Date.now() / 30000)}:${State.settings.logLines}`;
+      body.classList.toggle("hide-think", State.settings.showThinking === false);
+      body.classList.toggle("hide-time", State.settings.showTime === false);
+      body.style.setProperty("--hub-scale", String(State.settings.hubScale || 1));
       if (key !== stepsKey) {
         stepsKey = key;
-        const stick = steps.scrollHeight - steps.scrollTop - steps.clientHeight < 24;
         clear(steps);
-        const recent = log.slice(-HUB_LOG_LINES);
+        const n = State.settings.logLines || 80;
+        const recent = log.slice(-n);
         if (recent.length === 0) steps.append(h("div", { class: "hub-step dim", text: "Waiting for the first step…" }));
         recent.forEach((entry, i) => {
           const last = i === recent.length - 1;
           const live = last && ["working", "thinking"].includes(focused.state);
           steps.append(logRow(entry, last, live));
         });
-        if (stick || focused.id !== lastStepsFocus) steps.scrollTop = steps.scrollHeight;
+        if (focused.id !== lastStepsFocus) readingBack = false;
+        if (!readingBack) toBottom();
         lastStepsFocus = focused.id;
       }
-      // Rendered while the view was off (no height yet): land on the newest
-      // line the moment it shows.
-      const on = el.classList.contains("on");
-      if (on && !wasOn) requestAnimationFrame(() => (steps.scrollTop = steps.scrollHeight));
-      wasOn = on;
 
       const nextPillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
       if (nextPillKey !== pillKey) {
@@ -373,9 +397,6 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     },
   };
 }
-
-/** How many log lines the hub keeps on screen (scrolls for more). */
-const HUB_LOG_LINES = 40;
 
 const LOG_MARK: Record<LogKind, string> = {
   prompt: "›", sent: "›", tool: "▸", say: "●", think: "∴", done: "✓", error: "!", info: "·",

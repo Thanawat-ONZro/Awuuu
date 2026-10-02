@@ -265,3 +265,18 @@ select option {
   background: rgba(245, 165, 36, 0.13);
   color: #fbc06a;
 }
+
+.slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider input[type="range"] {
+  width: 180px;
+}
+
+.row-buttons {
+  display: inline-flex;
+  gap: 6px;
+}
