@@ -35,6 +35,18 @@ pub const HOOK_EVENTS: &[(&str, u64)] = &[
     ("SubagentStop", 10),
 ];
 
+/// AGY events and their timeouts. PreToolUse waits for a human in the island.
+const AGY_EVENTS: &[(&str, u64)] = &[
+    ("PreToolUse", 120),
+    ("PostToolUse", 10),
+    ("PreInvocation", 10),
+    ("PostInvocation", 10),
+    ("Stop", 10),
+];
+
+/// Our named hook inside AGY's hooks.json.
+const AGY_HOOK_NAME: &str = "awuuu";
+
 /// Marker that identifies an Awuuu entry inside settings.json.
 const MARKER: &str = "awuuu-hook";
 
@@ -145,10 +157,24 @@ fn hook_command(agent: HookAgent, event: &str) -> String {
         HookAgent::Agy => {
             // Antigravity CLI on Windows executes commands via cmd.exe / PowerShell.
             // Native backslashes and standard Windows path formatting are mandatory.
+            // AGY runs the command through `cmd /c` and escapes every `"` as
+            // `\"` on the way, so a quoted path is never found. Unquoted is
+            // fine without spaces; with spaces, the 8.3 short name has none.
             let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
-            format!("\"{exe}\" --agent agy {event}")
+            let exe = if exe.contains(' ') { short_path(&exe).unwrap_or(exe) } else { exe };
+            format!("{exe} --agent agy {event}")
         }
     }
+}
+
+/// The 8.3 short form of an existing path (no spaces), if the volume has one.
+fn short_path(long: &str) -> Option<String> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+    let wide = HSTRING::from(long);
+    let mut buf = vec![0u16; 1024];
+    let n = unsafe { GetShortPathNameW(&wide, Some(&mut buf)) } as usize;
+    (n > 0 && n < buf.len()).then(|| String::from_utf16_lossy(&buf[..n])).filter(|s| !s.contains(' '))
 }
 
 fn entry_is_ours(entry: &Value) -> bool {
@@ -284,47 +310,40 @@ fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
     match agent {
         HookAgent::Claude => merged(existing),
         HookAgent::Agy => {
-            let mut root = existing.as_object().cloned().unwrap_or_default();
-            let mut hooks = root
-                .get("hooks")
-                .and_then(Value::as_object)
+            // AGY's hooks.json (spec bundled in agy.exe 1.2.14): top-level keys
+            // are named hooks, each holding its events. Tool events are grouped
+            // under a matcher; the others are a flat list of handlers. Ours is
+            // the "awuuu" key, so every other named hook stays untouched.
+            let mut root = without_ours_for_agent(HookAgent::Agy, existing)
+                .as_object()
                 .cloned()
-                .unwrap_or_else(Map::new);
-
-            let agy_events: &[(&str, Option<&str>, u64)] = &[
-                ("PreToolUse", Some(".*"), 120),
-                ("PostToolUse", Some(".*"), 10),
-                ("SessionStart", None, 10),
-                ("Stop", None, 10),
-            ];
-
-            for (event, matcher, timeout) in agy_events {
-                let mut list = hooks
-                    .get(*event)
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                list.retain(|entry| !entry_is_ours(entry));
-                let mut entry = Map::new();
-                entry.insert("command".into(), Value::String(hook_command(HookAgent::Agy, event)));
-                if let Some(m) = matcher {
-                    entry.insert("matcher".into(), Value::String((*m).to_string()));
-                }
-                entry.insert("timeout".into(), json!(timeout));
-                list.push(Value::Object(entry));
-                hooks.insert((*event).to_string(), Value::Array(list));
+                .unwrap_or_default();
+            let handler = |event: &str, timeout: u64| {
+                json!({ "type": "command", "command": hook_command(HookAgent::Agy, event), "timeout": timeout })
+            };
+            let mut ours = Map::new();
+            ours.insert("enabled".into(), json!(true));
+            for (event, timeout) in AGY_EVENTS {
+                let value = if matches!(*event, "PreToolUse" | "PostToolUse") {
+                    json!([{ "matcher": "*", "hooks": [handler(event, *timeout)] }])
+                } else {
+                    json!([handler(event, *timeout)])
+                };
+                ours.insert((*event).to_string(), value);
             }
-
-            root.insert("hooks".into(), Value::Object(hooks));
+            root.insert(AGY_HOOK_NAME.into(), Value::Object(ours));
             Value::Object(root)
         }
     }
 }
 
-fn without_ours_for_agent(_agent: HookAgent, existing: &Value) -> Value {
+fn without_ours_for_agent(agent: HookAgent, existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
-    root.remove(MARKER);
-    root.remove("awuuu-hook");
+    if agent == HookAgent::Agy {
+        root.remove(AGY_HOOK_NAME);
+        // Left by builds before 0.3, which wrote the wrong format.
+        root.remove(MARKER);
+    }
     without_ours(&Value::Object(root))
 }
 
@@ -341,9 +360,12 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
         })
         .unwrap_or(false);
 
-    has_hooks
-        || (agent == HookAgent::Agy
-            && (current.get(MARKER).is_some() || current.get("awuuu-hook").is_some()))
+    match agent {
+        HookAgent::Claude => has_hooks,
+        // Only the current format counts: an install in the old format never
+        // ran, so it shows as "not installed" and gets replaced.
+        HookAgent::Agy => current.get(AGY_HOOK_NAME).is_some_and(Value::is_object),
+    }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -655,6 +677,37 @@ mod tests {
         // And removing ours puts it back exactly as it was.
         let cleaned = without_ours(&after);
         assert_eq!(cleaned, existing);
+    }
+
+    #[test]
+    fn agy_hooks_follow_the_bundled_spec() {
+        let existing = json!({
+            "lint-checker": { "PostToolUse": [{ "matcher": "run_command", "hooks": [{ "command": "lint.sh" }] }] },
+            // What builds before 0.3 wrote.
+            "hooks": { "PreToolUse": [{ "command": "\"C:\\x\\awuuu-hook.exe\" PreToolUse", "matcher": ".*" }] }
+        });
+        let after = merged_for_agent(HookAgent::Agy, &existing);
+        let ours = &after["awuuu"];
+        assert_eq!(ours["enabled"], true);
+        let pre = &ours["PreToolUse"][0];
+        assert_eq!(pre["matcher"], "*");
+        let cmd = pre["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("--agent agy PreToolUse"));
+        // AGY escapes quotes on the way to cmd.exe, so the command has none.
+        assert!(!cmd.contains('"'));
+        assert_eq!(pre["hooks"][0]["timeout"], 120);
+        // Flat events carry handlers directly.
+        assert!(ours["Stop"][0]["command"].as_str().unwrap().contains("--agent agy Stop"));
+        assert!(ours["PreInvocation"][0].get("hooks").is_none());
+        assert!(ours.get("SessionStart").is_none());
+        // Someone else's named hook survives; our old wrong-format entry does not.
+        assert_eq!(after["lint-checker"], existing["lint-checker"]);
+        assert!(after.get("hooks").is_none());
+        assert!(is_installed_for_agent(HookAgent::Agy, &after));
+        assert!(!is_installed_for_agent(HookAgent::Agy, &existing));
+
+        let removed = without_ours_for_agent(HookAgent::Agy, &after);
+        assert_eq!(removed, json!({ "lint-checker": existing["lint-checker"] }));
     }
 
     #[test]

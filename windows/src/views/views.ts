@@ -223,10 +223,65 @@ function buildOverview(actions: ViewActions): ViewHost {
 
 // ── Agents Hub ───────────────────────────────────────────────────────────────
 
+/** Agents a prompt can be sent to from a session card (Rust agents::send). */
+const SENDABLE_SOURCES = new Set(["agy"]);
+
 function buildAgentsHub(actions: ViewActions): ViewHost {
   const ticker = new Ticker();
   const who = h("div", { class: "who" });
-  const tickerBody = h("div", { class: "card-body" }, who, ticker.el);
+  // Prompt box: keep a session going from the island instead of the terminal.
+  const promptInput = h("input", {
+    type: "text",
+    class: "chat-input",
+    placeholder: "Send to this session…",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const promptSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
+  const promptBar = h("div", { class: "chat-bar", style: "margin-top:8px" }, promptInput, promptSend);
+  const tickerBody = h("div", { class: "card-body" }, who, ticker.el, promptBar);
+  let sending = false;
+
+  promptInput.addEventListener("mousedown", () => {
+    void Bridge.focusWindow(true);
+    window.setTimeout(() => promptInput.focus(), 30);
+  });
+  promptInput.addEventListener("blur", () => void Bridge.focusWindow(false));
+  promptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void sendPrompt();
+    if (e.key === "Escape") promptInput.blur();
+  });
+  promptSend.addEventListener("click", () => void sendPrompt());
+
+  async function sendPrompt() {
+    const session = State.focusedAgentSession;
+    const text = promptInput.value.trim();
+    if (!session || !text || sending) return;
+    sending = true;
+    promptInput.value = "";
+    promptInput.placeholder = "Sending…";
+    try {
+      const busy = ["working", "thinking", "approval"].includes(session.state);
+      const how = await Bridge.agentSend(
+        session.source,
+        session.id.replace(/^session_/, ""),
+        text,
+        session.sessionCwd ?? null,
+        busy,
+      );
+      State.appendStep(session.id, `› ${text.slice(0, 60)}`);
+      if (how === "started") session.state = "thinking";
+      promptInput.placeholder = how === "queued" ? "Queued — sent at its next step ✓" : "Sent ✓";
+    } catch (err) {
+      promptInput.value = text;
+      promptInput.placeholder = "Send to this session…";
+      void Bridge.log(`agent_send failed: ${String(err)}`);
+      promptInput.title = String(err);
+    } finally {
+      sending = false;
+      window.setTimeout(() => (promptInput.placeholder = "Send to this session…"), 2500);
+      State.notify();
+    }
+  }
   const leftBody = h("div", { class: "left-body" });
   const jump = h(
     "button",
@@ -285,6 +340,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       }
 
       const agentLabel = agentInfo(focused.source).name;
+      promptBar.style.display = SENDABLE_SOURCES.has(focused.source) ? "" : "none";
 
       clear(who);
       who.append(

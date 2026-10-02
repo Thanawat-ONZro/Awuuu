@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 /// Whole-run budget for an event nobody waits on: connect and write, no more.
 const FIRE_AND_FORGET_BUDGET: Duration = Duration::from_secs(2);
+/// How long a quick question to the island ("anything queued for me?") may take.
+const QUERY_BUDGET: Duration = Duration::from_millis(1500);
 /// How long a permission prompt may stay on screen before the terminal takes over.
 const DECISION_BUDGET: Duration = Duration::from_secs(110);
 
@@ -104,13 +106,27 @@ impl Agent {
         }
     }
 
-    /// The one event per agent that holds the agent until a human decides.
-    fn waits_on(self, event: &str) -> bool {
-        match self {
-            Self::Agy => event == "PreToolUse",
-            _ => event == "PermissionRequest",
+    /// What the agent waits for on this event.
+    fn waits_on(self, event: &str) -> Wait {
+        match (self, event) {
+            (Self::Agy, "PreToolUse") => Wait::Decision,
+            // Prompts typed in the island while AGY works are handed over here.
+            (Self::Agy, "PreInvocation" | "Stop") => Wait::Query,
+            (Self::Agy, _) => Wait::Nothing,
+            (_, "PermissionRequest") => Wait::Decision,
+            _ => Wait::Nothing,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Wait {
+    /// Fire and forget.
+    Nothing,
+    /// A human decides in the island (allow / deny / answers).
+    Decision,
+    /// The island answers at once with JSON to print as-is (queued prompts).
+    Query,
 }
 
 /// `--agent <id>` and the event name, in any order.
@@ -177,8 +193,13 @@ fn main() {
     let args = parse_args(std::env::args().skip(1));
     let Some(ev) = read_event(&args) else { std::process::exit(0) };
 
-    let waits_for_answer = ev.agent.waits_on(&ev.event);
-    let budget = if waits_for_answer { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
+    let wait = ev.agent.waits_on(&ev.event);
+    let waits_for_answer = wait != Wait::Nothing;
+    let budget = match wait {
+        Wait::Decision => DECISION_BUDGET,
+        Wait::Query => QUERY_BUDGET,
+        Wait::Nothing => FIRE_AND_FORGET_BUDGET,
+    };
 
     let (tx, rx) = mpsc::channel::<Option<String>>();
     let payload = ev.payload;
@@ -186,13 +207,27 @@ fn main() {
         let _ = tx.send(talk(&payload, waits_for_answer));
     });
 
-    let answer = rx.recv_timeout(budget).ok().flatten().as_deref().and_then(parse_answer);
-    if waits_for_answer {
-        if let Some(json) = output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref()) {
-            let mut out = std::io::stdout();
-            let _ = writeln!(out, "{json}");
-            let _ = out.flush();
-        }
+    let reply = rx.recv_timeout(budget).ok().flatten();
+    let json = if wait == Wait::Query {
+        // Printed as the island wrote it, as long as it is a JSON object.
+        Some(
+            reply
+                .filter(|r| serde_json::from_str::<serde_json::Value>(r).is_ok_and(|v| v.is_object()))
+                .unwrap_or_else(|| "{}".to_string()),
+        )
+    } else if wait == Wait::Decision {
+        let answer = reply.as_deref().and_then(parse_answer);
+        output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref())
+    } else if ev.agent == Agent::Agy {
+        // AGY parses every hook's stdout as JSON; an empty object changes nothing.
+        Some("{}".to_string())
+    } else {
+        None
+    };
+    if let Some(json) = json {
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{json}");
+        let _ = out.flush();
     }
     std::process::exit(0);
 }

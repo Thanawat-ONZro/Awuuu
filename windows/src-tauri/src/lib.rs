@@ -1,5 +1,6 @@
 // Awuuu for Windows — app wiring and the commands the island calls.
 
+mod agents;
 mod claude;
 mod files;
 mod hooks;
@@ -243,6 +244,18 @@ fn approval_decision(
 /// The island has the card on screen, so the long wait for a human may begin.
 /// Until this arrives the relay only waits a few hundred milliseconds, which is
 /// what stops a paused or unresponsive island from freezing Claude Code.
+/// The prompt box on a session card: send text into a running agent session.
+#[tauri::command]
+fn agent_send(
+    agent: String,
+    session: String,
+    text: String,
+    cwd: Option<String>,
+    busy: bool,
+) -> Result<agents::Sent, String> {
+    agents::send(&agent, &session, &text, cwd.as_deref(), busy)
+}
+
 #[tauri::command]
 fn approval_ack(app: AppHandle, request_id: String) {
     pipe::acknowledge(&app, &request_id);
@@ -433,6 +446,7 @@ pub fn run() {
             agent_hooks_preview,
             agent_hooks_apply,
             approval_decision,
+            agent_send,
             approval_ack,
             approval_decline,
             log_line,
