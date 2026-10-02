@@ -58,6 +58,9 @@ const TOOL_VERBS: Record<string, string> = {
   terminal: "Run", execute_code: "Run code", read_file: "Read", write_file: "Write", patch: "Edit",
   search_files: "Search", web_search: "Web search", web_extract: "Fetch", delegate_task: "Agent",
   todo: "Plan", memory: "Memory", skill_view: "Skill", browser_navigate: "Browse",
+  // Codex
+  shell: "Run", exec_command: "Run", apply_patch: "Edit", update_plan: "Plan", spawn_agent: "Agent",
+  view_image: "Read",
   // OpenCode
   bash: "Run", read: "Read", write: "Write", edit: "Edit", glob: "Find", grep: "Search",
   list: "List", webfetch: "Fetch", todowrite: "Plan", task: "Agent",

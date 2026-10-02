@@ -45,7 +45,7 @@ function renderDiff(text: string): HTMLElement {
 // ── Multi-Agent Hooks section (Claude, AGY, Hermes, OpenCode) ──────────
 
 function agentHooksSection(
-  agent: "claude" | "agy" | "hermes" | "opencode",
+  agent: "claude" | "agy" | "hermes" | "opencode" | "codex",
   title: string,
   fileName: string,
   descInstalled: string,
@@ -951,6 +951,9 @@ async function main() {
   const opencodeHooks = (await Bridge.agentHooksStatus("opencode")) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
+  const codexHooks = (await Bridge.agentHooksStatus("codex")) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
 
@@ -995,6 +998,14 @@ async function main() {
       "Awuuu's plugin is in OpenCode's plugin folder. Sessions show in the island and permission requests can be answered there. Restart OpenCode after installing.",
       "Install the plugin to see OpenCode sessions in the island and answer its permission requests with 1-click.",
       opencodeHooks,
+    ),
+    agentHooksSection(
+      "codex",
+      "Codex CLI — Experimental",
+      "hooks.json",
+      "Awuuu's hooks are in ~/.codex/hooks.json. Codex asks once to trust new hooks: run /hooks in Codex. Approvals show in the island (Allow / Deny — Codex can't keep an \"Always\" rule from a hook); if nobody answers, Codex asks itself after about two minutes.",
+      "Experimental: not yet tried against a live Codex session. Installs Awuuu's hooks in ~/.codex/hooks.json (config.toml is never touched); Codex then asks you to trust them with /hooks.",
+      codexHooks,
     ),
     providersSection(),
     alwaysAllowSection(),

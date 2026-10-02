@@ -35,6 +35,22 @@ pub const HOOK_EVENTS: &[(&str, u64)] = &[
     ("SubagentStop", 10),
 ];
 
+/// Codex CLI events (~/.codex/hooks.json, same shape as Claude Code's). The
+/// event name comes in the payload, so the command carries none.
+/// PermissionRequest waits for the island and tells Codex's UI so.
+const CODEX_EVENTS: &[(&str, u64)] = &[
+    ("SessionStart", 10),
+    ("UserPromptSubmit", 10),
+    ("PreToolUse", 10),
+    ("PermissionRequest", 120),
+    ("PostToolUse", 10),
+    ("Stop", 10),
+    ("SubagentStart", 10),
+    ("SubagentStop", 10),
+    ("Interrupt", 3),
+    ("SessionEnd", 3),
+];
+
 /// AGY events and their timeouts. PreToolUse waits for a human in the island.
 const AGY_EVENTS: &[(&str, u64)] = &[
     ("PreToolUse", 120),
@@ -84,6 +100,8 @@ pub enum HookAgent {
     Hermes,
     /// A plugin file of our own in OpenCode's plugin folder.
     OpenCode,
+    /// ~/.codex/hooks.json (Experimental: Codex asks to trust new hooks).
+    Codex,
 }
 
 impl HookAgent {
@@ -93,6 +111,7 @@ impl HookAgent {
             "agy" | "antigravity" => Some(Self::Agy),
             "hermes" => Some(Self::Hermes),
             "opencode" => Some(Self::OpenCode),
+            "codex" => Some(Self::Codex),
             _ => None,
         }
     }
@@ -103,13 +122,21 @@ impl HookAgent {
             Self::Agy => home().join(".gemini").join("config").join("hooks.json"),
             Self::Hermes => hermes_home().join("config.yaml"),
             Self::OpenCode => home().join(".config").join("opencode").join("plugin").join("awuuu.js"),
+            Self::Codex => codex_home().join("hooks.json"),
         }
     }
 
     /// JSON settings are merged key by key; the others are edited as text.
     fn is_json(&self) -> bool {
-        matches!(self, Self::Claude | Self::Agy)
+        matches!(self, Self::Claude | Self::Agy | Self::Codex)
     }
+}
+
+fn codex_home() -> PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".codex"))
 }
 
 /// Hermes keeps its profile in HERMES_HOME; the Windows installer puts it in
@@ -284,6 +311,15 @@ fn hook_command(agent: HookAgent, event: &str) -> String {
     match agent {
         // Written by hermes_block() / the plugin file instead.
         HookAgent::Hermes | HookAgent::OpenCode => String::new(),
+        HookAgent::Codex => {
+            // Unquoted, forward slashes and no spaces (8.3 name if needed):
+            // the same string works whether Codex hands it to cmd, PowerShell
+            // or a POSIX shell.
+            let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
+            let exe = if exe.contains(' ') { short_path(&exe).unwrap_or(exe) } else { exe };
+            let _ = event;
+            format!("{} --agent codex", exe.replace('\\', "/"))
+        }
         HookAgent::Claude => {
             // Claude Code on Windows runs hooks via Git Bash (MSYS2), where forward slashes are required.
             let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
@@ -330,6 +366,28 @@ fn entry_is_ours(entry: &Value) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+/// Codex: Claude's shape, Codex's events, one command for all of them.
+fn merged_codex(existing: &Value) -> Value {
+    let mut root = existing.as_object().cloned().unwrap_or_default();
+    let mut hooks = root.get("hooks").and_then(Value::as_object).cloned().unwrap_or_else(Map::new);
+    for (event, timeout) in CODEX_EVENTS {
+        let mut list = hooks.get(*event).and_then(Value::as_array).cloned().unwrap_or_default();
+        list.retain(|entry| !entry_is_ours(entry));
+        let mut handler = json!({
+            "type": "command",
+            "command": hook_command(HookAgent::Codex, event),
+            "timeout": timeout,
+        });
+        if *event == "PermissionRequest" {
+            handler["statusMessage"] = json!("Waiting for your answer in Awuuu");
+        }
+        list.push(json!({ "hooks": [handler] }));
+        hooks.insert((*event).to_string(), Value::Array(list));
+    }
+    root.insert("hooks".into(), Value::Object(hooks));
+    Value::Object(root)
 }
 
 /// Settings with Awuuu's hooks added; everything else is left untouched.
@@ -444,6 +502,7 @@ fn current_fingerprint() -> String {
 fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
     match agent {
         HookAgent::Hermes | HookAgent::OpenCode => existing.clone(),
+        HookAgent::Codex => merged_codex(existing),
         HookAgent::Claude => merged(existing),
         HookAgent::Agy => {
             // AGY's hooks.json (spec bundled in agy.exe 1.2.14): top-level keys
@@ -497,7 +556,7 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
         .unwrap_or(false);
 
     match agent {
-        HookAgent::Claude | HookAgent::Hermes | HookAgent::OpenCode => has_hooks,
+        HookAgent::Claude | HookAgent::Hermes | HookAgent::OpenCode | HookAgent::Codex => has_hooks,
         // Only the current format counts: an install in the old format never
         // ran, so it shows as "not installed" and gets replaced.
         HookAgent::Agy => current.get(AGY_HOOK_NAME).is_some_and(Value::is_object),
@@ -1002,5 +1061,26 @@ mod text_tests {
         assert!(js.contains(OPENCODE_MARKER));
         assert!(!js.contains("__AWUUU_HOOK__"));
         assert!(js.contains("awuuu-hook.exe"));
+    }
+}
+
+#[cfg(test)]
+mod codex_tests {
+    use super::*;
+
+    #[test]
+    fn codex_hooks_merge_and_come_out_cleanly() {
+        let existing = json!({ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "other-tool" } ] } ] } });
+        let merged = merged_codex(&existing);
+        let stop = merged["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2, "keeps the other tool's hook");
+        let ours = &merged["hooks"]["PermissionRequest"][0]["hooks"][0];
+        assert!(ours["command"].as_str().unwrap().ends_with("awuuu-hook.exe --agent codex"));
+        assert!(!ours["command"].as_str().unwrap().contains('\\'));
+        assert_eq!(ours["timeout"], 120);
+        assert!(is_installed_for_agent(HookAgent::Codex, &merged));
+        // Reinstall doesn't duplicate; uninstall leaves the other tool alone.
+        assert_eq!(merged_codex(&merged)["hooks"]["Stop"].as_array().unwrap().len(), 2);
+        assert_eq!(without_ours_for_agent(HookAgent::Codex, &merged), existing);
     }
 }
