@@ -864,14 +864,19 @@ export class Island {
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive) {
       const d = p.diameter;
-      const color = botGlowColor(State.effectiveState);
+      // On the Agents hub Mochi glows in the focused agent's colour, unless
+      // that session needs attention (approval, error keep their own colour).
+      const hubSession = State.view === "agents" ? State.focusedAgentSession : null;
+      const color = hubSession && !["approval", "error", "ratelimit"].includes(hubSession.state)
+        ? hubSession.color
+        : botGlowColor(State.effectiveState);
       this.botGlow.style.display = "block";
       this.botGlow.style.width = `${d * 2.2}px`;
       this.botGlow.style.height = `${d * 2.2}px`;
       this.botGlow.style.left = `${this.botCx.value - d * 1.1}px`;
       this.botGlow.style.top = `${this.botCy.value - d * 1.1}px`;
       this.botGlow.style.background = `radial-gradient(circle, ${color} 0%, transparent 62%)`;
-      this.botGlow.style.opacity = String(botGlowOpacity(State.effectiveState));
+      this.botGlow.style.opacity = String(hubSession ? Math.max(0.4, botGlowOpacity(hubSession.state)) : botGlowOpacity(State.effectiveState));
     } else {
       this.botGlow.style.display = "none";
     }

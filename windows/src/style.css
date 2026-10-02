@@ -326,6 +326,14 @@ body {
   transition: opacity 0.3s ease-out 0.16s, transform 0.3s cubic-bezier(0.3, 1.2, 0.4, 1) 0.16s;
 }
 
+/* A view that is not on is only transparent, not gone: an infinite animation
+   inside it (the drop frame's marching dashes) would keep the webview
+   repainting every frame for as long as the app runs, island hidden or not.
+   (Coucou eb1241f) */
+.view:not(.on) * {
+  animation-play-state: paused;
+}
+
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 
 .card {
@@ -1452,6 +1460,8 @@ input[type="range"]::-webkit-slider-thumb {
 .hub-step.now {
   color: var(--ink);
   font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--agent, var(--ink));
+  padding-left: 7px;
 }
 
 .hub-step.dim {
@@ -1459,6 +1469,35 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-prompt {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.hub-prompt:focus-within {
+  border-color: var(--agent, var(--hairline));
+  box-shadow: 0 0 0 3px var(--agent-soft, transparent);
+}
+
+.hub-prompt .send-btn {
+  background: var(--agent, var(--ink));
+  color: #fff;
+  transition: transform 0.08s ease-out, background 0.2s;
+}
+
+/* The focused agent tints the hub: a soft glow at the card's edge. */
+.hub-view .card {
+  border-color: var(--agent-soft, var(--hairline));
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: inset 0 0 0 1px var(--agent-soft, transparent), inset 0 -40px 60px -50px var(--agent, transparent);
+}
+
+.hub-tag {
+  font: 600 10px var(--font);
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--agent-ink, var(--ink));
+  background: var(--agent-soft, rgba(255, 255, 255, 0.08));
   flex: 0 0 auto;
 }
 

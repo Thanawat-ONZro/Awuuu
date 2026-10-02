@@ -255,7 +255,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     h("div", { class: "sub", text: "Start Claude Code, AGY or another agent and it shows up here." }),
   );
   const body = h("div", { class: "hub" }, pills, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
-  const el = h("div", { class: "view" }, card(null, body));
+  const el = h("div", { class: "view hub-view" }, card(null, body));
   let sending = false;
 
   promptInput.addEventListener("mousedown", () => {
@@ -317,13 +317,18 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         return;
       }
       promptBar.style.display = SENDABLE_SOURCES.has(focused.source) ? "" : "none";
+      // The whole hub takes the focused agent's colour (Claude orange, AGY blue…).
+      el.style.setProperty("--agent", focused.color);
+      el.style.setProperty("--agent-soft", `${focused.color}33`);
+      el.style.setProperty("--agent-ink", lighten(focused.color, 0.35));
 
       clear(who);
       const folder = focused.sessionCwd ? focused.sessionCwd.replace(/[\\/]+$/, "") : "";
       who.append(
         dot(focused.color, 8),
         h("span", { class: "name", text: focused.name }),
-        h("span", { class: "tool", text: `${agentInfo(focused.source).name} · ${stateLabel(focused.state)}` }),
+        h("span", { class: "hub-tag", text: agentInfo(focused.source).short }),
+        h("span", { class: "tool", text: stateLabel(focused.state) }),
       );
       if (folder) who.title = folder;
 
@@ -346,12 +351,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         pillKey = nextPillKey;
         clear(pills);
         for (const s of sessions) {
-          const pill = buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) });
-          if (s.id === focused.id) {
-            pill.style.background = `${s.color}24`;
-            pill.style.borderColor = `${s.color}66`;
-          }
-          pills.append(pill);
+          pills.append(buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) }, s.id === focused.id));
         }
         pruneMiniBots();
       }
@@ -372,13 +372,13 @@ function stateLabel(state: string): string {
   }
 }
 
-function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
+function buildPill(task: AgentTask, actions: ViewActions, focused = false): HTMLElement {
   const label = task.name;
   const canvas = createMiniBot(task, 24);
   const tagText = agentInfo(task.source).short;
   const pill = h(
     "div",
-    { class: "pill", onclick: () => actions.setFocus(task.id) },
+    { class: focused ? "pill focused" : "pill", onclick: () => actions.setFocus(task.id) },
     canvas,
     h("span", { class: "lbl", text: label }),
     !task.isIntegration
@@ -388,19 +388,23 @@ function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
         })
       : null,
   );
-  pill.style.borderColor = `${task.color}24`;
+  const lbl = pill.querySelector(".lbl") as HTMLElement;
+  // Resting look: the focused pill keeps its agent colour after the mouse
+  // leaves, so you can always tell which session the hub is showing.
+  const rest = () => {
+    pill.style.background = focused ? `${task.color}2b` : "";
+    pill.style.borderColor = focused ? `${task.color}99` : `${task.color}24`;
+    pill.style.boxShadow = focused ? `0 0 0 1px ${task.color}40, 0 2px 10px ${task.color}40` : "";
+    lbl.style.color = focused ? lighten(task.color, 0.35) : "";
+  };
+  rest();
   pill.addEventListener("mouseenter", () => {
     pill.style.background = `${task.color}2e`;
     pill.style.borderColor = `${task.color}8c`;
     pill.style.boxShadow = `0 2px 10px ${task.color}59`;
-    (pill.querySelector(".lbl") as HTMLElement).style.color = lighten(task.color, 0.3);
+    lbl.style.color = lighten(task.color, 0.3);
   });
-  pill.addEventListener("mouseleave", () => {
-    pill.style.background = "";
-    pill.style.borderColor = `${task.color}24`;
-    pill.style.boxShadow = "";
-    (pill.querySelector(".lbl") as HTMLElement).style.color = "";
-  });
+  pill.addEventListener("mouseleave", rest);
 
   if (task.pillBadge) {
     const colors = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" } as const;
