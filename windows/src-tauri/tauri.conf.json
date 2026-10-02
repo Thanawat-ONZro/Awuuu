@@ -51,7 +51,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../target/release/awuuu-hook.exe": "awuuu-hook.exe"
+      "../target/release/awuuu-hook.exe": "awuuu-hook.exe",
+      "../../aw.cmd": "aw.cmd"
     },
     "copyright": "© 2026 Thanawat (Fork of Coucou by Louis Raille)",
     "category": "DeveloperTool",

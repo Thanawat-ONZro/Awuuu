@@ -93,6 +93,8 @@ export const Bridge = {
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
   agentSend: (agent: string, session: string, text: string, cwd: string | null, busy: boolean) =>
     call<"queued" | "started">("agent_send", { agent, session, text, cwd, busy }),
+  awPathStatus: () => call<boolean>("aw_path_status"),
+  awPathSet: (on: boolean) => callOrThrow<boolean>("aw_path_set", { on }),
   /** Settings → Test on an integration: "Connected." or the reason it failed. */
   integrationTest: (id: string) => callOrThrow<string>("integration_test", { id }),
   /** Settings → Test: a provider's model list. */

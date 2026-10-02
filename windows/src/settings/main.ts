@@ -55,7 +55,7 @@ function agentHooksSection(
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
-    {},
+    { id: `agent-${agent}` },
     h("h2", {}, statusDot(status.installed), h("span", { text: title })),
     body,
   );
@@ -799,6 +799,40 @@ function generalSection(): HTMLElement {
   );
 }
 
+// ── aw: the command-line companion ──────────────────────────────────────────
+
+function awSection(): HTMLElement {
+  const state = h("span", { class: "hint" });
+  const btn = h("button", {});
+  let on = false;
+  const draw = () => {
+    state.textContent = on
+      ? "aw is on your PATH — open a new terminal and run `aw claude`, `aw agy`, `aw hermes` or `aw setup <agent>`."
+      : "Add Awuuu's bin folder to your user PATH to use `aw` from any terminal.";
+    btn.textContent = on ? "Remove from PATH" : "Add aw to PATH";
+    btn.className = on ? "danger" : "primary";
+  };
+  void Bridge.awPathStatus().then((v) => {
+    on = v ?? false;
+    draw();
+  });
+  btn.addEventListener("click", async () => {
+    try {
+      on = await Bridge.awPathSet(!on);
+    } catch (err) {
+      state.textContent = String(err);
+      return;
+    }
+    draw();
+  });
+  draw();
+  return h("section", { id: "aw" },
+    h("h2", {}, h("span", { text: "aw — command line" })),
+    h("div", { class: "row" }, btn, state),
+    h("div", { class: "hint", text: "aw starts Awuuu when it isn't running, warns when an agent's hooks are missing, then runs the agent. `aw setup <agent>` opens this page at that agent." }),
+  );
+}
+
 // ── Layout: where the island sits, how big it is, what the hub shows ──────────
 
 /** Controls that must follow changes made elsewhere (dragging the island). */
@@ -969,11 +1003,21 @@ async function main() {
     integrationsSection(present),
     generalSection(),
     layoutSection(),
+    awSection(),
     h("div", {
       class: "hint",
       text: "No telemetry. Network requests only go to the services you configure yourself.",
     }),
   );
+
+  // `aw setup <agent>`: bring that agent's section into view.
+  void onEvent<string>("settings-focus", (agent) => {
+    const el = document.getElementById(`agent-${agent}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("flash");
+    window.setTimeout(() => el.classList.remove("flash"), 1600);
+  });
 
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };

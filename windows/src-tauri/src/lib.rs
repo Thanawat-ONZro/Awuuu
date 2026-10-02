@@ -15,6 +15,7 @@ mod settings;
 mod tray;
 mod transcript;
 mod hermes;
+mod cli;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -539,6 +540,26 @@ pub fn show_settings_window(app: &AppHandle) {
     let _ = win.set_focus();
 }
 
+/// Opens Settings scrolled to one agent's section (`aw setup <agent>`).
+pub fn open_settings_at(app: &AppHandle, agent: &str) {
+    show_settings_window(app);
+    if !agent.is_empty() {
+        let _ = app.emit_to("settings", "settings-focus", agent.to_string());
+    }
+}
+
+/// Settings → "aw on PATH".
+#[tauri::command]
+fn aw_path_status() -> bool {
+    cli::on_path()
+}
+
+#[tauri::command]
+fn aw_path_set(on: bool) -> Result<bool, String> {
+    cli::set_on_path(on)?;
+    Ok(cli::on_path())
+}
+
 #[tauri::command]
 fn open_settings_window(app: AppHandle) {
     show_settings_window(&app);
@@ -553,8 +574,14 @@ pub fn run() {
     let context = tauri::generate_context!();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // `aw setup <agent>` starts awuuu.exe --settings=<agent>; when Awuuu
+            // already runs, that lands here.
+            if let Some(agent) = cli::settings_arg(&argv) {
+                open_settings_at(app, &agent);
+            } else {
+                let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
+            }
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -601,6 +628,8 @@ pub fn run() {
             integration_test,
             open_n8n,
             open_settings_window,
+            aw_path_status,
+            aw_path_set,
             set_paused,
         ])
         .setup(move |app| {
@@ -625,6 +654,15 @@ pub fn run() {
 
             log::line(format!("--- Awuuu {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
+            cli::ensure_aw_cmd(&handle);
+            // Started by `aw setup <agent>`.
+            if let Some(agent) = cli::settings_arg(&std::env::args().collect::<Vec<_>>()) {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    open_settings_at(&h, &agent);
+                });
+            }
             pipe::start(handle.clone());
             integrations::start(handle.clone());
             updater::start(handle.clone());
