@@ -490,50 +490,6 @@ body {
   z-index: 2;
 }
 
-/* Ticker */
-
-.ticker {
-  position: relative;
-  height: 44px;
-  margin: 6px 12px 0 108px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 12%,
-    #000 85%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 85%, transparent 100%);
-}
-
-.ticker-row {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transform-origin: left center;
-  will-change: transform, opacity;
-}
-
-.ticker-row .tick-icon {
-  width: 12px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 12px;
-  color: var(--dim-2);
-}
-
-.ticker-row .tick-text {
-  font: 500 13px var(--font);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Shimmer sweep, 2.2 s — same as TickerShimmerText / ShimmeringText */
 .shimmer {
   background: linear-gradient(
@@ -1416,4 +1372,99 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-card.detail {
   padding-top: 8px;
+}
+
+/* ── Agents hub: one full-width column ──────────────────────────────────── */
+
+.hub {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px 116px;
+}
+
+.hub-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 68px;
+  overflow-y: auto;
+}
+
+.hub-pills .pill {
+  width: 132px;
+  height: 30px;
+}
+
+.hub-pills .pill .lbl {
+  font-size: 11px;
+}
+
+.hub-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-who .name {
+  font: 600 15px var(--font);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hub-who .tool {
+  font: 400 12px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+}
+
+.hub-steps {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hub-step {
+  font: 400 13px/1.4 var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+
+.hub-step.now {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.hub-step.dim {
+  color: var(--dim-3);
+}
+
+.hub-prompt {
+  flex: 0 0 auto;
+}
+
+.hub-empty {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }

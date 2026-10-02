@@ -18,6 +18,7 @@
 //! Claude Code, which is what installs older than the flag wrote.
 
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -42,6 +43,10 @@ const DROPPED_FIELDS: &[&str] = &["tool_response", "transcript_path"];
 const MAX_FIELD_LEN: usize = 2_000;
 
 mod win;
+
+/// Set once the island has the event: from then on "no answer" means nobody
+/// clicked in time, not that Awuuu is closed.
+static REACHED_ISLAND: AtomicBool = AtomicBool::new(false);
 
 /// `\\.\pipe\awuuu-<sid>`. The SID keeps two accounts on the same machine from
 /// ever meeting on the same pipe; the name falls back to the user name only if
@@ -217,7 +222,8 @@ fn main() {
         )
     } else if wait == Wait::Decision {
         let answer = reply.as_deref().and_then(parse_answer);
-        output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref())
+        let shown = REACHED_ISLAND.load(Ordering::Relaxed);
+        output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref(), shown)
     } else if ev.agent == Agent::Agy {
         // AGY parses every hook's stdout as JSON; an empty object changes nothing.
         Some("{}".to_string())
@@ -238,17 +244,28 @@ fn output_json(
     agent: Agent,
     answer: Option<&Answer>,
     tool_input: Option<&serde_json::Value>,
+    shown_in_island: bool,
 ) -> Option<String> {
     use serde_json::json;
     if agent == Agent::Agy {
-        // AGY's hook spec wants a decision every time; "ask" hands the call
-        // back to AGY's own prompt.
+        // AGY's hook spec wants a decision every time. With no answer, "ask"
+        // hands the call back to AGY's own rules — which in always-proceed
+        // mode means it just runs. So when the card *was* on screen and nobody
+        // clicked (or "Answer in terminal" was pressed), "force_ask" makes AGY
+        // prompt in the terminal instead. Awuuu closed: plain "ask".
         let v = match answer {
+            // ask_question has no field for an answer: deny it and tell the
+            // agent what the user picked, which it then works from.
+            Some(a) if a.allow && a.answers.is_some() => json!({
+                "decision": "deny",
+                "reason": answers_reason(a.answers.as_ref().unwrap()),
+            }),
             Some(a) if a.allow => json!({"decision": "allow"}),
             Some(a) => json!({
                 "decision": "deny",
                 "reason": a.reason.clone().unwrap_or_else(|| "Denied from Awuuu".into()),
             }),
+            None if shown_in_island => json!({"decision": "force_ask"}),
             None => json!({"decision": "ask"}),
         };
         return Some(v.to_string());
@@ -273,6 +290,17 @@ fn output_json(
         })
     };
     Some(json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": decision}}).to_string())
+}
+
+fn answers_reason(answers: &serde_json::Map<String, serde_json::Value>) -> String {
+    let lines: Vec<String> = answers
+        .iter()
+        .map(|(q, a)| format!("{q}: {}", a.as_str().map(str::to_string).unwrap_or_else(|| a.to_string())))
+        .collect();
+    format!(
+        "The user already answered this question in Awuuu (do not ask it again). {}",
+        lines.join("; ")
+    )
 }
 
 /// Reads stdin and returns the payload to forward plus the event name.
@@ -417,6 +445,7 @@ fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
         return None;
     }
     let _ = pipe.flush();
+    REACHED_ISLAND.store(true, Ordering::Relaxed);
 
     if !waits_for_answer {
         return None;
@@ -445,7 +474,7 @@ mod tests {
     use super::*;
 
     fn out(agent: Agent, line: &str, input: Option<serde_json::Value>) -> Option<String> {
-        output_json(agent, parse_answer(line).as_ref(), input.as_ref())
+        output_json(agent, parse_answer(line).as_ref(), input.as_ref(), true)
     }
 
     fn val(s: &str) -> serde_json::Value {
@@ -489,7 +518,13 @@ mod tests {
             val(&out(Agent::Agy, r#"{"decision":"deny","reason":"no"}"#, None).unwrap()),
             serde_json::json!({"decision": "deny", "reason": "no"})
         );
-        assert_eq!(output_json(Agent::Agy, None, None).unwrap(), r#"{"decision":"ask"}"#);
+        // Awuuu closed: AGY's own rules. On screen but unanswered: AGY must ask.
+        assert_eq!(output_json(Agent::Agy, None, None, false).unwrap(), r#"{"decision":"ask"}"#);
+        assert_eq!(output_json(Agent::Agy, None, None, true).unwrap(), r#"{"decision":"force_ask"}"#);
+        // Answers to ask_question go back as the reason of a deny.
+        let v = val(&out(Agent::Agy, r#"{"decision":"allow","answers":{"Which color?":"Red"}}"#, None).unwrap());
+        assert_eq!(v["decision"], "deny");
+        assert!(v["reason"].as_str().unwrap().ends_with("Which color?: Red"));
     }
 
     #[test]

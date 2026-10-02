@@ -4,7 +4,6 @@
 
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
-import { Ticker } from "./ticker";
 import { State, agentInfo, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
@@ -227,8 +226,21 @@ function buildOverview(actions: ViewActions): ViewHost {
 const SENDABLE_SOURCES = new Set(["agy"]);
 
 function buildAgentsHub(actions: ViewActions): ViewHost {
-  const ticker = new Ticker();
-  const who = h("div", { class: "who" });
+  // One full-width column: sessions on top, what the focused one is doing,
+  // then a box to keep it going — readable without opening the terminal.
+  const pills = h("div", { class: "hub-pills" });
+  const who = h("div", { class: "hub-who" });
+  const steps = h("div", { class: "hub-steps" });
+  const jump = h(
+    "button",
+    {
+      class: "icon-btn",
+      title: "Open in VS Code / Terminal",
+      onclick: () => actions.openTerminal(State.focusedAgentSession?.sessionCwd ?? null),
+    },
+    svg(ICONS.arrowUpRight, 9),
+  );
+
   // Prompt box: keep a session going from the island instead of the terminal.
   const promptInput = h("input", {
     type: "text",
@@ -237,8 +249,13 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     spellcheck: "false",
   }) as HTMLInputElement;
   const promptSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  const promptBar = h("div", { class: "chat-bar", style: "margin-top:8px" }, promptInput, promptSend);
-  const tickerBody = h("div", { class: "card-body" }, who, ticker.el, promptBar);
+  const promptBar = h("div", { class: "chat-bar hub-prompt" }, promptInput, promptSend);
+  const empty = h("div", { class: "hub-empty" },
+    h("div", { class: "title", text: "No active agent sessions." }),
+    h("div", { class: "sub", text: "Start Claude Code, AGY or another agent and it shows up here." }),
+  );
+  const body = h("div", { class: "hub" }, pills, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
+  const el = h("div", { class: "view" }, card(null, body));
   let sending = false;
 
   promptInput.addEventListener("mousedown", () => {
@@ -268,103 +285,68 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         session.sessionCwd ?? null,
         busy,
       );
-      State.appendStep(session.id, `› ${text.slice(0, 60)}`);
+      State.appendStep(session.id, `› ${text.slice(0, 120)}`);
       if (how === "started") session.state = "thinking";
       promptInput.placeholder = how === "queued" ? "Queued — sent at its next step ✓" : "Sent ✓";
     } catch (err) {
       promptInput.value = text;
       promptInput.placeholder = "Send to this session…";
-      void Bridge.log(`agent_send failed: ${String(err)}`);
       promptInput.title = String(err);
+      void Bridge.log(`agent_send failed: ${String(err)}`);
     } finally {
       sending = false;
       window.setTimeout(() => (promptInput.placeholder = "Send to this session…"), 2500);
       State.notify();
     }
   }
-  const leftBody = h("div", { class: "left-body" });
-  const jump = h(
-    "button",
-    {
-      class: "icon-btn jump",
-      title: "Open in VS Code / Terminal",
-      onclick: () => {
-        const session = State.focusedAgentSession;
-        actions.openTerminal(session?.sessionCwd ?? null);
-      },
-    },
-    svg(ICONS.arrowUpRight, 8),
-  );
-  const left = card(null, leftBody, jump);
-  const pills = h("div", { class: "pills" });
-  const right = card(null, pills);
 
-  const el = h("div", { class: "view overview" },
-    h("div", { class: "left" }, left),
-    h("div", { class: "right" }, right),
-  );
-
-  let pillIds = "";
-  let lastSessionId: string | null = null;
+  let pillKey = "";
+  let stepsKey = "";
 
   return {
     el,
-    tick(nowMs: number) {
-      ticker.tick(nowMs);
-    },
     sync() {
       const sessions = State.activeAgentSessions;
       const focused = State.focusedAgentSession;
-
-      if (!focused || sessions.length === 0) {
-        clear(leftBody);
-        leftBody.append(
-          h("div", { class: "stack", style: "padding:0 18px 0 118px;justify-content:center;gap:6px" },
-            h("div", { class: "title", text: "No active agent sessions." }),
-            h("div", { class: "sub", text: "Launch Claude Code or any agent in a terminal to see it here." }),
-          ),
-        );
-        jump.style.display = "none";
+      const none = !focused || sessions.length === 0;
+      empty.style.display = none ? "" : "none";
+      for (const part of [pills, who.parentElement!, steps, promptBar]) part.style.display = none ? "none" : "";
+      if (none) {
+        pillKey = stepsKey = "";
         clear(pills);
-        pillIds = "";
-        lastSessionId = null;
         return;
       }
-
-      jump.style.display = "";
-
-      if (focused.id !== lastSessionId) {
-        lastSessionId = focused.id;
-        clear(leftBody);
-        leftBody.append(tickerBody);
-      }
-
-      const agentLabel = agentInfo(focused.source).name;
       promptBar.style.display = SENDABLE_SOURCES.has(focused.source) ? "" : "none";
 
       clear(who);
+      const folder = focused.sessionCwd ? focused.sessionCwd.replace(/[\\/]+$/, "") : "";
       who.append(
-        dot(focused.color, 7),
+        dot(focused.color, 8),
         h("span", { class: "name", text: focused.name }),
-        h("span", { class: "tool", text: agentLabel }),
+        h("span", { class: "tool", text: `${agentInfo(focused.source).name} · ${stateLabel(focused.state)}` }),
       );
-      if (focused.steps.length > 1) {
-        who.append(h("span", {
-          class: "count",
-          text: `${Math.min(focused.stepIndex + 1, focused.steps.length)}/${focused.steps.length}`,
-        }));
-      }
-      ticker.sync(focused);
+      if (folder) who.title = folder;
 
-      const pillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
-      if (pillKey !== pillIds) {
-        pillIds = pillKey;
+      const key = `${focused.id}:${focused.steps.length}:${focused.stepIndex}:${focused.state}`;
+      if (key !== stepsKey) {
+        stepsKey = key;
+        clear(steps);
+        const recent = focused.steps.slice(-8);
+        if (recent.length === 0) steps.append(h("div", { class: "hub-step dim", text: "Waiting for the first step…" }));
+        recent.forEach((text, i) => {
+          const last = i === recent.length - 1;
+          const live = last && ["working", "thinking"].includes(focused.state);
+          steps.append(h("div", { class: `hub-step${last ? " now" : ""}${live ? " shimmer" : ""}`, text }));
+        });
+        steps.scrollTop = steps.scrollHeight;
+      }
+
+      const nextPillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
+      if (nextPillKey !== pillKey) {
+        pillKey = nextPillKey;
         clear(pills);
         for (const s of sessions) {
-          const pill = buildPill(s, {
-            ...actions,
-            setFocus: (id) => actions.setAgentFocus(id),
-          });
+          const pill = buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) });
           if (s.id === focused.id) {
             pill.style.background = `${s.color}24`;
             pill.style.borderColor = `${s.color}66`;
@@ -375,6 +357,19 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       }
     },
   };
+}
+
+function stateLabel(state: string): string {
+  switch (state) {
+    case "working": return "working";
+    case "thinking": return "thinking";
+    case "approval": return "waiting for you";
+    case "question": return "has a question";
+    case "finished": return "finished";
+    case "error": return "error";
+    case "ratelimit": return "rate limited";
+    default: return "idle";
+  }
 }
 
 function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {

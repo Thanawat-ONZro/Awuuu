@@ -105,7 +105,7 @@ function queueApprovalRequest(
 
   // 1. Check Always-Allowed rule: auto-approve immediately. A question always
   // needs a human: allowing it blind would send back no answers.
-  if (tool !== "AskUserQuestion" && State.isAlwaysAllowed(ruleKey)) {
+  if (!questionItems(tool, input) && State.isAlwaysAllowed(ruleKey)) {
     void Bridge.log(`Auto-allowed always-rule: ${ruleKey}`);
     void Bridge.approvalAck(requestId);
     void Bridge.approvalDecision(requestId, "allow");
@@ -115,12 +115,9 @@ function queueApprovalRequest(
   // 2. Ack immediately so relay timeout doesn't expire
   void Bridge.approvalAck(requestId);
 
-  // 3. Detect AskUserQuestion
-  const isQuestion = tool === "AskUserQuestion";
-  let questions: QuestionItem[] | undefined;
-  if (isQuestion && Array.isArray(input.questions)) {
-    questions = input.questions as QuestionItem[];
-  }
+  // 3. Questions: Claude's AskUserQuestion, AGY's ask_question.
+  const questions = questionItems(tool, input);
+  const isQuestion = !!questions?.length;
 
   // 4. Queue the approval
   State.pushApproval({
@@ -157,6 +154,25 @@ function queueApprovalRequest(
       State.notify();
     }
   }, 110_000);
+}
+
+/**
+ * The questions a tool call asks, in the island's shape. AGY's ask_question
+ * carries `{question, options: string[], is_multi_select}`.
+ */
+function questionItems(tool: string, input: Record<string, unknown>): QuestionItem[] | undefined {
+  if (!Array.isArray(input.questions)) return undefined;
+  if (tool === "AskUserQuestion") return input.questions as QuestionItem[];
+  if (tool === "ask_question") {
+    return (input.questions as Record<string, unknown>[]).map((q) => ({
+      question: String(q.question ?? ""),
+      options: (Array.isArray(q.options) ? q.options : []).map((o) =>
+        typeof o === "string" ? { label: o } : { label: String((o as { label?: unknown }).label ?? o) },
+      ),
+      multiSelect: q.is_multi_select === true,
+    }));
+  }
+  return undefined;
 }
 
 export function registerHookHandlers(island: Island) {
