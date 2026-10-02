@@ -8,6 +8,10 @@ import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
 
+// A script error must leave a trace in awuuu.log, or a broken view is a mystery.
+window.addEventListener("error", (e) => void Bridge.log(`js error: ${e.message} @ ${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => void Bridge.log(`js rejection: ${String(e.reason)}`));
+
 async function main() {
   const root = document.getElementById("root");
   if (!root) return;
@@ -77,6 +81,7 @@ async function main() {
   // In a plain browser there is no wake strip behind the cursor: make the whole
   // page wake the island so the visuals can be checked with `npm run dev`.
   if (!IS_TAURI) {
+    (window as unknown as Record<string, unknown>).__awuuu = { island, State };
     document.addEventListener("click", () => Sound.resume(), { once: true });
   }
 }

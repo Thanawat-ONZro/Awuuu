@@ -19,6 +19,18 @@ export function agentInfo(source: AgentSource) {
 }
 export type PillBadge = "approval" | "finished" | "error";
 
+/** One line of a session's activity log in the Agents hub. */
+export type LogKind = "prompt" | "sent" | "tool" | "say" | "think" | "done" | "error" | "info";
+export interface LogEntry {
+  kind: LogKind;
+  text: string;
+  /** Date.now() when it happened. */
+  at: number;
+  /** Identifies a tool call, so the same call reported twice shows once. */
+  key?: string;
+}
+const LOG_MAX = 80;
+
 export interface AgentTask {
   id: string;
   name: string;
@@ -32,6 +44,8 @@ export interface AgentTask {
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
   sessionCwd?: string | null;
+  /** Agent sessions: what happened, newest last. */
+  log?: LogEntry[];
 }
 
 export interface QuestionOption {
@@ -334,10 +348,21 @@ class AppState {
     this.notify();
   }
 
-  appendStep(id: string, step: string) {
+  appendStep(id: string, step: string, kind: LogKind = "tool", key?: string) {
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return;
-    t.steps.push(step);
+    const text = step.trim();
+    if (!text) return;
+    const log = (t.log ??= []);
+    const now = Date.now();
+    // The same tool call can arrive twice (Claude's PreToolUse, then its
+    // PermissionRequest): keep one line.
+    if (key && log.slice(-12).some((e) => e.key === key)) return;
+    const last = log.at(-1);
+    if (last && last.kind === kind && last.text === text && now - last.at < 3000) return;
+    log.push({ kind, text, at: now, key });
+    if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
+    t.steps.push(text);
     if (t.steps.length > 20) t.steps.shift();
     t.stepIndex = t.steps.length - 1;
     this.notify();
@@ -372,8 +397,9 @@ class AppState {
     this.notify();
   }
 
+  /** Opening the island always shows a request that waits for an answer first. */
   defaultView(): IslandViewName {
-    return "agents";
+    return this.approvalQueue.length > 0 ? "approval" : "agents";
   }
 }
 

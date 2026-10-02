@@ -4,7 +4,7 @@
 
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
-import { State, agentInfo, type AgentTask } from "../core/state";
+import { State, agentInfo, type AgentTask, type LogEntry, type LogKind } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
@@ -285,7 +285,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         session.sessionCwd ?? null,
         busy,
       );
-      State.appendStep(session.id, `› ${text.slice(0, 120)}`);
+      State.appendStep(session.id, text.slice(0, 600), "sent");
       if (how === "started") session.state = "thinking";
       promptInput.placeholder = how === "queued" ? "Queued — sent at its next step ✓" : "Sent ✓";
     } catch (err) {
@@ -302,6 +302,8 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
 
   let pillKey = "";
   let stepsKey = "";
+  let lastStepsFocus = "";
+  let wasOn = false;
 
   return {
     el,
@@ -332,19 +334,27 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       );
       if (folder) who.title = folder;
 
-      const key = `${focused.id}:${focused.steps.length}:${focused.stepIndex}:${focused.state}`;
+      const log = focused.log ?? [];
+      const key = `${focused.id}:${log.length}:${log.at(-1)?.at ?? 0}:${focused.state}:${Math.floor(Date.now() / 30000)}`;
       if (key !== stepsKey) {
         stepsKey = key;
+        const stick = steps.scrollHeight - steps.scrollTop - steps.clientHeight < 24;
         clear(steps);
-        const recent = focused.steps.slice(-8);
+        const recent = log.slice(-HUB_LOG_LINES);
         if (recent.length === 0) steps.append(h("div", { class: "hub-step dim", text: "Waiting for the first step…" }));
-        recent.forEach((text, i) => {
+        recent.forEach((entry, i) => {
           const last = i === recent.length - 1;
           const live = last && ["working", "thinking"].includes(focused.state);
-          steps.append(h("div", { class: `hub-step${last ? " now" : ""}${live ? " shimmer" : ""}`, text }));
+          steps.append(logRow(entry, last, live));
         });
-        steps.scrollTop = steps.scrollHeight;
+        if (stick || focused.id !== lastStepsFocus) steps.scrollTop = steps.scrollHeight;
+        lastStepsFocus = focused.id;
       }
+      // Rendered while the view was off (no height yet): land on the newest
+      // line the moment it shows.
+      const on = el.classList.contains("on");
+      if (on && !wasOn) requestAnimationFrame(() => (steps.scrollTop = steps.scrollHeight));
+      wasOn = on;
 
       const nextPillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
       if (nextPillKey !== pillKey) {
@@ -357,6 +367,31 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       }
     },
   };
+}
+
+/** How many log lines the hub keeps on screen (scrolls for more). */
+const HUB_LOG_LINES = 40;
+
+const LOG_MARK: Record<LogKind, string> = {
+  prompt: "›", sent: "›", tool: "▸", say: "●", think: "∴", done: "✓", error: "!", info: "·",
+};
+
+function logRow(entry: LogEntry, last: boolean, live: boolean): HTMLElement {
+  return h(
+    "div",
+    { class: `hub-step k-${entry.kind}${last ? " now" : ""}`, title: entry.text },
+    h("span", { class: "mark", text: LOG_MARK[entry.kind] }),
+    h("span", { class: live ? "txt shimmer" : "txt", text: entry.text }),
+    h("span", { class: "ago", text: ago(entry.at) }),
+  );
+}
+
+function ago(at: number): string {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 45) return "now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
 }
 
 function stateLabel(state: string): string {

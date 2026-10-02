@@ -84,6 +84,9 @@ export const Bridge = {
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
   agentSend: (agent: string, session: string, text: string, cwd: string | null, busy: boolean) =>
     call<"queued" | "started">("agent_send", { agent, session, text, cwd, busy }),
+  /** New things the agent said/thought, from its transcript (only new lines). */
+  transcriptTail: (agent: string, path: string) =>
+    call<{ kind: "prompt" | "say" | "think"; text: string }[]>("transcript_tail", { agent, path }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
   /** "Nobody can act on this" — Claude Code asks in the terminal right away. */

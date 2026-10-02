@@ -13,6 +13,7 @@ mod secrets;
 mod updater;
 mod settings;
 mod tray;
+mod transcript;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -256,6 +257,12 @@ fn agent_send(
     agents::send(&agent, &session, &text, cwd.as_deref(), busy)
 }
 
+/// What the agent said or thought since the last look at its transcript.
+#[tauri::command]
+fn transcript_tail(agent: String, path: String) -> Vec<transcript::Step> {
+    transcript::tail(&agent, &path).unwrap_or_default()
+}
+
 #[tauri::command]
 fn approval_ack(app: AppHandle, request_id: String) {
     pipe::acknowledge(&app, &request_id);
@@ -447,6 +454,7 @@ pub fn run() {
             agent_hooks_apply,
             approval_decision,
             agent_send,
+            transcript_tail,
             approval_ack,
             approval_decline,
             log_line,
