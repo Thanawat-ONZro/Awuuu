@@ -1,6 +1,5 @@
 // Copies the installer Tauri buries in target/release/bundle/nsis/ into
-// windows/release/, with the name it ships under. Used by `npm run pack` and by
-// the release workflow, so both produce exactly the same file names.
+// windows/release/, with the name it ships under. Used by `npm run pack`.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, existsSync } from "node:fs";
