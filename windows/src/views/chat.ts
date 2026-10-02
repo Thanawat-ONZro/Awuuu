@@ -60,7 +60,18 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     spellcheck: "false",
   }) as HTMLInputElement;
   const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  const bar = h("div", { class: "chat-bar" }, input, send);
+  // Which provider answers: Hermes / Claude (by model) or one added in Settings.
+  const switcher = h("select", { class: "chat-provider", title: "Chat provider" }) as HTMLSelectElement;
+  switcher.addEventListener("mousedown", (e) => e.stopPropagation());
+  switcher.addEventListener("change", () => {
+    State.settings.chatProvider = switcher.value;
+    void Bridge.saveSettings(State.settings);
+    void Bridge.chatReset();
+    State.chatHistory = [];
+    State.notify();
+  });
+  let switcherKey = "";
+  const bar = h("div", { class: "chat-bar" }, switcher, input, send);
 
   const el = h(
     "div",
@@ -140,6 +151,18 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         for (const m of State.chatHistory) log.append(bubble(m));
         if (thinking) log.append(typingDots());
         log.scrollTop = log.scrollHeight;
+      }
+
+      const providers = State.settings.providers ?? [];
+      const sk = `${providers.map((p) => p.id + p.name + p.model).join("|")}:${State.settings.chatProvider}:${State.settings.model}`;
+      if (sk !== switcherKey) {
+        switcherKey = sk;
+        clear(switcher);
+        const base = State.settings.model?.startsWith("claude-") ? "Claude" : "Hermes";
+        switcher.append(h("option", { value: "", text: base }));
+        for (const p of providers) switcher.append(h("option", { value: p.id, text: p.name }));
+        switcher.value = State.settings.chatProvider ?? "";
+        switcher.style.display = providers.length ? "" : "none";
       }
 
       input.placeholder = State.chatHistory.length === 0 ? "Ask Awuuu anything…" : "Continue…";

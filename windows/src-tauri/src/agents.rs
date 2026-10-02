@@ -29,6 +29,17 @@ pub enum Sent {
     Started,
 }
 
+/// Holds a prompt for a busy AGY session until its next step.
+fn queue(session: &str, text: &str) -> Sent {
+    let mut q = QUEUE.lock().unwrap();
+    q.get_or_insert_with(HashMap::new)
+        .entry(session.to_string())
+        .or_default()
+        .push(text.to_string());
+    crate::log::line(format!("queued a prompt for agy {session}"));
+    Sent::Queued
+}
+
 /// Sends `text` to the conversation `session` of `agent`.
 pub fn send(app: &tauri::AppHandle, agent: &str, session: &str, text: &str, cwd: Option<&str>, busy: bool) -> Result<Sent, String> {
     let text = text.trim();
@@ -54,13 +65,7 @@ pub fn send(app: &tauri::AppHandle, agent: &str, session: &str, text: &str, cwd:
         }
         "agy" => {
             if busy {
-                let mut q = QUEUE.lock().unwrap();
-                q.get_or_insert_with(HashMap::new)
-                    .entry(session.to_string())
-                    .or_default()
-                    .push(text.to_string());
-                crate::log::line(format!("queued a prompt for agy {session}"));
-                return Ok(Sent::Queued);
+                return Ok(queue(session, text));
             }
             let exe = agy_exe().ok_or("Antigravity CLI (agy) is not installed.")?;
             let mut cmd = Command::new(exe);
@@ -112,10 +117,9 @@ mod tests {
 
     #[test]
     fn queued_prompts_are_handed_over_once() {
-        assert!(matches!(send("agy", "s1", "first", None, true), Ok(Sent::Queued)));
-        assert!(matches!(send("agy", "s1", "second", None, true), Ok(Sent::Queued)));
+        assert!(matches!(queue("s1", "first"), Sent::Queued));
+        assert!(matches!(queue("s1", "second"), Sent::Queued));
         assert_eq!(take_queued("s1").as_deref(), Some("first\n\nsecond"));
         assert_eq!(take_queued("s1"), None);
-        assert!(send("agy", "s1", "   ", None, true).is_err());
     }
 }

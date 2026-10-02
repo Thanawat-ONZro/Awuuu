@@ -196,10 +196,14 @@ pub async fn send(
     app: &tauri::AppHandle,
     chat: &Chat,
     model: &str,
+    provider: Option<&crate::settings::ChatProvider>,
     query: String,
     context: Option<ChatContext>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
+    if let Some(p) = provider {
+        return send_openai(chat, p, query, context, on_delta).await;
+    }
     if model.starts_with("claude-") {
         return send_claude(chat, model, query, context).await;
     }
@@ -267,6 +271,129 @@ fn image_part(path: &str) -> Option<Value> {
         "type": "image_url",
         "image_url": { "url": format!("data:{media};base64,{}", base64(&bytes)) },
     }))
+}
+
+/// Any OpenAI-compatible server (OpenAI, OpenRouter, Ollama, LM Studio…).
+async fn send_openai(
+    chat: &Chat,
+    p: &crate::settings::ChatProvider,
+    query: String,
+    context: Option<ChatContext>,
+    on_delta: &(dyn Fn(&str) + Send + Sync),
+) -> Result<ChatReply, String> {
+    let url = format!("{}/chat/completions", p.base_url.trim().trim_end_matches('/'));
+    let key = secrets::get(&format!("provider-key:{}", p.id));
+    let content = with_context(chat.is_empty(), &context, &query);
+    chat.push(json!({ "role": "user", "content": content }));
+    let mut messages = vec![json!({ "role": "system", "content": SYSTEM_PROMPT })];
+    messages.extend(chat.snapshot());
+    let body = json!({ "model": p.model, "messages": messages, "stream": true });
+    match stream_chat(&url, key.as_deref(), &body, on_delta, &p.name).await {
+        Ok(text) => {
+            chat.push(json!({ "role": "assistant", "content": text }));
+            Ok(ChatReply { text })
+        }
+        Err(e) => {
+            chat.pop();
+            Err(e)
+        }
+    }
+}
+
+/// POSTs a chat-completions request and returns the whole reply, streaming
+/// the text so far through `on_delta`. Falls back to a plain JSON body when
+/// the server ignores `stream`.
+async fn stream_chat(
+    url: &str,
+    key: Option<&str>,
+    body: &Value,
+    on_delta: &(dyn Fn(&str) + Send + Sync),
+    name: &str,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.post(url).header("Content-Type", "application/json; charset=utf-8").json(body);
+    if let Some(k) = key {
+        req = req.bearer_auth(k);
+    }
+    let mut response = req.send().await.map_err(|e| format!("Can't reach {name} at {url}: {e}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("{name} returned {status}: {}", text.chars().take(300).collect::<String>()));
+    }
+    let streamed = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/event-stream"));
+    let mut reply = String::new();
+    if streamed {
+        let mut buf: Vec<u8> = Vec::new();
+        'read: loop {
+            let chunk = match response.chunk().await {
+                Ok(Some(c)) => c,
+                Ok(None) => break,
+                Err(err) => {
+                    if reply.is_empty() {
+                        return Err(format!("{name} stream broke: {err}"));
+                    }
+                    break;
+                }
+            };
+            buf.extend_from_slice(&chunk);
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=pos).collect();
+                let line = String::from_utf8_lossy(&line);
+                let Some(data) = line.trim().strip_prefix("data:") else { continue };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    break 'read;
+                }
+                let Ok(event) = serde_json::from_str::<Value>(data) else { continue };
+                if let Some(piece) = event.pointer("/choices/0/delta/content").and_then(Value::as_str) {
+                    reply.push_str(piece);
+                    on_delta(&reply);
+                }
+            }
+        }
+    } else {
+        let text = response.text().await.map_err(|e| e.to_string())?;
+        let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON from {name}: {e}"))?;
+        reply = parsed.pointer("/choices/0/message/content").and_then(Value::as_str).unwrap_or("").to_string();
+    }
+    let reply = reply.trim().to_string();
+    if reply.is_empty() {
+        return Err(format!("No response received from {name}."));
+    }
+    Ok(reply)
+}
+
+/// Lists a provider's models (`GET {base}/models`). Only from a button.
+pub async fn list_models(base_url: &str, key: Option<String>) -> Result<Vec<String>, String> {
+    let url = format!("{}/models", base_url.trim().trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.get(&url);
+    if let Some(k) = key.filter(|k| !k.is_empty()) {
+        req = req.bearer_auth(k);
+    }
+    let res = req.send().await.map_err(|e| format!("Can't reach {url}: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("{url} returned {status}: {}", text.chars().take(200).collect::<String>()));
+    }
+    let v: Value = serde_json::from_str(&text).map_err(|e| format!("Invalid JSON: {e}"))?;
+    let list = v.get("data").or_else(|| v.get("models")).and_then(Value::as_array).cloned().unwrap_or_default();
+    Ok(list
+        .iter()
+        .filter_map(|m| m.get("id").or_else(|| m.get("name")).and_then(Value::as_str).map(str::to_string))
+        .collect())
 }
 
 async fn send_hermes(

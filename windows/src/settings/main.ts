@@ -4,6 +4,7 @@
 
 import "./settings.css";
 import { Bridge, onEvent, type HookStatus } from "../core/bridge";
+import type { ChatProvider } from "../core/state";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -422,34 +423,130 @@ function hermesSection(): HTMLElement {
   );
 }
 
-function apiAgentsOverviewSection(): HTMLElement {
-  return h(
-    "section",
-    {},
-    h("h2", {}, h("span", { text: "Hermes Agent & OpenCode Gateway" })),
-    h("div", {
-      class: "hint",
-      text: "Hermes Agent and OpenCode connect over local HTTP/REST endpoints. Awuuu automatically unifies them alongside your CLI sessions with real-time approvals, chat streaming, and dynamic island notifications.",
-    }),
-    h("div", { style: "display:flex;flex-direction:column;gap:8px;margin-top:10px" },
-      h("div", { class: "row", style: "justify-content:space-between;background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:6px" },
-        h("div", { style: "display:flex;align-items:center;gap:8px" },
-          h("span", { style: "display:inline-block;width:8px;height:8px;border-radius:50%;background:#8B5CF6" }),
-          h("strong", { text: "Hermes Agent" }),
-          h("span", { class: "hint", text: "Port :8642 — Streaming chat, autonomous tool calling, system notifications" }),
-        ),
-        h("span", { class: "badge", style: "font-size:11px;background:rgba(139,92,246,0.15);color:#8B5CF6;padding:2px 6px;border-radius:4px", text: "Built-in" }),
-      ),
-      h("div", { class: "row", style: "justify-content:space-between;background:rgba(255,255,255,0.02);padding:8px 12px;border-radius:6px" },
-        h("div", { style: "display:flex;align-items:center;gap:8px" },
-          h("span", { style: "display:inline-block;width:8px;height:8px;border-radius:50%;background:#00D26A" }),
-          h("strong", { text: "OpenCode" }),
-          h("span", { class: "hint", text: "Port :4096 — Local SSE event stream, permission prompts, multi-session" }),
-        ),
-        h("span", { class: "badge", style: "font-size:11px;background:rgba(0,210,106,0.15);color:#00D26A;padding:2px 6px;border-radius:4px", text: "Auto-detect" }),
-      ),
-    ),
-  );
+// ── Chat providers (OpenAI-compatible) ──────────────────────────────────────
+
+const PROVIDER_PRESETS: { name: string; baseUrl: string; model: string }[] = [
+  { name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-5-mini" },
+  { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/auto" },
+  { name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", model: "llama3.2" },
+  { name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", model: "local-model" },
+  { name: "Custom", baseUrl: "http://127.0.0.1:8000/v1", model: "" },
+];
+
+function providerId(name: string): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "provider";
+  let id = base;
+  for (let n = 2; settings.providers.some((p) => p.id === id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+function providersSection(): HTMLElement {
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:10px" });
+  const feedback = h("div", {});
+  const say = (kind: "ok" | "err", text: string) => {
+    clear(feedback);
+    feedback.append(h("div", { class: `notice ${kind}`, text }));
+  };
+
+  function draw() {
+    clear(body);
+    const active = h("select", {}) as HTMLSelectElement;
+    active.append(h("option", { value: "", text: "Hermes Agent / Claude (model above)" }));
+    for (const p of settings.providers) active.append(h("option", { value: p.id, text: `${p.name} — ${p.model}` }));
+    active.value = settings.chatProvider ?? "";
+    active.addEventListener("change", () => {
+      settings.chatProvider = active.value;
+      void save();
+    });
+    body.append(h("div", { class: "row" }, h("label", { text: "Island chat uses" }), active));
+
+    for (const p of settings.providers) body.append(providerRow(p));
+
+    const add = h("select", {}) as HTMLSelectElement;
+    add.append(h("option", { value: "", text: "Add a provider…" }));
+    for (const preset of PROVIDER_PRESETS) add.append(h("option", { value: preset.name, text: preset.name }));
+    add.addEventListener("change", () => {
+      const preset = PROVIDER_PRESETS.find((x) => x.name === add.value);
+      if (!preset) return;
+      settings.providers = [...settings.providers, { id: providerId(preset.name), ...preset }];
+      void save();
+      draw();
+    });
+    const detect = h("button", { text: "Detect local (Ollama, LM Studio)" });
+    detect.addEventListener("click", async () => {
+      say("ok", "Looking on 11434 and 1234…");
+      const found = (await Bridge.detectLocalProviders()) ?? [];
+      if (found.length === 0) {
+        say("err", "Nothing answered on the usual local ports.");
+        return;
+      }
+      for (const f of found) {
+        if (settings.providers.some((p) => p.baseUrl === f.baseUrl)) continue;
+        settings.providers = [...settings.providers, { id: providerId(f.name), name: f.name, baseUrl: f.baseUrl, model: f.models[0] ?? "" }];
+      }
+      await save();
+      say("ok", `Found: ${found.map((f) => `${f.name} (${f.models.length} models)`).join(", ")}`);
+      draw();
+    });
+    body.append(h("div", { class: "row" }, add, detect), feedback);
+  }
+
+  function providerRow(p: ChatProvider): HTMLElement {
+    const field = (value: string, placeholder: string, set: (v: string) => void, width = "160px") => {
+      const input = h("input", { type: "text", value, placeholder, spellcheck: "false", style: `width:${width}` }) as HTMLInputElement;
+      input.addEventListener("change", () => {
+        set(input.value.trim());
+        void save();
+      });
+      return input;
+    };
+    const models = h("datalist", { id: `models-${p.id}` });
+    const model = field(p.model, "model", (v) => (p.model = v), "180px");
+    model.setAttribute("list", `models-${p.id}`);
+    const key = h("input", { type: "password", placeholder: "API key (optional)", autocomplete: "off", style: "width:150px" }) as HTMLInputElement;
+    void Bridge.secretPresent(`provider-key:${p.id}`).then((has) => {
+      if (has) key.placeholder = "••••••  (stored)";
+    });
+    key.addEventListener("change", async () => {
+      try {
+        await Bridge.secretSet(`provider-key:${p.id}`, key.value.trim());
+        key.value = "";
+        key.placeholder = "••••••  (stored)";
+        say("ok", `${p.name}: key saved in the Credential Manager.`);
+      } catch (err) {
+        say("err", String(err));
+      }
+    });
+    const test = h("button", { text: "Test" });
+    test.addEventListener("click", async () => {
+      try {
+        const list = (await Bridge.providerModels(p.baseUrl, p.id)) ?? [];
+        clear(models);
+        for (const m of list) models.append(h("option", { value: m }));
+        say("ok", `${p.name}: connected — ${list.length} models${list.length ? ` (${list.slice(0, 5).join(", ")}…)` : ""}`);
+      } catch (err) {
+        say("err", `${p.name}: ${String(err).replace(/^Error:\s*/, "")}`);
+      }
+    });
+    const remove = h("button", { class: "danger", text: "Remove" });
+    remove.addEventListener("click", async () => {
+      settings.providers = settings.providers.filter((x) => x.id !== p.id);
+      if (settings.chatProvider === p.id) settings.chatProvider = "";
+      await Bridge.secretClear(`provider-key:${p.id}`).catch(() => {});
+      await save();
+      draw();
+    });
+    return h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" },
+      field(p.name, "name", (v) => (p.name = v || p.name), "110px"),
+      field(p.baseUrl, "https://…/v1", (v) => (p.baseUrl = v), "220px"),
+      model, models, key, test, remove);
+  }
+
+  draw();
+  return h("section", {},
+    h("h2", {}, h("span", { text: "Chat providers" })),
+    h("div", { class: "hint", text: "Any OpenAI-compatible server — OpenAI, OpenRouter, Ollama, LM Studio or your own. Keys stay in the Windows Credential Manager. Switch providers from the chat too." }),
+    body);
 }
 
 function apiSection(hasKey: boolean): HTMLElement {
@@ -867,7 +964,7 @@ async function main() {
       "Install the plugin to see OpenCode sessions in the island and answer its permission requests with 1-click.",
       opencodeHooks,
     ),
-    apiAgentsOverviewSection(),
+    providersSection(),
     alwaysAllowSection(),
     hermesSection(),
     apiSection(hasKey),

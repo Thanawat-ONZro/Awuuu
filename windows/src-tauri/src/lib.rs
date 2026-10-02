@@ -376,12 +376,16 @@ async fn chat_send(
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
-    let model = shared.settings.lock().unwrap().model.clone();
+    let (model, provider) = {
+        let s = shared.settings.lock().unwrap();
+        let p = s.providers.iter().find(|p| !s.chat_provider.is_empty() && p.id == s.chat_provider).cloned();
+        (s.model.clone(), p)
+    };
     let handle = app.clone();
     let on_delta = move |text: &str| {
         let _ = app.emit_to(island::WINDOW_LABEL, "chat-delta", text.to_string());
     };
-    claude::send(&handle, &chat, &model, query, context, &on_delta).await
+    claude::send(&handle, &chat, &model, provider.as_ref(), query, context, &on_delta).await
 }
 
 /// Settings → "Check for updates…" (the tray item calls the same thing).
@@ -394,6 +398,26 @@ fn update_check_now(app: AppHandle) {
 #[tauri::command]
 async fn hermes_status() -> Result<Vec<String>, String> {
     claude::hermes_models().await
+}
+
+/// Settings → Test on a chat provider: its model list.
+#[tauri::command]
+async fn provider_models(base_url: String, id: String) -> Result<Vec<String>, String> {
+    let key = if id.is_empty() { None } else { secrets::get(&format!("provider-key:{id}")) };
+    claude::list_models(&base_url, key).await
+}
+
+/// Settings → "Detect local": Ollama and LM Studio on their usual ports.
+/// Only when clicked; nothing probes in the background.
+#[tauri::command]
+async fn detect_local_providers() -> Vec<serde_json::Value> {
+    let mut found = Vec::new();
+    for (name, base) in [("Ollama", "http://127.0.0.1:11434/v1"), ("LM Studio", "http://127.0.0.1:1234/v1")] {
+        if let Ok(models) = claude::list_models(base, None).await {
+            found.push(serde_json::json!({ "name": name, "baseUrl": base, "models": models }));
+        }
+    }
+    found
 }
 
 #[tauri::command]
@@ -554,6 +578,8 @@ pub fn run() {
             log_line,
             chat_send,
             chat_reset,
+            provider_models,
+            detect_local_providers,
             hermes_status,
             update_check_now,
             ingest_file,

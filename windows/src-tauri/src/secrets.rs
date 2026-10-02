@@ -20,8 +20,16 @@ pub const KNOWN_KEYS: &[&str] = &[
     "calcom-api-key",
 ];
 
+/// `provider-key:<id>` for a chat provider added in Settings: a short id of
+/// lowercase letters, digits and dashes, nothing else.
+fn is_provider_key(key: &str) -> bool {
+    key.strip_prefix("provider-key:").is_some_and(|id| {
+        !id.is_empty() && id.len() <= 40 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    })
+}
+
 fn entry(key: &str) -> Option<Entry> {
-    if !KNOWN_KEYS.contains(&key) {
+    if !KNOWN_KEYS.contains(&key) && !is_provider_key(key) {
         return None;
     }
     Entry::new(SERVICE, key).ok()
@@ -50,4 +58,18 @@ pub fn clear(key: &str) -> Result<(), String> {
 
 pub fn present(key: &str) -> bool {
     get(key).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_provider_key;
+
+    #[test]
+    fn only_well_formed_provider_keys() {
+        assert!(is_provider_key("provider-key:openrouter-1"));
+        assert!(!is_provider_key("provider-key:"));
+        assert!(!is_provider_key("provider-key:../x"));
+        assert!(!is_provider_key("provider-key:Open AI"));
+        assert!(!is_provider_key("anything-else"));
+    }
 }

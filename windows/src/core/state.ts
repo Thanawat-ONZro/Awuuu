@@ -122,6 +122,15 @@ export interface IntegrationInfo {
   configured: boolean;
 }
 
+/** An OpenAI-compatible chat server added in Settings (key in the Credential Manager). */
+export interface ChatProvider {
+  id: string;
+  name: string;
+  /** ".../v1" */
+  baseUrl: string;
+  model: string;
+}
+
 export interface Settings {
   soundEnabled: boolean;
   soundVolume: number;
@@ -139,6 +148,9 @@ export interface Settings {
   islandWidth: number;
   /** Height of the Agents hub, px. */
   hubHeight: number;
+  providers: ChatProvider[];
+  /** "" = Hermes / Claude by `model`; else a provider id. */
+  chatProvider: string;
   /** Agents hub text size, 1 = normal. */
   hubScale: number;
   /** Log lines kept on screen in the hub; 0 = all. */
@@ -172,6 +184,8 @@ export const DEFAULT_SETTINGS: Settings = {
   freeY: 0,
   islandWidth: 640,
   hubHeight: 290,
+  providers: [],
+  chatProvider: "",
   hubScale: 1,
   logLines: 40,
   showThinking: true,

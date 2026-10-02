@@ -93,8 +93,13 @@ export const Bridge = {
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
   agentSend: (agent: string, session: string, text: string, cwd: string | null, busy: boolean) =>
     call<"queued" | "started">("agent_send", { agent, session, text, cwd, busy }),
+  /** Settings → Test: a provider's model list. */
+  providerModels: (baseUrl: string, id: string) => callOrThrow<string[]>("provider_models", { baseUrl, id }),
+  /** Settings → Detect local: Ollama / LM Studio, on click only. */
+  detectLocalProviders: () =>
+    call<{ name: string; baseUrl: string; models: string[] }[]>("detect_local_providers"),
   /** Recent Hermes sessions (Runs API host), only when the user asks. */
-  hermesSessions: () => call<{ id: string; title: string; source: string }[]>("hermes_sessions"),
+  hermesSessions: () => callOrThrow<{ id: string; title: string; source: string }[]>("hermes_sessions"),
   /** New things the agent said/thought, from its transcript (only new lines). */
   transcriptTail: (agent: string, path: string) =>
     call<{ kind: "prompt" | "say" | "think"; text: string }[]>("transcript_tail", { agent, path }),
@@ -162,7 +167,7 @@ export interface HookPreview {
 
 /** Same as `call`, but surfaces the error so the UI can show what went wrong. */
 async function callOrThrow<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!IS_TAURI) throw new Error("not running inside Coucou");
+  if (!IS_TAURI) throw new Error("not running inside Awuuu");
   return invoke<T>(cmd, args);
 }
 

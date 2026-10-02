@@ -36,6 +36,14 @@ pub struct Settings {
     /// Agents hub text size, 1.0 = normal.
     #[serde(default = "one")]
     pub hub_scale: f64,
+    /// Extra OpenAI-compatible chat providers (OpenAI, OpenRouter, Ollama…).
+    /// Their keys live in the Credential Manager as `provider-key:<id>`.
+    #[serde(default)]
+    pub providers: Vec<ChatProvider>,
+    /// Which provider the island chat uses: "" = Hermes / Claude by `model`,
+    /// otherwise the id of one of `providers`.
+    #[serde(default)]
+    pub chat_provider: String,
     /// Log lines kept on screen in the hub (0 = all).
     #[serde(default = "default_log_lines")]
     pub log_lines: u32,
@@ -56,6 +64,16 @@ pub struct Settings {
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatProvider {
+    pub id: String,
+    pub name: String,
+    /// ".../v1" — `/chat/completions` and `/models` are appended.
+    pub base_url: String,
+    pub model: String,
 }
 
 fn default_hide_after() -> f64 {
@@ -131,6 +149,8 @@ impl Default for Settings {
             free_y: 0.0,
             island_width: default_island_width(),
             hub_height: default_hub_height(),
+            providers: Vec::new(),
+            chat_provider: String::new(),
             hub_scale: 1.0,
             log_lines: default_log_lines(),
             show_thinking: true,
