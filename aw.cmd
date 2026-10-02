@@ -21,7 +21,6 @@ set AWUUU_ACTIVE=1
 set AWUUU_SESSION_ORIGIN=aw-cli
 
 if /I "%AGENT_CMD%"=="claude" goto run_claude
-if /I "%AGENT_CMD%"=="codex" goto run_codex
 if /I "%AGENT_CMD%"=="agy" goto run_agy
 if /I "%AGENT_CMD%"=="hermes" goto run_hermes
 if /I "%AGENT_CMD%"=="opencode" goto run_opencode
@@ -31,10 +30,6 @@ goto end
 
 :run_claude
 claude %ARGS%
-goto end
-
-:run_codex
-codex %ARGS%
 goto end
 
 :run_agy
@@ -53,14 +48,13 @@ goto end
 echo.
 echo    /\_/\    Awuuu CLI Companion Wrapper
 echo   ( o.o )   Unified AI Coding Island for Windows
-echo    ^> ^^^<    Claude Code ^| Codex CLI ^| AGY ^| Hermes ^| OpenCode
+echo    ^> ^^^<    Claude Code ^| AGY ^| Hermes ^| OpenCode
 echo.
 echo  Usage:
 echo    aw ^<agent^> [args...]
 echo.
 echo  Supported Agents:
 echo    aw claude     Launch Claude Code session
-echo    aw codex      Launch Codex CLI session
 echo    aw agy        Launch Antigravity CLI (AGY) session
 echo    aw hermes     Launch Hermes Agent session
 echo    aw opencode   Launch OpenCode session

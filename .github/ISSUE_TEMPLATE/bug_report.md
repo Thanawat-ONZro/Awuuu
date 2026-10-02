@@ -10,8 +10,8 @@ labels: bug
 
 **How to reproduce**
 
-**macOS version**
+**Windows version**
 
-**Mac model**
+**Agent (Claude Code, AGY, Hermes, OpenCode) and its version**
 
-**Coucou version**
+**Awuuu version** (tray → Settings, top of the window)

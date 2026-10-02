@@ -57,50 +57,21 @@ export const Bridge = {
 
   openSettingsWindow: () => call<void>("open_settings_window"),
 
-  /** Writes to %LOCALAPPDATA%\Coucou\coucou.log, next to the Rust lines. */
+  /** Writes to %LOCALAPPDATA%\Awuuu\awuuu.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),
 
-  // ── Agent hooks (Claude, Codex, AGY) ───────────────────────────────────────
-  hooksStatus: () => call<HookStatus>("hooks_status"),
+  // ── Agent hooks (Claude, AGY) ───────────────────────────────────────
+  agentHooksStatus: (agent: "claude" | "agy") =>
+    call<HookStatus>("agent_hooks_status", { agent }),
   /** Diff to show before anything is written. `install: false` previews removal. */
-  hooksPreview: (install: boolean) => callOrThrow<HookPreview>("hooks_preview", { install }),
+  agentHooksPreview: (agent: "claude" | "agy", install: boolean) =>
+    callOrThrow<HookPreview>("agent_hooks_preview", { agent, install }),
   /**
-   * Writes ~/.claude/settings.json — only ever after an explicit click, and only
-   * when the file still matches the preview the user looked at.
+   * Writes the agent's config — only ever after an explicit click, and only when
+   * the file still matches the preview the user looked at.
    */
-  hooksApply: (install: boolean, fingerprint: string) =>
-    callOrThrow<string>("hooks_apply", { install, fingerprint }),
-
-  agentHooksStatus: async (agent: "claude" | "codex" | "agy"): Promise<HookStatus | null> => {
-    try {
-      const res = await call<HookStatus>("agent_hooks_status", { agent });
-      if (res) return res;
-    } catch {
-      // fallback to legacy
-    }
-    if (agent === "claude") return call<HookStatus>("hooks_status");
-    return null;
-  },
-  agentHooksPreview: async (agent: "claude" | "codex" | "agy", install: boolean): Promise<HookPreview> => {
-    try {
-      return await callOrThrow<HookPreview>("agent_hooks_preview", { agent, install });
-    } catch (err) {
-      if (agent === "claude") return callOrThrow<HookPreview>("hooks_preview", { install });
-      throw err;
-    }
-  },
-  agentHooksApply: async (
-    agent: "claude" | "codex" | "agy",
-    install: boolean,
-    fingerprint: string,
-  ): Promise<string> => {
-    try {
-      return await callOrThrow<string>("agent_hooks_apply", { agent, install, fingerprint });
-    } catch (err) {
-      if (agent === "claude") return callOrThrow<string>("hooks_apply", { install, fingerprint });
-      throw err;
-    }
-  },
+  agentHooksApply: (agent: "claude" | "agy", install: boolean, fingerprint: string) =>
+    callOrThrow<string>("agent_hooks_apply", { agent, install, fingerprint }),
 
   approvalDecision: (requestId: string, decision: "allow" | "deny" | "always") =>
     call<void>("approval_decision", { requestId, decision }),
@@ -162,7 +133,7 @@ export interface HookPreview {
   diff: string;
   backup: string;
   settingsPath: string;
-  /** Hand back to hooksApply so only the reviewed diff is ever written. */
+  /** Hand back to agentHooksApply so only the reviewed diff is ever written. */
   fingerprint: string;
 }
 

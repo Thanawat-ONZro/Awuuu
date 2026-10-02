@@ -984,7 +984,8 @@ export class Island {
     Sound.setEnabled(State.settings.soundEnabled);
     Sound.setVolume(State.settings.soundVolume);
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
-    this.fsm.petitToHiddenDelay = State.settings.hideAfter;
+    this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
+    this.fsm.toastDelay = State.settings.hideAfter ?? 5;
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     State.notify();

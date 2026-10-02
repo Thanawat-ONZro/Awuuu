@@ -3,7 +3,7 @@
 // The rule from CLAUDE.md is strict and is followed to the letter:
 // read %USERPROFILE%\.claude\settings.json, take a dated backup, merge without
 // touching anybody else's hooks, show the diff, and write only after an explicit
-// click. Uninstall removes Coucou's entries and nothing else.
+// click. Uninstall removes Awuuu's entries and nothing else.
 //
 // The command is only the quoted exe path in forward slashes plus the event name:
 // on Windows Claude Code runs hook commands through Git Bash, and anything with
@@ -67,7 +67,6 @@ fn home() -> PathBuf {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HookAgent {
     Claude,
-    Codex,
     Agy,
 }
 
@@ -75,8 +74,7 @@ impl HookAgent {
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "claude" | "claude-code" => Some(Self::Claude),
-            "codex" | "codex-cli" => Some(Self::Codex),
-            "agy" | "antigravity" | "gemini" => Some(Self::Agy),
+            "agy" | "antigravity" => Some(Self::Agy),
             _ => None,
         }
     }
@@ -84,21 +82,10 @@ impl HookAgent {
     pub fn settings_path(&self) -> PathBuf {
         match self {
             Self::Claude => home().join(".claude").join("settings.json"),
-            Self::Codex => home().join(".codex").join("hooks.json"),
             Self::Agy => home().join(".gemini").join("config").join("hooks.json"),
         }
     }
 }
-
-pub const CODEX_HOOK_EVENTS: &[(&str, u64)] = &[
-    ("SessionStart", 10),
-    ("UserPromptSubmit", 10),
-    ("PreToolUse", 10),
-    ("PermissionRequest", 120),
-    ("PostToolUse", 10),
-    ("Stop", 10),
-    ("SessionEnd", 10),
-];
 
 pub fn settings_path() -> PathBuf {
     HookAgent::Claude.settings_path()
@@ -133,9 +120,9 @@ fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
     }
     match serde_json::from_slice::<Value>(text) {
         Ok(v) if v.is_object() => Ok(v),
-        Ok(_) => Err(format!("{path} isn't a JSON object — Coucou won't touch it.")),
+        Ok(_) => Err(format!("{path} isn't a JSON object — Awuuu won't touch it.")),
         Err(err) => Err(format!(
-            "{path} isn't valid JSON ({err}). Fix or move it, then try again — Coucou won't overwrite it."
+            "{path} isn't valid JSON ({err}). Fix or move it, then try again — Awuuu won't overwrite it."
         )),
     }
 }
@@ -155,8 +142,8 @@ fn hook_command(agent: HookAgent, event: &str) -> String {
             let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
             format!("\"{exe}\" {event}")
         }
-        HookAgent::Codex | HookAgent::Agy => {
-            // Codex CLI and Antigravity CLI on Windows execute commands via cmd.exe / PowerShell.
+        HookAgent::Agy => {
+            // Antigravity CLI on Windows executes commands via cmd.exe / PowerShell.
             // Native backslashes and standard Windows path formatting are mandatory.
             let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
             format!("\"{exe}\" {event}")
@@ -166,7 +153,7 @@ fn hook_command(agent: HookAgent, event: &str) -> String {
 
 fn entry_is_ours(entry: &Value) -> bool {
     if let Some(cmd) = entry.get("command").and_then(Value::as_str) {
-        if cmd.contains(MARKER) || cmd.contains("coucou-hook") {
+        if cmd.contains(MARKER) || cmd.contains("coucou-hook") /* entries from Coucou-era installs */ {
             return true;
         }
     }
@@ -177,14 +164,14 @@ fn entry_is_ours(entry: &Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(Value::as_str)
-                    .map(|c| c.contains(MARKER) || c.contains("coucou-hook"))
+                    .map(|c| c.contains(MARKER) || c.contains("awuuu-hook"))
                     .unwrap_or(false)
             })
         })
         .unwrap_or(false)
 }
 
-/// Settings with Coucou's hooks added; everything else is left untouched.
+/// Settings with Awuuu's hooks added; everything else is left untouched.
 fn merged(existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     let mut hooks = root
@@ -214,7 +201,7 @@ fn merged(existing: &Value) -> Value {
     Value::Object(root)
 }
 
-/// Settings with every Coucou entry removed, and nothing else changed.
+/// Settings with every Awuuu entry removed, and nothing else changed.
 fn without_ours(existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     let Some(hooks) = root.get("hooks").and_then(Value::as_object).cloned() else {
@@ -296,34 +283,6 @@ fn current_fingerprint() -> String {
 fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
     match agent {
         HookAgent::Claude => merged(existing),
-        HookAgent::Codex => {
-            let mut root = existing.as_object().cloned().unwrap_or_default();
-            let mut hooks = root
-                .get("hooks")
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_else(Map::new);
-
-            for (event, timeout) in CODEX_HOOK_EVENTS {
-                let mut list = hooks
-                    .get(*event)
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                list.retain(|entry| !entry_is_ours(entry));
-                list.push(json!({
-                    "hooks": [{
-                        "type": "command",
-                        "command": hook_command(HookAgent::Codex, event),
-                        "timeout": timeout,
-                    }]
-                }));
-                hooks.insert((*event).to_string(), Value::Array(list));
-            }
-
-            root.insert("hooks".into(), Value::Object(hooks));
-            Value::Object(root)
-        }
         HookAgent::Agy => {
             let mut root = existing.as_object().cloned().unwrap_or_default();
             let mut hooks = root
@@ -365,7 +324,7 @@ fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
 fn without_ours_for_agent(_agent: HookAgent, existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     root.remove(MARKER);
-    root.remove("coucou-hook");
+    root.remove("awuuu-hook");
     without_ours(&Value::Object(root))
 }
 
@@ -384,7 +343,7 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
 
     has_hooks
         || (agent == HookAgent::Agy
-            && (current.get(MARKER).is_some() || current.get("coucou-hook").is_some()))
+            && (current.get(MARKER).is_some() || current.get("awuuu-hook").is_some()))
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -402,6 +361,7 @@ pub fn status_for(agent: HookAgent) -> HookStatus {
     }
 }
 
+#[cfg(test)]
 pub fn status() -> HookStatus {
     status_for(HookAgent::Claude)
 }
@@ -422,6 +382,7 @@ pub fn preview_for(agent: HookAgent, install: bool) -> Result<HookPreview, Strin
     })
 }
 
+#[cfg(test)]
 pub fn preview(install: bool) -> Result<HookPreview, String> {
     preview_for(HookAgent::Claude, install)
 }
@@ -481,7 +442,7 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
     let mut text = pretty(&next);
     text.push('\n');
 
-    let temp = path.with_extension(format!("json.coucou-{}", std::process::id()));
+    let temp = path.with_extension(format!("json.awuuu-{}", std::process::id()));
     std::fs::write(&temp, text.as_bytes()).map_err(|e| format!("write failed: {e}"))?;
     if let Err(err) = std::fs::rename(&temp, &path) {
         let _ = std::fs::remove_file(&temp);
@@ -490,13 +451,14 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
     Ok(backup.to_string_lossy().to_string())
 }
 
+#[cfg(test)]
 pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
     write_for(HookAgent::Claude, install, fingerprint)
 }
 
-/// Copies coucou-hook.exe into %LOCALAPPDATA%\Coucou\bin on launch.
+/// Copies awuuu-hook.exe into %LOCALAPPDATA%\Awuuu\bin on launch.
 /// In a bundled install it comes from the app resources; in `tauri dev` it sits
-/// next to coucou.exe in the workspace target directory.
+/// next to awuuu.exe in the workspace target directory.
 ///
 /// Every candidate is tried rather than just the first, because getting this
 /// wrong is silent and fatal: `resources` used to be a glob, which made NSIS
@@ -514,20 +476,14 @@ pub fn ensure_hook_exe(app: &AppHandle) {
     if let Ok(p) = app.path().resolve("awuuu-hook.exe", tauri::path::BaseDirectory::Resource) {
         candidates.push(p);
     }
-    if let Ok(p) = app.path().resolve("coucou-hook.exe", tauri::path::BaseDirectory::Resource) {
-        candidates.push(p);
-    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             // Installed build, then `tauri dev` (target/debug) next to the
             // release hook the pre-build step produces.
             candidates.push(parent.join("awuuu-hook.exe"));
             candidates.push(parent.join("../release/awuuu-hook.exe"));
-            candidates.push(parent.join("coucou-hook.exe"));
-            candidates.push(parent.join("../release/coucou-hook.exe"));
             // Belt and braces: where the old glob form used to land it.
             candidates.push(parent.join("_up_/target/release/awuuu-hook.exe"));
-            candidates.push(parent.join("_up_/target/release/coucou-hook.exe"));
         }
     }
 
@@ -650,7 +606,7 @@ mod tests {
     #[test]
     fn unreadable_content_is_an_error_never_an_empty_object() {
         // This is the whole bug: returning {} here meant `merged()` produced a
-        // file containing nothing but Coucou's hooks, and the write replaced
+        // file containing nothing but Awuuu's hooks, and the write replaced
         // everything the user had.
         for bad in [&b"{ not json"[..], &b"[1,2,3]"[..], &b"\"a string\""[..]] {
             assert!(
@@ -712,7 +668,7 @@ mod tests {
     /// USERPROFILE at a temp directory, and that is process-wide.
     #[test]
     fn writing_backs_up_preserves_and_refuses_a_changed_file() {
-        let tmp = std::env::temp_dir().join(format!("coucou-hooks-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("awuuu-hooks-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join(".claude")).unwrap();
         std::env::set_var("USERPROFILE", &tmp);
@@ -728,7 +684,7 @@ mod tests {
 
         // Install.
         let plan = preview(true).expect("a BOM must not stop the preview");
-        assert!(plan.diff.contains("awuuu-hook") || plan.diff.contains("coucou-hook"), "the diff must show what changes");
+        assert!(plan.diff.contains("awuuu-hook") || plan.diff.contains("awuuu-hook"), "the diff must show what changes");
         let backup = write(true, &plan.fingerprint).expect("install should succeed");
 
         // The backup holds the original bytes, BOM and all.

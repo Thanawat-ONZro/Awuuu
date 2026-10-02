@@ -289,8 +289,6 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
           ? "OpenCode"
           : focused.source === "agy"
           ? "Antigravity CLI"
-          : focused.source === "codex"
-          ? "Codex CLI"
           : "Claude Code";
 
       clear(who);
@@ -338,8 +336,6 @@ function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
       ? "OpenCode"
       : task.source === "agy"
       ? "AGY"
-      : task.source === "codex"
-      ? "Codex"
       : "Claude";
   const pill = h(
     "div",

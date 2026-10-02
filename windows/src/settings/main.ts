@@ -41,10 +41,10 @@ function renderDiff(text: string): HTMLElement {
   return box;
 }
 
-// ── Multi-Agent Hooks section (Claude, Codex, AGY) ────────────────────────────
+// ── Multi-Agent Hooks section (Claude, AGY) ────────────────────────────
 
 function agentHooksSection(
-  agent: "claude" | "codex" | "agy",
+  agent: "claude" | "agy",
   title: string,
   fileName: string,
   descInstalled: string,
@@ -730,9 +730,6 @@ async function main() {
   const claudeStatus = (await Bridge.agentHooksStatus("claude")) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
-  const codexStatus = (await Bridge.agentHooksStatus("codex")) ?? {
-    installed: false, settingsPath: "", hookPath: "", hookReady: false,
-  };
   const agyStatus = (await Bridge.agentHooksStatus("agy")) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
@@ -756,14 +753,6 @@ async function main() {
       "Awuuu is hooked into your Claude Code sessions (~/.claude/settings.json). Tool calls and permission requests appear in the island.",
       "Install the hooks to see your Claude Code sessions in the island and approve permissions with 1-click.",
       claudeStatus,
-    ),
-    agentHooksSection(
-      "codex",
-      "Codex CLI",
-      "hooks.json",
-      "Awuuu is hooked into your Codex CLI sessions (~/.codex/hooks.json). Tool runs and permission requests appear in the island.",
-      "Install the hooks to see your Codex CLI sessions in the island and approve permissions with 1-click.",
-      codexStatus,
     ),
     agentHooksSection(
       "agy",

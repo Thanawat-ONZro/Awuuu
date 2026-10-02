@@ -205,7 +205,7 @@ fn read_event() -> Option<HookEvent> {
         }
     }
 
-    // Which terminal the session runs in. Unlike macOS, Coucou on Windows accepts
+    // Which terminal the session runs in. Unlike macOS, Awuuu on Windows accepts
     // events from every terminal, so this is context only — never a filter.
     for (key, var) in [
         ("term_program", "TERM_PROGRAM"),

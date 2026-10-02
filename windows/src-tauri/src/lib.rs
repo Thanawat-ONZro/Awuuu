@@ -1,4 +1,4 @@
-// Coucou for Windows — app wiring and the commands the island calls.
+// Awuuu for Windows — app wiring and the commands the island calls.
 
 mod claude;
 mod files;
@@ -50,7 +50,7 @@ pub struct BootInfo {
 fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
     let mut settings = shared.settings.lock().unwrap().clone();
     // The real state of ~/.claude/settings.json wins over whatever we stored.
-    settings.hooks_installed = hooks::status().installed;
+    settings.hooks_installed = hooks::status_for(hooks::HookAgent::Claude).installed;
     let screen = island::screen_info(&app, &settings.screen);
     BootInfo {
         settings,
@@ -71,13 +71,13 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         (screen_changed, autostart_changed)
     };
     if let Err(err) = settings::save(&settings) {
-        eprintln!("[coucou] could not save settings: {err}");
+        eprintln!("[awuuu] could not save settings: {err}");
     }
     if autostart_changed {
         let manager = app.autolaunch();
         let result = if settings.autostart { manager.enable() } else { manager.disable() };
         if let Err(err) = result {
-            eprintln!("[coucou] autostart: {err}");
+            eprintln!("[awuuu] autostart: {err}");
         }
     }
     if screen_changed {
@@ -193,38 +193,6 @@ fn set_paused(paused: bool) {
 }
 
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
-
-#[tauri::command]
-fn hooks_status() -> HookStatus {
-    hooks::status()
-}
-
-/// Returns the diff the user has to look at before anything is written.
-#[tauri::command]
-fn hooks_preview(install: bool) -> Result<HookPreview, String> {
-    hooks::preview(install)
-}
-
-/// Only ever called from an explicit click in the settings window.
-#[tauri::command]
-fn hooks_apply(
-    app: AppHandle,
-    shared: State<Shared>,
-    install: bool,
-    fingerprint: String,
-) -> Result<String, String> {
-    // The fingerprint comes from the preview the user actually looked at, so a
-    // settings.json that changed in between is refused rather than overwritten.
-    let backup = hooks::write(install, &fingerprint)?;
-    let updated = {
-        let mut current = shared.settings.lock().unwrap();
-        current.hooks_installed = install;
-        let _ = settings::save(&current);
-        current.clone()
-    };
-    let _ = app.emit("settings-changed", updated);
-    Ok(backup)
-}
 
 #[tauri::command]
 fn agent_hooks_status(agent: String) -> Result<HookStatus, String> {
@@ -454,9 +422,6 @@ pub fn run() {
             open_url,
             open_in_vscode,
             quit_app,
-            hooks_status,
-            hooks_preview,
-            hooks_apply,
             agent_hooks_status,
             agent_hooks_preview,
             agent_hooks_apply,

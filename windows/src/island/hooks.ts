@@ -178,11 +178,6 @@ function handleHook(island: Island, payload: HookPayload) {
   } else if (payload.conversationId || payload.toolCall) {
     source = "agy";
   } else if (
-    payload.session_id?.toLowerCase().includes("codex") ||
-    cwd.toLowerCase().includes(".codex")
-  ) {
-    source = "codex";
-  } else if (
     payload.session_id?.toLowerCase().includes("hermes") ||
     cwd.toLowerCase().includes(".hermes")
   ) {

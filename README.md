@@ -69,6 +69,16 @@ To build a production standalone installer:
 npm run pack         # NSIS installer generated in windows/release/
 ```
 
+To publish a version that installed copies update to by themselves (needs the
+signing key in `%USERPROFILE%\.tauri\awuuu-updater.key` and `gh` logged in):
+
+```powershell
+npm run release -- 0.3.0 "What changed"
+```
+
+`npm run dev` alone serves the front end in a normal browser (no Tauri), handy
+for UI work. The app log lives in `%LOCALAPPDATA%\Awuuu\awuuu.log`.
+
 ---
 
 ## 🛠️ Configuration & Setup

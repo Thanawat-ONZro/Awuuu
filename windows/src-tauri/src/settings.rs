@@ -10,7 +10,6 @@ pub struct Settings {
     pub sound_enabled: bool,
     pub sound_volume: f64,
     pub auto_close_interval: f64,
-    pub absence_interval: f64,
     pub active_integrations: Vec<String>,
     /// "primary" = the main display, "cursor" = whichever display the mouse is on.
     pub screen: String,
@@ -24,12 +23,16 @@ pub struct Settings {
     #[serde(default = "default_model")]
     pub model: String,
     /// Seconds the compact island stays up with nothing going on before it
-    /// hides; 0 = never hide. Missing in older settings.json → 0.
-    #[serde(default)]
+    /// hides; 0 = never hide. Same default as the front end (state.ts).
+    #[serde(default = "default_hide_after")]
     pub hide_after: f64,
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+}
+
+fn default_hide_after() -> f64 {
+    5.0
 }
 
 fn default_position() -> String {
@@ -46,7 +49,6 @@ impl Default for Settings {
             sound_enabled: true,
             sound_volume: 0.12,
             auto_close_interval: 15.0,
-            absence_interval: 180.0,
             active_integrations: vec![
                 "integration_resend".into(),
                 "integration_n8n".into(),
@@ -58,7 +60,7 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             model: default_model(),
-            hide_after: 10.0,
+            hide_after: default_hide_after(),
             update_check: None,
         }
     }

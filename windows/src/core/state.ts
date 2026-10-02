@@ -3,7 +3,7 @@
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 
-export type AgentSource = "claudeCode" | "codex" | "agy" | "hermes" | "opencode" | "n8n";
+export type AgentSource = "claudeCode" | "agy" | "hermes" | "opencode" | "n8n";
 export type PillBadge = "approval" | "finished" | "error";
 
 export interface AgentTask {
@@ -83,10 +83,6 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
 ];
 
-export const TOGGLEABLE_INTEGRATION_IDS = [
-  "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  "integration_notion", "integration_calcom", "integration_stripe",
-];
 
 /** What an integration poller last reported. */
 export interface IntegrationInfo {
@@ -100,7 +96,6 @@ export interface Settings {
   soundEnabled: boolean;
   soundVolume: number;
   autoCloseInterval: number;
-  absenceInterval: number;
   activeIntegrations: string[];
   screen: "primary" | "cursor";
   /** Top edge of the screen, or bottom (just above the taskbar). */
@@ -121,7 +116,6 @@ export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
   soundVolume: 0.12,
   autoCloseInterval: 15,
-  absenceInterval: 180,
   activeIntegrations: [
     "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   ],
@@ -257,7 +251,6 @@ class AppState {
     const agentColor = (s: AgentSource) => {
       switch (s) {
         case "agy": return "#4285F4";
-        case "codex": return "#10A37F";
         case "hermes": return "#8B5CF6";
         case "opencode": return "#00D26A";
         default: return "#F06543";
@@ -266,7 +259,6 @@ class AppState {
     const defaultName = (s: AgentSource) => {
       switch (s) {
         case "agy": return "AGY";
-        case "codex": return "Codex";
         case "hermes": return "Hermes";
         case "opencode": return "OpenCode";
         default: return "Claude";
@@ -379,20 +371,6 @@ class AppState {
       if (first) this.focusId = first.id;
     }
     this.notify();
-  }
-
-  toggleIntegration(id: string) {
-    const active = this.settings.activeIntegrations;
-    if (active.includes(id)) {
-      this.settings.activeIntegrations = active.filter((x) => x !== id);
-      if (this.focusId === id) {
-        this.focusId = this.settings.activeIntegrations[0] ?? null;
-      }
-    } else {
-      if (active.length >= 4) return;
-      this.settings.activeIntegrations = [...active, id];
-    }
-    this.loadIntegrationTasks();
   }
 
   defaultView(): IslandViewName {
