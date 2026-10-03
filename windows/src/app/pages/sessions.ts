@@ -11,7 +11,8 @@ import { h, clear } from "../../views/dom";
 import { dropdown } from "../../ui/select";
 import { navigate, onLeave } from "../shell";
 import { pageOf, settings } from "../ui";
-import { turnStory } from "../story";
+import { lastTestRun, turnStory } from "../story";
+import { redact } from "../../island/awareness";
 import { exportFiles, loadHistory, onHistoryChanged } from "../history-data";
 import { agentDot, clickable, clock, copyText, highlight, plural, rangeLabel, relTime } from "../dash-ui";
 import {
@@ -421,7 +422,25 @@ export function page(): HTMLElement {
       if (promptText) bodyEl.append(h("pre", { class: "prompt" }, highlight(promptText, query)));
       bodyEl.append(factChips(t.facts));
       const story = turnStory(t);
-      bodyEl.append(h("div", { class: `story t-${story.tests ?? "none"}` }, h("span", { class: "story-line", text: story.line })));
+      const storyEl = h("div", { class: `story t-${story.tests ?? "none"}` }, h("span", { class: "story-line", text: story.line }));
+      const run = story.tests === "unclear" || story.tests === "no-tests" ? lastTestRun(t) : null;
+      if (run) {
+        // A second opinion, only on a click: the output's end goes to Hermes, redacted.
+        const ask = h("button", { class: "story-ask", text: "Ask Hermes", title: "Send the end of this test output (keys and e-mails removed) to Hermes for a verdict" });
+        ask.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          ask.setAttribute("disabled", "");
+          ask.textContent = "Asking…";
+          try {
+            const word = await Bridge.judgeTests(redact(run.title), redact(run.detail ?? ""));
+            ask.textContent = word === "passed" ? "Hermes: passed" : word === "failed" ? "Hermes: failed" : "Hermes: can't tell";
+          } catch (err) {
+            ask.textContent = String(err).replace(/^Error:\s*/, "");
+          }
+        });
+        storyEl.append(ask);
+      }
+      bodyEl.append(storyEl);
       for (const w of story.warnings) bodyEl.append(h("div", { class: "notice warn", text: `⚠ ${w}` }));
       const summary = turnSummary(t);
       if (summary) {

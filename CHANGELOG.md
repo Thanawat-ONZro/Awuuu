@@ -7,6 +7,10 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## [Unreleased]
 
 ### Added
+- Each request in Sessions and in copied recaps starts with one line of what really happened, such as "Changed 3 files (+42 −7) · tests failed 2× then passed · committed", with warnings like "Files changed after the last test run" or "Code changed, no tests were run".
+- Test results are read from the output (cargo, vitest, jest, pytest, mocha, unittest, go, dotnet). A run with zero tests never counts as passed.
+- Git confirms what a request changed: Awuuu compares `git status` from the start and end of each request, so edits made by `sed -i`, formatters or generators count too.
+- "Ask Hermes" next to a test result Awuuu can't read gets a second opinion. It only runs when you click, and keys and e-mails are removed from what is sent.
 - Awuuu has a personality in the chat: pick a tone (Playful, Calm or Professional) and the name it calls you by in Settings → Chat → Personality. It answers in your language and sounds natural in Thai. Hermes keeps its own memory.
 - Chat answers show Markdown: bold, lists, headings, quotes and code blocks with a Copy button. Only web links (http/https) open; nothing from a reply is run as HTML.
 - Chat awareness: Awuuu's answers know what the island sees (your agents and what they're doing, the next meeting, PRs waiting for review, what failed), so you can ask "what should I do next?" or "why did Claude fail?". By default this goes only to Hermes and models on your PC; change it in Settings → Privacy. E-mails, keys and your user folder are removed first.

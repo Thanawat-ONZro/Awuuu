@@ -47,6 +47,15 @@ function testPart(results: TestResult[]): string {
   }
 }
 
+/** The request's last finished test run, for a second opinion. */
+export function lastTestRun(turn: Turn): HistoryEntry | null {
+  for (let i = turn.steps.length - 1; i >= 0; i--) {
+    const e = turn.steps[i];
+    if (e.kind === "run" && (e.status === "ok" || e.status === "failed") && isTestCommand(e.title)) return e;
+  }
+  return null;
+}
+
 export function turnStory(turn: Turn): Story {
   const steps = turn.steps;
   const parts: string[] = [];

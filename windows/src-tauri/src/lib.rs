@@ -412,6 +412,12 @@ async fn git_snapshot(cwd: String) -> Option<git::GitSnapshot> {
     tauri::async_runtime::spawn_blocking(move || git::snapshot(&cwd)).await.ok().flatten()
 }
 
+/// Sessions → "Ask Hermes" on a test run nothing could read.
+#[tauri::command]
+async fn judge_tests(command: String, output: String) -> Result<String, String> {
+    claude::judge_tests(&command, &output).await.map(str::to_string)
+}
+
 /// Settings → "Test connection" for the Hermes gateway.
 #[tauri::command]
 async fn hermes_status() -> Result<Vec<String>, String> {
@@ -802,6 +808,7 @@ pub fn run() {
             detect_local_providers,
             hermes_status,
             git_snapshot,
+            judge_tests,
             update_check_now,
             ingest_file,
             ingest_bytes,

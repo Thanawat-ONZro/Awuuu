@@ -41,11 +41,11 @@
 
 | PR | งาน |
 |---|---|
-| 5.1 | **Story engine**: รวม hook event เป็น "บท" ต่อคำขอ ("แก้ 5 ไฟล์ +42 −7 · เทสต์พัง 2 รอบแล้วผ่าน · commit แล้ว") แบบ Simple/Detailed |
+| 5.1 | **Story engine** (ต่อยอดจาก `app/recap.ts` ที่มีอยู่): รวม hook event เป็น "บท" ต่อคำขอ ("แก้ 5 ไฟล์ +42 −7 · เทสต์พัง 2 รอบแล้วผ่าน · commit แล้ว") แบบ Simple/Detailed |
 | 5.2 | **ตรวจผลเทสต์จริง**: parse jest/vitest/pytest/cargo/go, "0 tests" = ไม่ชัด, เตือน "แก้ไฟล์หลังเทสต์ล่าสุด" |
 | 5.3 | **Git เป็นความจริง**: snapshot `git status` ต้น/ท้ายคำขอ (Rust command) จับไฟล์ที่เปลี่ยนนอก hook |
 | 5.4 | แสดง story บน island, หน้า Sessions และ recap; ชุดเคสจริง (`test/cases/*.json`) วัดความแม่น |
-| 5.5 | **ตัวตัดสินด้วย Hermes/โมเดลในเครื่อง** สำหรับผลคลุมเครือ: ปิดเป็นค่าเริ่มต้น, redaction, timeout 5 วิ, fail-open |
+| 5.5 | **ตัวตัดสินด้วย Hermes** สำหรับผลคลุมเครือ: ทำงานเมื่อกดปุ่ม "Ask Hermes" เท่านั้น, redaction, timeout 8 วิ |
 
 ## v0.6.0 — "นิ่งและลื่น" (เสถียรภาพ + UX)
 | PR | งาน |
