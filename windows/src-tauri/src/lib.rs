@@ -137,17 +137,22 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
 
 /// The grip (or Alt + press) on the island: the window becomes a full-work-area
 /// overlay so the island can be drawn being pulled off its edge. Returns the
-/// overlay's logical size.
+/// overlay's logical size and where the island window's top-left is inside it
+/// (`w, h, x, y`). `apply: false` only measures — the front end asks first,
+/// gets ready, then asks again to switch.
 #[tauri::command]
-fn island_overlay_begin(app: AppHandle, shared: State<Shared>) -> Option<(f64, f64)> {
+fn island_overlay_begin(app: AppHandle, shared: State<Shared>, apply: Option<bool>) -> Option<(f64, f64, f64, f64)> {
     let pref = shared.settings.lock().unwrap().screen.clone();
+    if apply == Some(false) {
+        return island::overlay_begin(&app, &pref, false);
+    }
     shared.gate.overlay.store(true, Ordering::Relaxed);
     shared.gate.forget_ignore_state();
-    let size = island::overlay_begin(&app, &pref);
-    if size.is_none() {
+    let geometry = island::overlay_begin(&app, &pref, true);
+    if geometry.is_none() {
         shared.gate.overlay.store(false, Ordering::Relaxed);
     }
-    size
+    geometry
 }
 
 /// Released: dock to `edge` at `along` (the front end already animated the

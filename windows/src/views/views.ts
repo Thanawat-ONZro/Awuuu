@@ -32,7 +32,8 @@ export interface ViewActions {
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
-  openSettingsWindow(): void;
+  /** Opens the Awuuu window: on `page` ("sessions"…), or where it was left. */
+  openSettingsWindow(page?: string): void;
   blip(): void;
 }
 
@@ -87,7 +88,11 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
-// ── Header ────────────────────────────────────────────────────────────────────
+/** Three rows, each a bullet and a line: the Awuuu window's Sessions page. */
+const ICON_DASHBOARD =
+  "M4 5.2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm4.2.6v1.8H21V5.8H8.2zM4 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm4.2.6v1.8H21v-1.8H8.2zM4 15.8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm4.2.6v1.8H21v-1.8H8.2z";
+/** A bin (stroked): clear the finished sessions. */
+const ICON_CLEAR = "M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5";
 
 export function buildHeader(actions: ViewActions): ViewHost {
   const tabHome = h("button", { class: "tab", title: "Overview (Integrations)", onclick: () => go("overview") }, svg(ICONS.kennel, 13));
@@ -95,7 +100,13 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: "Feed Awuuu a file", onclick: () => go("upload") }, svg(ICONS.bone, 13));
 
-  const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
+  // Both open the Awuuu window: the gear where it was left, the list on Sessions.
+  const open = (page?: string) => () => {
+    actions.blip();
+    actions.openSettingsWindow(page);
+  };
+  const dashBtn = h("button", { title: "Dashboard", onclick: open("sessions") }, svg(ICON_DASHBOARD, 15));
+  const gearBtn = h("button", { class: "gear-btn", title: "Settings", onclick: open() }, svg(ICONS.gear, 17));
   const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
   const collapseBtn = h(
     "button",
@@ -125,7 +136,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     { id: "header" },
     h("div", { class: "tabs" }, tabAgents, tabChat, tabHome, tabDrop),
     grip,
-    h("div", { class: "header-actions" }, soundBtn, gearBtn, collapseBtn),
+    h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
 
   return {
@@ -136,11 +147,9 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabAgents.classList.toggle("on", v === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
-      gearBtn.classList.toggle("on", v === "settings");
-      clear(gearBtn);
-      gearBtn.append(svg(v === "settings" ? ICONS.gearFill : ICONS.gear, 14));
       clear(soundBtn);
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
+      soundBtn.title = State.settings.soundEnabled ? "Mute" : "Unmute";
       el.style.opacity = v === "confused" ? "0" : "1";
     },
   };
@@ -259,17 +268,22 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     },
     svg(ICONS.arrowUpRight, 9),
   );
+  // Many sessions: the row scrolls sideways, the wheel included.
+  pills.addEventListener("wheel", (e) => {
+    if (pills.scrollWidth <= pills.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    pills.scrollLeft += e.deltaY;
+  }, { passive: false });
   // Sessions that are done can be cleared in one go.
   const clearDone = h("button", {
     class: "hub-clear",
-    text: "Clear finished",
-    title: "Remove sessions that are idle or finished",
+    title: "Clear finished — remove sessions that are idle or finished",
     onclick: () => {
       for (const s of [...State.activeAgentSessions]) {
         if (["idle", "finished", "error"].includes(s.state)) actions.removeSession(s.id);
       }
     },
-  });
+  }, svg(ICON_CLEAR, 14, { stroke: 1.9 }));
   const empty = h("div", { class: "hub-empty" },
     h("div", { class: "title", text: "No active agent sessions." }),
     h("div", { class: "sub", text: "Start Claude Code, AGY, Hermes, OpenCode or Codex and it shows up here." }),
@@ -277,7 +291,9 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
   // A request waiting for an answer is never hidden behind the hub.
   const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
   const pillRow = h("div", { class: "hub-pill-row" }, pills, clearDone);
-  const body = h("div", { class: "hub" }, pillRow, waiting, h("div", { class: "hub-head" }, who, jump), steps, empty);
+  // Who is focused, then room for more on the same line (plan step, usage…), then the jump.
+  const head = h("div", { class: "hub-head" }, who, jump);
+  const body = h("div", { class: "hub" }, pillRow, waiting, head, steps, empty);
   const el = h("div", { class: "view hub-view" }, card(null, body));
 
   let pillKey = "";
@@ -310,7 +326,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       waiting.textContent = nWaiting === 1 ? "1 request waiting for you — Review" : `${nWaiting} requests waiting for you — Review`;
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
-      for (const part of [pillRow, who.parentElement!, steps]) part.style.display = none ? "none" : "";
+      for (const part of [pillRow, head, steps]) part.style.display = none ? "none" : "";
       if (none) {
         pillKey = stepsKey = "";
         clear(pills);
@@ -355,10 +371,23 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       clearDone.style.display = sessions.some((s) => ["idle", "finished", "error"].includes(s.state)) ? "" : "none";
       const nextPillKey = sessions.map((s) => `${s.id}:${s.name}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
       if (nextPillKey !== pillKey) {
+        const at = pills.scrollLeft;
         pillKey = nextPillKey;
         clear(pills);
+        let shown: HTMLElement | null = null;
         for (const s of sessions) {
-          pills.append(buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) }, s.id === focused.id, () => actions.removeSession(s.id)));
+          const pill = buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) }, s.id === focused.id, () => actions.removeSession(s.id));
+          if (s.id === focused.id) shown = pill;
+          pills.append(pill);
+        }
+        // Rebuilt where it was scrolled to, with the focused pill in view (the
+        // focus can move from elsewhere: an alert, "Show log").
+        pills.scrollLeft = at;
+        if (shown) {
+          const left = shown.offsetLeft;
+          const right = left + shown.offsetWidth;
+          if (left < pills.scrollLeft) pills.scrollLeft = left - 6;
+          else if (right > pills.scrollLeft + pills.clientWidth) pills.scrollLeft = right - pills.clientWidth + 6;
         }
         pruneMiniBots();
       }
@@ -409,14 +438,24 @@ function buildPill(task: AgentTask, actions: ViewActions, focused = false, onRem
     "div",
     { class: focused ? "pill focused" : "pill", onclick: () => actions.setFocus(task.id) },
     canvas,
-    h("span", { class: "lbl", text: label }),
-    !task.isIntegration
-      ? h("span", {
-          style: `font-size:9.5px;opacity:0.75;padding:1px 4px;border-radius:4px;background:${task.color}22;color:${task.color};font-weight:600;margin-left:auto`,
-          text: tagText,
-        })
-      : null,
+    h("span", { class: "lbl", text: label, title: label }),
   );
+  // The end of a session pill: the agent's tag, which gives its place to the
+  // × while the pill is hovered — same slot, so the pill never changes width.
+  if (!task.isIntegration) {
+    const end = h("span", { class: "pill-end" },
+      h("span", { class: "pill-tag", style: `background:${task.color}22;color:${task.color}`, text: tagText }));
+    if (onRemove) {
+      const x = h("button", { class: "pill-x", title: "Remove this session" }, svg(ICONS.xmark, 8, { stroke: 2.6 }));
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onRemove();
+      });
+      end.append(x);
+      end.classList.add("removable");
+    }
+    pill.append(end);
+  }
   const lbl = pill.querySelector(".lbl") as HTMLElement;
   // Resting look: the focused pill keeps its agent colour after the mouse
   // leaves, so you can always tell which session the hub is showing.
@@ -434,14 +473,6 @@ function buildPill(task: AgentTask, actions: ViewActions, focused = false, onRem
     lbl.style.color = lighten(task.color, 0.3);
   });
   pill.addEventListener("mouseleave", rest);
-  if (onRemove) {
-    const x = h("button", { class: "pill-x", title: "Remove this session" }, svg(ICONS.xmark, 7, { stroke: 2.6 }));
-    x.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onRemove();
-    });
-    pill.append(x);
-  }
 
   if (task.pillBadge) {
     const colors = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" } as const;
@@ -729,9 +760,9 @@ function buildSettings(actions: ViewActions): ViewHost {
   const segButtons = [10, 15, 30].map((s) =>
     h("button", { onclick: () => actions.setAutoClose(s) }, `${s}s`),
   );
-  const claudeBadge = h("span", { class: "status-badge" });
-  const apiBadge = h("span", { class: "status-badge" });
 
+  // Quick toggles only (reached from the tray); everything else lives in the
+  // Awuuu window.
   const rows = h(
     "div",
     { class: "settings-rows" },
@@ -743,23 +774,14 @@ function buildSettings(actions: ViewActions): ViewHost {
       autoLabel,
       h("div", { class: "seg" }, ...segButtons),
     ),
-    h(
-      "div",
-      { class: "settings-row", style: "gap:14px" },
-      claudeBadge,
-      apiBadge,
-      h("div", { class: "grow" }),
-      h("button", {
-        class: "link-btn",
-        style: "color:#8e939c;font-size:11.5px",
-        text: "Settings…",
-        onclick: () => actions.openSettingsWindow(),
-      }),
-    ),
   );
 
   const el = h("div", { class: "view" },
-    card(null, h("div", { class: "stack", style: "padding:14px 16px 14px 84px" }, rows)));
+    card(null, h("div", { class: "stack", style: "padding:14px 16px 14px 84px;flex-direction:row;align-items:center;justify-content:flex-start;gap:16px" },
+      rows,
+      h("div", { class: "grow" }),
+      btn("Open Awuuu…", "secondary", () => actions.openSettingsWindow()),
+    )));
 
   return {
     el,
@@ -770,13 +792,6 @@ function buildSettings(actions: ViewActions): ViewHost {
       volume.style.opacity = s.soundEnabled ? "1" : "0.4";
       autoLabel.textContent = `Auto-close · ${Math.round(s.autoCloseInterval)}s`;
       segButtons.forEach((b, i) => b.classList.toggle("on", s.autoCloseInterval === [10, 15, 30][i]));
-      clear(claudeBadge);
-      claudeBadge.append(
-        dot(s.hooksInstalled ? "#22C55E" : "#F4505E", 6),
-        h("span", { text: "Claude Code" }),
-      );
-      clear(apiBadge);
-      apiBadge.append(dot("#F0645A", 6), h("span", { text: "API" }));
     },
   };
 }

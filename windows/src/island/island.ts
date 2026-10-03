@@ -7,7 +7,7 @@ import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
-  type IslandMode, type IslandViewName, SIDE_COMPACT, COMPACT_W, NOTCH_H,} from "../core/layout";
+  type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP, COMPACT_W, NOTCH_H,} from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
@@ -29,6 +29,11 @@ const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading"
 
 /** Seconds between the drop and the moment the progress bar starts filling. */
 const PRE_PROGRESS = USC.T_PROG_START - USC.T_DROP;
+
+/** Width over which a side-docked island leaves the edge as it opens. */
+const SIDE_LIFT = 160;
+
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
 
@@ -91,6 +96,8 @@ export class Island {
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
   private lastSyncedView: IslandViewName | null = null;
+  /** Session states as last drawn, to catch one finishing or failing (syncGlow). */
+  private glowStates = new Map<string, string>();
 
   /** Drop sequence bookkeeping: last tick played, and whether the ✓ has fired. */
   private uploadTens = 0;
@@ -104,6 +111,7 @@ export class Island {
       {
         pillSize: (edge: Edge) =>
           edge === "left" || edge === "right" ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H },
+        rect: () => this.islandRect(),
         setMoveOverride: (at) => {
           this.moveAt = at;
           this.applyGeometry();
@@ -253,7 +261,7 @@ export class Island {
         void Bridge.saveSettings(State.settings);
         State.notify();
       },
-      openSettingsWindow: () => void Bridge.openSettingsWindow(),
+      openSettingsWindow: (page) => void Bridge.openSettingsWindow(page),
       blip: () => Sound.play("blip"),
     };
 
@@ -639,7 +647,7 @@ export class Island {
     const L0 = geo.layout;
     const showGrip = State.mode === "expanded" && State.view === "agents";
     this.resizeGrip.style.display = showGrip ? "block" : "none";
-    this.resizeGrip.dataset.v = L0.v;
+    this.resizeGrip.dataset.v = L0.v === "bottom" ? "bottom" : "top";
     this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
     // The wake strip fills the window while it is only the strip.
     this.wakeStrip.style.cssText = this.collapsed
@@ -649,13 +657,16 @@ export class Island {
     this.islandEl.style.top = `${rect0.y}px`;
     this.islandEl.style.bottom = "auto";
     // Round every corner that does not touch the screen edge it is docked to.
+    // On a side the open card floats off the edge: its corners round as it leaves.
     const edge = geo.layout.edge;
+    const lift = onSide() ? this.sideGap(w) / SIDE_GAP : 0;
     const [tl, tr, br, bl] =
       edge === "top" ? [0, 0, r, r]
       : edge === "bottom" ? [r, r, 0, 0]
-      : edge === "left" ? [0, r, r, 0]
-      : [r, 0, 0, r];
+      : edge === "left" ? [r * lift, r, r, r * lift]
+      : [r, r * lift, r * lift, r];
     this.islandEl.style.borderRadius = this.moveAt ? `${r}px` : `${tl}px ${tr}px ${br}px ${bl}px`;
+    this.root.classList.toggle("floating", lift > 0.05);
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
     // The mini bots ride at the far end of the compact pill: right on top and
@@ -696,11 +707,22 @@ export class Island {
       const y = L.vertical ? (sh - hh) / 2 : L.v === "bottom" ? sh - hh : 0;
       return { x, y, w, h: hh };
     }
-    const x =
-      L.h === "left" ? 0
-      : L.h === "right" ? L.panelW - w
-      : Math.min(Math.max(L.anchorX - w / 2, 0), Math.max(0, L.panelW - w));
+    if (onSide()) {
+      // The pill stands against the edge; the open card floats beside it.
+      // Both are centred on the pill's spot, kept inside the window.
+      const gap = this.sideGap(w);
+      const x = L.edge === "left" ? gap : L.panelW - w - gap;
+      const y = Math.min(Math.max(L.anchorY - hh / 2, 0), Math.max(0, L.panelH - hh));
+      return { x, y, w, h: hh };
+    }
+    const x = Math.min(Math.max(L.anchorX - w / 2, 0), Math.max(0, L.panelW - w));
     return { x, y: this.atBottom ? L.panelH - hh : 0, w, h: hh };
+  }
+
+  /** Docked to a side: how far the island stands off the edge at width `w` —
+   * nothing as a pill, SIDE_GAP once it has opened. */
+  private sideGap(w: number): number {
+    return SIDE_GAP * clamp((w - SIDE_COMPACT.w) / SIDE_LIFT, 0, 1);
   }
 
   /**
@@ -728,7 +750,7 @@ export class Island {
       const dx = e.screenX - r.sx;
       const dy = e.screenY - r.sy;
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
-      const dh = L.v === "bottom" ? -dy : dy;
+      const dh = L.v === "bottom" ? -dy : L.v === "center" ? 2 * dy : dy;
       geo.expandedW = Math.round(Math.min(1100, Math.max(520, r.w + dw)));
       geo.hubH = Math.round(Math.min(640, Math.max(220, r.h + dh)));
       this.animateGeometry(false);
@@ -755,7 +777,7 @@ export class Island {
 
   /** Rust placed the window: draw the island where it now belongs. */
   setLayout(layout: IslandLayout) {
-    geo.layout = layout;
+    geo.layout = { ...layout, anchorY: layout.anchorY ?? layout.panelH / 2 };
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.root.dataset.edge = layout.edge;
     this.applyGeometry();
@@ -823,6 +845,11 @@ export class Island {
     this.islandEl.addEventListener("mouseleave", () => {
       this.wasInIsland = false;
       this.fsm.mouseLeft();
+    });
+
+    // A finish/error flash has played: take its class off (see syncGlow).
+    this.islandEl.addEventListener("animationend", (e) => {
+      if (e.animationName === "glow-flash") this.root.classList.remove("glow-done", "glow-error");
     });
 
     // Alt + press anywhere on the island moves it.
@@ -1137,7 +1164,7 @@ export class Island {
   }
 
   private lookY(): number {
-    return -Math.tanh((State.mouse.y - this.botCy.value) / 200);
+    return -Math.tanh((State.mouse.y - this.islandRect().y - this.botCy.value) / 200);
   }
 
   private updateCountdown(nowMs: number) {
@@ -1200,6 +1227,32 @@ export class Island {
 
     syncMiniBotStates(State.tasks);
     this.engine.setState(this.botState());
+    this.syncGlow();
+  }
+
+  /**
+   * The ring around the island (style.css "Glow"): amber and pulsing while a
+   * request waits for an answer, one green flash when a session finishes, a
+   * red one with a shake when it fails. All CSS, driven from here by classes —
+   * nothing runs once the request is answered or the flash has played.
+   */
+  private syncGlow() {
+    this.root.classList.toggle("glow-wait", State.approvalQueue.length > 0);
+    let flash: "glow-done" | "glow-error" | null = null;
+    const seen = new Map<string, string>();
+    for (const s of State.agentSessions) {
+      const before = this.glowStates.get(s.id);
+      if (before != null && before !== s.state) {
+        if (s.state === "error") flash = "glow-error";
+        else if (s.state === "finished") flash ??= "glow-done";
+      }
+      seen.set(s.id, s.state);
+    }
+    this.glowStates = seen;
+    if (!flash || REDUCED_MOTION.matches) return;
+    this.root.classList.remove("glow-done", "glow-error");
+    void this.islandEl.offsetWidth; // restart the animation if one is still playing
+    this.root.classList.add(flash);
   }
 
   /**
