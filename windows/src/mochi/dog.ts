@@ -89,6 +89,8 @@ export interface Palette {
   /** Pale cheeks and chest of a red Shiba, 0 for a coat that is already pale. */
   urajiro: number;
   urajiroColor: string;
+  /** Saddle: the points are lighter than the coat, so cheeks and chest get them too. */
+  points: boolean;
   chest: string;
   cap: string;
   capFade: string;
@@ -153,6 +155,7 @@ export function paletteFor(look: DogLook): Palette {
     accent: css(a),
     urajiro,
     urajiroColor: css(mix(c, [255, 250, 242], 0.86)),
+    points: lum(p) > lum(c),
     chest: css(mix(c, WHITE, 0.5), 0.85),
     cap: css(p, 0.5),
     capFade: css(p, 0),
@@ -366,6 +369,12 @@ const SPOTS: readonly (readonly [number, number, number, number])[] = [
   [-0.56, 0.02, 0.055, -0.8], [0.42, 0.86, 0.07, 0.3],
 ];
 
+function blob(x: CanvasRenderingContext2D, cx: number, cy: number, a: number, b: number, turn: number) {
+  x.beginPath();
+  x.ellipse(cx, cy, a, b, turn, 0, Math.PI * 2);
+  x.fill();
+}
+
 /**
  * Markings painted over the body fill: mask, tan points, spots, blaze, pale
  * chest, then the collar. The caller has clipped to the body.
@@ -384,9 +393,7 @@ export function paintCoat(x: CanvasRenderingContext2D, rx: number, ry: number, o
     const n = o.small ? 5 : SPOTS.length;
     for (let i = 0; i < n; i++) {
       const s = SPOTS[i];
-      x.beginPath();
-      x.ellipse(s[0] * rx + bx, s[1] * ry, s[2] * rx * 1.15, s[2] * rx * 0.9, s[3], 0, Math.PI * 2);
-      x.fill();
+      blob(x, s[0] * rx + bx, s[1] * ry, s[2] * rx * 1.15, s[2] * rx * 0.9, s[3]);
     }
   } else if (pat === "solid") {
     // Darker crown, paler chest: one colour, but not flat.
@@ -396,9 +403,7 @@ export function paintCoat(x: CanvasRenderingContext2D, rx: number, ry: number, o
     x.fillStyle = g;
     x.fillRect(-rx, -ry, rx * 2, ry * 1.4);
     x.fillStyle = pal.chest;
-    x.beginPath();
-    x.ellipse(bx, ry * 1.02, rx * 0.5, ry * 0.34, 0, 0, Math.PI * 2);
-    x.fill();
+    blob(x, bx, ry * 1.02, rx * 0.5, ry * 0.34, 0);
   }
 
   // Face-bound parts turn and nod with the head.
@@ -410,11 +415,9 @@ export function paintCoat(x: CanvasRenderingContext2D, rx: number, ry: number, o
     if (pat === "shiba") {
       x.globalAlpha *= pal.urajiro;
       x.fillStyle = pal.urajiroColor;
-      x.beginPath();
-      x.ellipse(-rx * 0.56, ry * 0.5, rx * 0.44, ry * 0.42, 0, 0, Math.PI * 2);
-      x.ellipse(rx * 0.56, ry * 0.5, rx * 0.44, ry * 0.42, 0, 0, Math.PI * 2);
-      x.ellipse(0, ry * 0.98, rx * 0.62, ry * 0.4, 0, 0, Math.PI * 2);
-      x.fill();
+      blob(x, -rx * 0.56, ry * 0.5, rx * 0.44, ry * 0.42, 0);
+      blob(x, rx * 0.56, ry * 0.5, rx * 0.44, ry * 0.42, 0);
+      blob(x, 0, ry * 0.98, rx * 0.62, ry * 0.4, 0);
     } else if (pat === "mask") {
       // The cap comes down in a point between the eyes; the mask rises over each.
       x.fillStyle = pal.patch;
@@ -430,20 +433,19 @@ export function paintCoat(x: CanvasRenderingContext2D, rx: number, ry: number, o
       x.fill();
     } else if (pat === "saddle") {
       // Tan points: cheeks and chest (brows and muzzle come with the face).
-      x.fillStyle = pal.patch;
-      x.beginPath();
-      x.ellipse(-rx * 0.6, ry * 0.56, rx * 0.2, ry * 0.2, -0.3, 0, Math.PI * 2);
-      x.ellipse(rx * 0.6, ry * 0.56, rx * 0.2, ry * 0.2, 0.3, 0, Math.PI * 2);
-      x.ellipse(0, ry * 1.06, rx * 0.46, ry * 0.3, 0, 0, Math.PI * 2);
-      x.fill();
+      // Dark points on a pale coat (a pug) stop at the muzzle.
+      if (pal.points) {
+        x.fillStyle = pal.patch;
+        blob(x, -rx * 0.68, ry * 0.5, rx * 0.15, ry * 0.17, -0.3);
+        blob(x, rx * 0.68, ry * 0.5, rx * 0.15, ry * 0.17, 0.3);
+        blob(x, 0, ry * 1.14, rx * 0.42, ry * 0.26, 0);
+      }
     } else {
       // Tricolor: tan cheeks under a white blaze that widens into muzzle and chest.
       if (!o.small) {
         x.fillStyle = pal.accent;
-        x.beginPath();
-        x.ellipse(-rx * 0.62, ry * 0.4, rx * 0.2, ry * 0.19, -0.2, 0, Math.PI * 2);
-        x.ellipse(rx * 0.62, ry * 0.4, rx * 0.2, ry * 0.19, 0.2, 0, Math.PI * 2);
-        x.fill();
+        blob(x, -rx * 0.62, ry * 0.4, rx * 0.2, ry * 0.19, -0.2);
+        blob(x, rx * 0.62, ry * 0.4, rx * 0.2, ry * 0.19, 0.2);
       }
       x.fillStyle = pal.patch;
       x.beginPath();
