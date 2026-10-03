@@ -11,6 +11,15 @@ import { History, toolFiles, type HistoryCall, type HistoryCtx } from "./history
 import { noteEdit, overlapMessage } from "./overlap";
 import { isPlanTool, reducePlan } from "./plan";
 import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
+import { Nudger } from "./quiet";
+
+/** A pop-up that can wait (quiet.ts): skipped in quiet hours and right after another. */
+const nudges = new Nudger();
+function nudge(island: Island, sec: number, sound?: string) {
+  if (!nudges.allow(State.settings.quietHours ?? "", new Date())) return;
+  if (sound) Sound.play(sound);
+  island.toast("agents", sec);
+}
 
 // ── Two agents, one file ────────────────────────────────────────────────────
 
@@ -21,7 +30,7 @@ function warnOverlap(island: Island, session: AgentTask, taskId: string, tool: s
     const prev = noteEdit(session.id, session.name, f.path);
     if (!prev) continue;
     State.appendStep(taskId, overlapMessage(f.path, prev), "info");
-    island.toast("agents", 6);
+    nudge(island, 6);
   }
 }
 
@@ -57,6 +66,8 @@ interface HookPayload {
   cwd?: string;
   workspacePaths?: string[]; // AGY
   message?: string;
+  /** A custom agent's name, from `awuuu-hook --agent <name>`. */
+  awuuu_agent?: string;
   /** UserPromptSubmit carries `prompt`; `message` belongs to Notification/Stop. */
   prompt?: string;
   tool_name?: string;
@@ -378,7 +389,9 @@ function handleHook(island: Island, payload: HookPayload) {
 
   // awuuu-hook always says who is calling (`--agent`, or Claude Code for
   // installs that predate the flag).
-  const source: AgentSource = KNOWN_SOURCES.has(payload.agent_source as AgentSource)
+  // Any other agent (`awuuu-hook --agent gemini`) gets its own pill and history name.
+  const custom = typeof payload.awuuu_agent === "string" && /^[a-z0-9-]{2,24}$/.test(payload.awuuu_agent) ? payload.awuuu_agent : null;
+  const source: AgentSource = custom ? "custom" : KNOWN_SOURCES.has(payload.agent_source as AgentSource)
     ? (payload.agent_source as AgentSource)
     : "claude";
 
@@ -400,7 +413,7 @@ function handleHook(island: Island, payload: HookPayload) {
   const key = callKey(payload, tool, input);
 
   // For the history: read when used, so a session's name is the current one.
-  const who = (): HistoryCtx => ({ session: sessionId, agent: source, cwd: session.sessionCwd || cwd, name: session.name });
+  const who = (): HistoryCtx => ({ session: sessionId, agent: custom ?? source, cwd: session.sessionCwd || cwd, name: session.name });
   const call = (): HistoryCall => ({ key, toolUseId: payload.tool_use_id, tool, input, title: describeTool(tool, input) });
 
   switch (name) {
@@ -476,7 +489,7 @@ function handleHook(island: Island, payload: HookPayload) {
       } else if (message.endsWith("?")) {
         session.state = "question";
         State.appendStep(taskId, message, "info");
-        island.toast("agents", 5);
+        nudge(island, 5);
       }
       break;
     }
@@ -491,12 +504,11 @@ function handleHook(island: Island, payload: HookPayload) {
         // git's entry lands first, so it belongs to this turn.
         void grounded.finally(() => History.done(who(), last ? plainText(last) : null));
       }, who);
-      Sound.play("finish");
       session.pillBadge = "finished";
       if (State.mode === "expanded" && State.view === "agents") {
-        // stay on agents
+        Sound.play("finish");
       } else {
-        island.toast("agents", 5);
+        nudge(island, 5, "finish");
       }
       window.setTimeout(() => {
         if (session.state === "finished") {

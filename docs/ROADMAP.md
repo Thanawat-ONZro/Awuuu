@@ -60,19 +60,21 @@
 | PR | งาน |
 |---|---|
 | 7.1 | **Adapter registry**: agent ใหม่ = 1 ไฟล์ (id, detect, install, describeTool) แทนกระจายใน `hooks.rs`/`hooks.ts` |
-| 7.2 | เพิ่ม **Cursor, Gemini CLI, GitHub Copilot CLI** + payload ทั่วไป (`awuuu_agent`) ให้ agent ใดๆ ส่งเข้ามาได้ |
-| 7.3 | หน้า Agents: Connect / Disconnect / Send test event / event ล่าสุดเมื่อไร (backup + diff + ยืนยันตามกฎ settings.json) |
-| 7.4 | **Context กลับเข้า agent**: ตอน SessionStart ฉีดสรุปสั้น ("เมื่อกี้ Codex แก้ billing.ts") |
+| 7.2 | (ทำแบบเบา: `--agent <ชื่อใดก็ได้>` + `awuuu_agent`) เพิ่ม **Cursor, Gemini CLI, GitHub Copilot CLI** + payload ทั่วไป (`awuuu_agent`) ให้ agent ใดๆ ส่งเข้ามาได้ |
+| 7.3 | ~~หน้า Agents~~ เลื่อนไปหลัง 1.0 (ใช้ `aw doctor` แทนก่อน) — หน้า Agents: Connect / Disconnect / Send test event / event ล่าสุดเมื่อไร (backup + diff + ยืนยันตามกฎ settings.json) |
+| 7.4 | ~~Context กลับเข้า agent~~ เลื่อนไปหลัง 1.0 (ต้องเปลี่ยน protocol ของ pipe) — **Context กลับเข้า agent**: ตอน SessionStart ฉีดสรุปสั้น ("เมื่อกี้ Codex แก้ billing.ts") |
 | 7.5 | **Handoff**: "ทำต่อใน ▾" เขียนโน้ตส่งต่อแล้วเปิด agent อื่นผ่าน `aw` |
 
 ## v0.8.0 — "ช่วยชีวิตประจำวัน" (ฟีเจอร์เสริม)
 | PR | งาน |
 |---|---|
-| 8.1 | **เชิงรุกแบบไม่กวน**: ข้อความหนึ่งบรรทัดเมื่อ agent จบ/พัง, ประชุมอีก 10 นาที; quiet hours + rate limit |
+| 8.1 | (ทำแล้วแบบเบา: quiet hours + จำกัด 1 pop ต่อ 20 วิ) **เชิงรุกแบบไม่กวน**: ข้อความหนึ่งบรรทัดเมื่อ agent จบ/พัง, ประชุมอีก 10 นาที; quiet hours + rate limit |
 | 8.2 | **Quick actions**: "สรุปเมลวันนี้", "อธิบาย error ล่าสุด", "ร่างตอบ" จาก island; ส่งออกต้องคลิกยืนยัน |
 | 8.3 | **Command Bar** (แนวคิด vorssaint เขียนเอง): ค้น session/ประวัติ/การกระทำ/คำนวณ |
 | 8.4 | Scratchpad + clipboard ส่งเข้าแชท, ตัวจับเวลาโฟกัส/พักสายตาที่น้องหมาเตือน |
 | 8.5 | หน้า UI ภาษาไทย/อังกฤษ |
+
+8.2–8.5 เลื่อนออกไปจนกว่าจะมีงบรอบใหม่ (งบ $50 รอบแรกใช้กับ 0.4–0.8.1)
 
 ## v1.0.0 — พร้อมแจก
 Code signing (กัน Defender false positive ที่ coucou เจอ), onboarding ตรวจ key/URL ครบ, เอกสารผู้ใช้, แก้บั๊กค้างทั้งหมด

@@ -4,7 +4,7 @@ import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./l
 import type { EyeShape } from "../mochi/engine";
 import type { AgentUsage } from "./bridge";
 
-export type AgentSource = "claude" | "agy" | "hermes" | "opencode" | "codex" | "integration";
+export type AgentSource = "claude" | "agy" | "hermes" | "opencode" | "codex" | "custom" | "integration";
 
 /** Display name, short tag and colour of each agent. */
 export const AGENT_INFO: Record<Exclude<AgentSource, "integration">, { name: string; short: string; color: string }> = {
@@ -13,6 +13,8 @@ export const AGENT_INFO: Record<Exclude<AgentSource, "integration">, { name: str
   hermes: { name: "Hermes Agent", short: "Hermes", color: "#8B5CF6" },
   opencode: { name: "OpenCode", short: "OpenCode", color: "#00D26A" },
   codex: { name: "Codex CLI", short: "Codex", color: "#10A37F" },
+  /** Any other agent that calls `awuuu-hook --agent <name>` (Gemini CLI, Cursor, a script). */
+  custom: { name: "Other agent", short: "Agent", color: "#94A3B8" },
 };
 
 export function agentInfo(source: AgentSource) {
@@ -224,6 +226,8 @@ export interface Settings {
   model: string;
   /** Seconds before the idle compact island hides; 0 = never. */
   hideAfter: number;
+  /** "22:00-07:00": no finish/question pop-ups or sounds then; "" = off. */
+  quietHours: string;
   /** Automatic update checks; null = not asked yet. */
   updateCheck: boolean | null;
   /** Always-allowed tool commands or patterns. */
@@ -275,6 +279,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hooksInstalled: false,
   model: "hermes-agent",
   hideAfter: 5,
+  quietHours: "",
   updateCheck: null,
   alwaysAllowedRules: [],
   historyEnabled: true,
