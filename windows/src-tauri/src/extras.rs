@@ -1,6 +1,7 @@
-// Everyday integrations that need no OAuth app: mail over IMAP (an app
-// password), a calendar's private iCal link, RSS/Atom feeds, uptime checks,
-// the weather (Open-Meteo, no key) and Todoist (a personal token).
+// Everyday integrations: mail and calendar (a Google or Microsoft sign-in —
+// see oauth.rs — or, without one, IMAP with an app password and a calendar's
+// private iCal link), RSS/Atom feeds, uptime checks, the weather (Open-Meteo,
+// no key) and Todoist (a personal token).
 //
 // Same contract as integrations.rs: nothing runs until it is configured,
 // nothing runs while paused, every poll emits one `integration` update and
@@ -15,6 +16,7 @@ use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::integrations::{emit, IntegrationEvent, IntegrationUpdate};
+use crate::oauth::{self, Provider};
 use crate::secrets;
 
 fn settings(app: &AppHandle) -> Option<crate::settings::Settings> {
@@ -37,14 +39,23 @@ fn announce(key: String) -> bool {
 pub fn configured(app: &AppHandle, id: &str) -> bool {
     let Some(s) = settings(app) else { return false };
     match id {
-        "integration_mail" => !s.mail_host.is_empty() && !s.mail_user.is_empty() && secrets::present("mail-password"),
-        "integration_calendar" => secrets::present("ical-url"),
+        "integration_mail" => !signed_in().is_empty() || imap_configured(&s),
+        "integration_calendar" => !signed_in().is_empty() || secrets::present("ical-url"),
         "integration_feeds" => !s.rss_feeds.is_empty(),
         "integration_uptime" => !s.uptime_urls.is_empty(),
         "integration_weather" => !s.weather_city.trim().is_empty(),
         "integration_todoist" => secrets::present("todoist-token"),
         _ => false,
     }
+}
+
+/// The accounts signed in through the browser, Google first.
+fn signed_in() -> Vec<Provider> {
+    [Provider::Google, Provider::Microsoft].into_iter().filter(|p| oauth::connected(*p)).collect()
+}
+
+fn imap_configured(s: &crate::settings::Settings) -> bool {
+    !s.mail_host.is_empty() && !s.mail_user.is_empty() && secrets::present("mail-password")
 }
 
 fn now_secs() -> i64 {
@@ -66,7 +77,7 @@ fn http() -> reqwest::Client {
         .unwrap_or_default()
 }
 
-// ── Mail (IMAP) ───────────────────────────────────────────────────────────────
+// ── Mail (Gmail API, Microsoft Graph, or IMAP) ───────────────────────────────
 
 /// RFC 2047 encoded words (=?UTF-8?B?…?=, =?TIS-620?Q?…?=) → text.
 pub fn decode_words(s: &str) -> String {
@@ -124,7 +135,7 @@ fn q_decode(s: &str) -> Vec<u8> {
     out
 }
 
-fn base64_decode(s: &str) -> Vec<u8> {
+pub(crate) fn base64_decode(s: &str) -> Vec<u8> {
     let val = |c: u8| -> Option<u32> {
         Some(match c {
             b'A'..=b'Z' => (c - b'A') as u32,
@@ -315,14 +326,120 @@ async fn imap_poll(host: &MailHost, user: &str, pass: &str) -> Result<Value, Str
     tokio::time::timeout(Duration::from_secs(25), work).await.map_err(|_| "The mail server took too long.".to_string())?
 }
 
+/// One Gmail message (`format=metadata`) → the card's row. `account` picks
+/// the right mailbox when the browser is signed in to several.
+pub fn gmail_message(v: &Value, account: &str) -> Value {
+    let header = |name: &str| {
+        v["payload"]["headers"]
+            .as_array()
+            .and_then(|hs| hs.iter().find(|h| h["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(name))))
+            .and_then(|h| h["value"].as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let thread = v["threadId"].as_str().or_else(|| v["id"].as_str()).unwrap_or("");
+    let url = if account.is_empty() {
+        format!("https://mail.google.com/mail/u/0/#inbox/{thread}")
+    } else {
+        format!("https://mail.google.com/mail/?authuser={}#inbox/{thread}", account.replace('+', "%2B"))
+    };
+    json!({
+        "uid": v["id"].as_str().unwrap_or(""),
+        "from": sender_name(&header("From")),
+        "subject": decode_words(&header("Subject")),
+        "date": header("Date"),
+        "messageId": header("Message-ID").trim_matches(|c| c == '<' || c == '>').to_string(),
+        "url": url,
+        "time": v["internalDate"].as_str().and_then(|t| t.parse::<i64>().ok()).unwrap_or(0),
+    })
+}
+
+/// One Graph message → the card's row.
+pub fn graph_message(v: &Value) -> Value {
+    let from = &v["from"]["emailAddress"];
+    let received = v["receivedDateTime"].as_str().unwrap_or("");
+    json!({
+        "uid": v["id"].as_str().unwrap_or(""),
+        "from": from["name"].as_str().filter(|n| !n.is_empty()).or_else(|| from["address"].as_str()).unwrap_or(""),
+        "subject": v["subject"].as_str().unwrap_or(""),
+        "date": received,
+        "messageId": v["internetMessageId"].as_str().unwrap_or("").trim_matches(|c| c == '<' || c == '>').to_string(),
+        "url": v["webLink"].as_str().unwrap_or(""),
+        "time": feed_time(received).unwrap_or(0) * 1000,
+    })
+}
+
+/// Several mailboxes → one card: unread added up, newest message first.
+pub fn merge_mail(parts: Vec<(u64, Vec<Value>)>, gmail: bool) -> Value {
+    let unread: u64 = parts.iter().map(|p| p.0).sum();
+    let several = parts.len() > 1;
+    let mut messages: Vec<Value> = parts.into_iter().flat_map(|p| p.1).collect();
+    if several {
+        messages.sort_by_key(|m| std::cmp::Reverse(m["time"].as_i64().unwrap_or(0)));
+    }
+    messages.truncate(10);
+    json!({ "unread": unread, "messages": messages, "gmail": gmail })
+}
+
+async fn gmail_poll(app: &AppHandle) -> Result<(u64, Vec<Value>), String> {
+    const API: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
+    let g = Provider::Google;
+    let found = oauth::get_json(app, g, &format!("{API}/messages"), &[("q", "is:unread in:inbox"), ("maxResults", "10")], &[]).await?;
+    let account = oauth::account(g).unwrap_or_default();
+    let mut messages = Vec::new();
+    for m in found["messages"].as_array().cloned().unwrap_or_default() {
+        let Some(id) = m["id"].as_str() else { continue };
+        let query = [("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Subject"), ("metadataHeaders", "Message-ID"), ("metadataHeaders", "Date")];
+        if let Ok(v) = oauth::get_json(app, g, &format!("{API}/messages/{id}"), &query, &[]).await {
+            messages.push(gmail_message(&v, &account));
+        }
+    }
+    let inbox = oauth::get_json(app, g, &format!("{API}/labels/INBOX"), &[], &[]).await?;
+    Ok((inbox["messagesUnread"].as_u64().unwrap_or(messages.len() as u64), messages))
+}
+
+async fn graph_mail_poll(app: &AppHandle) -> Result<(u64, Vec<Value>), String> {
+    const INBOX: &str = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox";
+    let m = Provider::Microsoft;
+    let query = [("$filter", "isRead eq false"), ("$top", "10"), ("$select", "subject,from,webLink,receivedDateTime,internetMessageId")];
+    let found = oauth::get_json(app, m, &format!("{INBOX}/messages"), &query, &[]).await?;
+    let messages: Vec<Value> = found["value"].as_array().map(|l| l.iter().map(graph_message).collect()).unwrap_or_default();
+    let inbox = oauth::get_json(app, m, INBOX, &[("$select", "unreadItemCount")], &[]).await?;
+    Ok((inbox["unreadItemCount"].as_u64().unwrap_or(messages.len() as u64), messages))
+}
+
+/// Unread mail from every signed-in account; IMAP when nobody is signed in.
+async fn fetch_mail(app: &AppHandle) -> Result<Value, String> {
+    let accounts = signed_in();
+    if accounts.is_empty() {
+        let s = settings(app).ok_or("Settings not loaded")?;
+        let pass = secrets::get("mail-password").ok_or("No app password saved.")?;
+        let host = mail_host(&s.mail_host);
+        let mut data = imap_poll(&host, &s.mail_user, &pass).await?;
+        data["gmail"] = json!(host.host.contains("gmail"));
+        return Ok(data);
+    }
+    let mut parts = Vec::new();
+    let mut failed = None;
+    for p in &accounts {
+        let got = match p {
+            Provider::Google => gmail_poll(app).await,
+            Provider::Microsoft => graph_mail_poll(app).await,
+        };
+        match got {
+            Ok(part) => parts.push(part),
+            Err(e) => failed = Some(e),
+        }
+    }
+    match failed {
+        Some(e) if parts.is_empty() => Err(e),
+        _ => Ok(merge_mail(parts, accounts.contains(&Provider::Google))),
+    }
+}
+
 pub async fn poll_mail(app: AppHandle) {
-    let Some(s) = settings(&app) else { return };
-    let Some(pass) = secrets::get("mail-password") else { return };
-    let host = mail_host(&s.mail_host);
-    let gmail = host.host.contains("gmail");
-    match imap_poll(&host, &s.mail_user, &pass).await {
-        Ok(mut data) => {
-            data["gmail"] = json!(gmail);
+    match fetch_mail(&app).await {
+        Ok(data) => {
             let quiet = first_poll("mail");
             let mut event = None;
             for m in data["messages"].as_array().cloned().unwrap_or_default() {
@@ -341,7 +458,7 @@ pub async fn poll_mail(app: AppHandle) {
     }
 }
 
-// ── Calendar (iCal link) ──────────────────────────────────────────────────────
+// ── Calendar (Google Calendar, Microsoft Graph, or an iCal link) ─────────────
 
 /// The machine's offset from UTC in seconds (Windows' current zone, DST included).
 fn local_offset() -> i64 {
@@ -485,23 +602,159 @@ pub fn ical_events(text: &str, from: i64, to: i64, offset: i64) -> Vec<CalEvent>
     out
 }
 
-pub async fn poll_calendar(app: AppHandle) {
-    let Some(url) = secrets::get("ical-url") else { return };
-    let url = url.trim().replacen("webcal://", "https://", 1);
-    let text = match http().get(&url).send().await {
-        Ok(r) if r.status().is_success() => r.text().await.unwrap_or_default(),
-        Ok(r) => {
-            update(&app, "integration_calendar", json!({}), Some(format!("The calendar link answered {}", r.status())), None);
-            return;
+/// Epoch seconds → "2026-10-03T02:30:00Z", what both calendar APIs take.
+pub fn rfc3339(secs: i64) -> String {
+    let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
+    // Days → civil date (the inverse of days_from_civil).
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// "2026-10-06" → that day's local midnight.
+fn local_day(date: &str, offset: i64) -> Option<i64> {
+    let num = |a: usize, n: usize| date.get(a..a + n)?.parse::<i64>().ok();
+    Some(days_from_civil(num(0, 4)?, num(5, 2)?, num(8, 2)?) * 86400 - offset)
+}
+
+/// Google Calendar `events.list` (singleEvents) → events.
+pub fn google_events(v: &Value, offset: i64) -> Vec<CalEvent> {
+    let time = |t: &Value| match t["dateTime"].as_str() {
+        Some(dt) => feed_time(dt).map(|s| (s, false)),
+        None => t["date"].as_str().and_then(|d| local_day(d, offset)).map(|s| (s, true)),
+    };
+    let mut out = Vec::new();
+    for it in v["items"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let declined = it["attendees"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|p| p["self"] == true && p["responseStatus"] == "declined"));
+        if it["status"] == "cancelled" || declined {
+            continue;
         }
+        let Some((start, all_day)) = time(&it["start"]) else { continue };
+        let end = time(&it["end"]).map(|e| e.0).unwrap_or(start + if all_day { 86400 } else { 3600 });
+        let location = it["location"].as_str().unwrap_or("").to_string();
+        let video = it["conferenceData"]["entryPoints"]
+            .as_array()
+            .and_then(|eps| eps.iter().find(|e| e["entryPointType"] == "video"))
+            .and_then(|e| e["uri"].as_str());
+        let join = it["hangoutLink"]
+            .as_str()
+            .or(video)
+            .map(str::to_string)
+            .or_else(|| join_link(&format!("{location} {}", it["description"].as_str().unwrap_or(""))));
+        out.push(CalEvent { title: it["summary"].as_str().unwrap_or("Event").to_string(), start, end, all_day, location, join });
+    }
+    out
+}
+
+/// Graph `calendarView` (asked for in UTC) → events.
+pub fn graph_events(v: &Value, offset: i64) -> Vec<CalEvent> {
+    let mut out = Vec::new();
+    for it in v["value"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        if it["isCancelled"] == true || it["responseStatus"]["response"] == "declined" {
+            continue;
+        }
+        let all_day = it["isAllDay"] == true;
+        // An all-day event is a date, not an instant: it starts at local midnight.
+        let time = |t: &Value| {
+            let dt = t["dateTime"].as_str()?;
+            if all_day { local_day(dt, offset) } else { feed_time(dt) }
+        };
+        let Some(start) = time(&it["start"]) else { continue };
+        let end = time(&it["end"]).unwrap_or(start + if all_day { 86400 } else { 3600 });
+        let location = it["location"]["displayName"].as_str().unwrap_or("").to_string();
+        let join = it["onlineMeeting"]["joinUrl"]
+            .as_str()
+            .or_else(|| it["onlineMeetingUrl"].as_str())
+            .filter(|u| !u.is_empty())
+            .map(str::to_string)
+            .or_else(|| join_link(&format!("{location} {}", it["bodyPreview"].as_str().unwrap_or(""))));
+        out.push(CalEvent { title: it["subject"].as_str().filter(|t| !t.is_empty()).unwrap_or("Event").to_string(), start, end, all_day, location, join });
+    }
+    out
+}
+
+async fn google_calendar(app: &AppHandle, from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
+    let (min, max) = (rfc3339(from), rfc3339(to));
+    let query = [("singleEvents", "true"), ("orderBy", "startTime"), ("timeMin", min.as_str()), ("timeMax", max.as_str()), ("maxResults", "50")];
+    let v = oauth::get_json(app, Provider::Google, "https://www.googleapis.com/calendar/v3/calendars/primary/events", &query, &[]).await?;
+    Ok(google_events(&v, local_offset()))
+}
+
+async fn graph_calendar(app: &AppHandle, from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
+    let (min, max) = (rfc3339(from), rfc3339(to));
+    let query = [
+        ("startDateTime", min.as_str()),
+        ("endDateTime", max.as_str()),
+        ("$top", "50"),
+        ("$orderby", "start/dateTime"),
+        ("$select", "subject,start,end,isAllDay,isCancelled,location,onlineMeeting,onlineMeetingUrl,bodyPreview,responseStatus"),
+    ];
+    let utc = [("Prefer", "outlook.timezone=\"UTC\"")];
+    let v = oauth::get_json(app, Provider::Microsoft, "https://graph.microsoft.com/v1.0/me/calendarView", &query, &utc).await?;
+    Ok(graph_events(&v, local_offset()))
+}
+
+async fn ical_calendar(from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
+    let url = secrets::get("ical-url").ok_or("No calendar link saved.")?.trim().replacen("webcal://", "https://", 1);
+    let res = http().get(&url).send().await.map_err(|e| format!("Network error: {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("The calendar link answered {}", res.status()));
+    }
+    let text = res.text().await.unwrap_or_default();
+    if !text.contains("BEGIN:VCALENDAR") {
+        return Err("That link doesn't return a calendar (iCal).".into());
+    }
+    Ok(ical_events(&text, from, to, local_offset()))
+}
+
+/// Events overlapping [from, to) from every signed-in account; the iCal link
+/// when nobody is signed in.
+async fn fetch_calendar(app: &AppHandle, from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
+    let accounts = signed_in();
+    if accounts.is_empty() {
+        return ical_calendar(from, to).await;
+    }
+    let mut events = Vec::new();
+    let mut failed = None;
+    let mut worked = false;
+    for p in &accounts {
+        let got = match p {
+            Provider::Google => google_calendar(app, from, to).await,
+            Provider::Microsoft => graph_calendar(app, from, to).await,
+        };
+        match got {
+            Ok(list) => {
+                worked = true;
+                events.extend(list);
+            }
+            Err(e) => failed = Some(e),
+        }
+    }
+    if let (false, Some(e)) = (worked, failed) {
+        return Err(e);
+    }
+    events.sort_by_key(|e| e.start);
+    Ok(events)
+}
+
+pub async fn poll_calendar(app: AppHandle) {
+    let now = now_secs();
+    let events = match fetch_calendar(&app, now - 3600 * 12, now + 86400 * 2).await {
+        Ok(events) => events,
         Err(e) => {
-            update(&app, "integration_calendar", json!({}), Some(format!("Network error: {e}")), None);
+            update(&app, "integration_calendar", json!({}), Some(e), None);
             return;
         }
     };
-    let now = now_secs();
-    let offset = local_offset();
-    let events = ical_events(&text, now - 3600 * 12, now + 86400 * 2, offset);
     let mut event = None;
     for e in &events {
         let mins = (e.start - now) / 60;
@@ -776,23 +1029,29 @@ pub async fn poll_todoist(app: AppHandle) {
     update(&app, "integration_todoist", json!({}), Some(last_err), None);
 }
 
+/// " with Google (a@b.c) + Microsoft" — which sign-ins answered a Test.
+fn via() -> String {
+    let names: Vec<String> = signed_in()
+        .into_iter()
+        .map(|p| match oauth::account(p) {
+            Some(who) => format!("{} ({who})", p.name()),
+            None => p.name().to_string(),
+        })
+        .collect();
+    if names.is_empty() { String::new() } else { format!(" with {}", names.join(" + ")) }
+}
+
 /// Settings → Test for these integrations.
 pub async fn test(app: &AppHandle, id: &str) -> Result<String, String> {
     let s = settings(app).ok_or("Settings not loaded")?;
     match id {
         "integration_mail" => {
-            let pass = secrets::get("mail-password").ok_or("No app password saved.")?;
-            let v = imap_poll(&mail_host(&s.mail_host), &s.mail_user, &pass).await?;
-            Ok(format!("Connected — {} unread.", v["unread"]))
+            let v = fetch_mail(app).await?;
+            Ok(format!("Connected{} — {} unread.", via(), v["unread"]))
         }
         "integration_calendar" => {
-            let url = secrets::get("ical-url").ok_or("No calendar link saved.")?.replacen("webcal://", "https://", 1);
-            let text = http().get(url.trim()).send().await.map_err(|e| e.to_string())?.text().await.map_err(|e| e.to_string())?;
-            if !text.contains("BEGIN:VCALENDAR") {
-                return Err("That link doesn't return a calendar (iCal).".into());
-            }
-            let n = ical_events(&text, now_secs(), now_secs() + 86400 * 7, local_offset()).len();
-            Ok(format!("Connected — {n} events in the next 7 days."))
+            let n = fetch_calendar(app, now_secs(), now_secs() + 86400 * 7).await?.len();
+            Ok(format!("Connected{} — {n} events in the next 7 days.", via()))
         }
         "integration_feeds" => {
             let mut n = 0;
@@ -857,6 +1116,121 @@ mod tests {
         assert_eq!(it[0]["time"], feed_time("2026-10-03T02:30:00Z").unwrap() * 1000);
         let atom = "<feed><title>Blog</title><entry><title>Post</title><link rel=\"alternate\" href=\"https://b.com/p\"/><updated>2026-10-01T00:00:00Z</updated></entry></feed>";
         assert_eq!(feed_items(atom, "u")[0]["link"], "https://b.com/p");
+    }
+
+    #[test]
+    fn gmail_messages() {
+        let v: Value = serde_json::from_str(
+            r#"{ "id": "18f0a", "threadId": "18f00", "internalDate": "1790995800000", "payload": { "headers": [
+                { "name": "From", "value": "\"Owen T\" <owen@example.com>" },
+                { "name": "subject", "value": "=?UTF-8?B?4Liq4Lin4Lix4Liq4LiU4Li1?=" },
+                { "name": "Message-Id", "value": "<abc@mail.gmail.com>" } ] } }"#,
+        )
+        .unwrap();
+        let m = gmail_message(&v, "me+work@gmail.com");
+        assert_eq!(m["uid"], "18f0a");
+        assert_eq!(m["from"], "Owen T");
+        assert_eq!(m["subject"], "สวัสดี");
+        assert_eq!(m["messageId"], "abc@mail.gmail.com");
+        assert_eq!(m["url"], "https://mail.google.com/mail/?authuser=me%2Bwork@gmail.com#inbox/18f00");
+        assert_eq!(m["time"], 1790995800000i64);
+        // Nothing but an id: still a row, never a panic.
+        let bare = gmail_message(&json!({ "id": "1" }), "");
+        assert_eq!((bare["subject"].as_str(), bare["url"].as_str()), (Some(""), Some("https://mail.google.com/mail/u/0/#inbox/1")));
+    }
+
+    #[test]
+    fn graph_messages_and_merging() {
+        let v: Value = serde_json::from_str(
+            r#"{ "value": [
+                { "id": "AAMk1", "subject": "Invoice", "receivedDateTime": "2026-10-03T02:30:00Z", "webLink": "https://outlook.live.com/owa/?ItemID=AAMk1",
+                  "internetMessageId": "<x@outlook.com>", "from": { "emailAddress": { "name": "Billing", "address": "billing@example.com" } } },
+                { "id": "AAMk2", "subject": null, "receivedDateTime": "2026-10-02T02:30:00Z", "webLink": "https://outlook.live.com/owa/?ItemID=AAMk2",
+                  "from": { "emailAddress": { "name": "", "address": "noreply@example.com" } } } ] }"#,
+        )
+        .unwrap();
+        let rows: Vec<Value> = v["value"].as_array().unwrap().iter().map(graph_message).collect();
+        assert_eq!(rows[0]["from"], "Billing");
+        assert_eq!(rows[0]["url"], "https://outlook.live.com/owa/?ItemID=AAMk1");
+        assert_eq!(rows[0]["messageId"], "x@outlook.com");
+        assert_eq!(rows[0]["time"], feed_time("2026-10-03T02:30:00Z").unwrap() * 1000);
+        assert_eq!((rows[1]["from"].as_str(), rows[1]["subject"].as_str()), (Some("noreply@example.com"), Some("")));
+
+        // The shape Today reads: { unread, messages: [{ subject, from, messageId }], gmail }.
+        let newer = json!({ "uid": "g1", "subject": "Newest", "time": feed_time("2026-10-03T05:00:00Z").unwrap() * 1000 });
+        let data = merge_mail(vec![(4, rows.clone()), (2, vec![newer])], true);
+        assert_eq!(data["unread"], 6);
+        assert_eq!(data["gmail"], true);
+        let order: Vec<&str> = data["messages"].as_array().unwrap().iter().map(|m| m["uid"].as_str().unwrap()).collect();
+        assert_eq!(order, ["g1", "AAMk1", "AAMk2"]);
+        // One mailbox keeps the server's order.
+        assert_eq!(merge_mail(vec![(1, rows)], false)["messages"][0]["uid"], "AAMk1");
+    }
+
+    #[test]
+    fn rfc3339_times() {
+        assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(rfc3339(feed_time("2026-10-03T02:30:05Z").unwrap()), "2026-10-03T02:30:05Z");
+        assert_eq!(rfc3339(feed_time("2028-02-29T23:59:59Z").unwrap()), "2028-02-29T23:59:59Z");
+        assert_eq!(rfc3339(feed_time("2026-12-31T17:00:00Z").unwrap() + 7 * 3600), "2027-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn google_calendar_events() {
+        let v: Value = serde_json::from_str(
+            r#"{ "items": [
+                { "status": "confirmed", "summary": "Standup", "hangoutLink": "https://meet.google.com/abc-defg-hij",
+                  "start": { "dateTime": "2026-10-05T09:00:00+07:00" }, "end": { "dateTime": "2026-10-05T09:15:00+07:00" } },
+                { "summary": "Holiday", "start": { "date": "2026-10-06" }, "end": { "date": "2026-10-07" } },
+                { "summary": "Zoom call", "location": "Room 2", "description": "Join: https://acme.zoom.us/j/123456?pwd=x now",
+                  "start": { "dateTime": "2026-10-05T03:00:00Z" }, "end": { "dateTime": "2026-10-05T04:00:00Z" } },
+                { "summary": "Webinar", "conferenceData": { "entryPoints": [ { "entryPointType": "phone", "uri": "tel:+1" }, { "entryPointType": "video", "uri": "https://example.webex.com/m/1" } ] },
+                  "start": { "dateTime": "2026-10-05T05:00:00Z" }, "end": { "dateTime": "2026-10-05T06:00:00Z" } },
+                { "status": "cancelled", "summary": "Gone", "start": { "dateTime": "2026-10-05T05:00:00Z" }, "end": { "dateTime": "2026-10-05T06:00:00Z" } },
+                { "summary": "Declined", "attendees": [ { "self": true, "responseStatus": "declined" } ],
+                  "start": { "dateTime": "2026-10-05T05:00:00Z" }, "end": { "dateTime": "2026-10-05T06:00:00Z" } } ] }"#,
+        )
+        .unwrap();
+        let offset = 7 * 3600;
+        let ev = google_events(&v, offset);
+        assert_eq!(ev.iter().map(|e| e.title.as_str()).collect::<Vec<_>>(), ["Standup", "Holiday", "Zoom call", "Webinar"]);
+        assert_eq!(ev[0].start, feed_time("2026-10-05T02:00:00Z").unwrap());
+        assert_eq!(ev[0].end - ev[0].start, 15 * 60);
+        assert_eq!(ev[0].join.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+        // All day = local midnight to local midnight.
+        assert!(ev[1].all_day);
+        assert_eq!(ev[1].start, feed_time("2026-10-05T17:00:00Z").unwrap());
+        assert_eq!(ev[1].end - ev[1].start, 86400);
+        assert_eq!(ev[2].join.as_deref(), Some("https://acme.zoom.us/j/123456?pwd=x"));
+        assert_eq!(ev[2].location, "Room 2");
+        assert_eq!(ev[3].join.as_deref(), Some("https://example.webex.com/m/1"));
+        assert!(google_events(&json!({}), 0).is_empty());
+    }
+
+    #[test]
+    fn graph_calendar_events() {
+        let v: Value = serde_json::from_str(
+            r#"{ "value": [
+                { "subject": "Sync", "isAllDay": false, "isCancelled": false, "location": { "displayName": "Teams" },
+                  "onlineMeeting": { "joinUrl": "https://teams.microsoft.com/l/meetup-join/19%3ameeting" },
+                  "start": { "dateTime": "2026-10-05T02:00:00.0000000", "timeZone": "UTC" }, "end": { "dateTime": "2026-10-05T02:30:00.0000000", "timeZone": "UTC" } },
+                { "subject": "Birthday", "isAllDay": true, "onlineMeeting": null, "location": { "displayName": "" },
+                  "start": { "dateTime": "2026-10-06T00:00:00.0000000", "timeZone": "UTC" }, "end": { "dateTime": "2026-10-07T00:00:00.0000000", "timeZone": "UTC" } },
+                { "subject": "Off", "isCancelled": true,
+                  "start": { "dateTime": "2026-10-05T02:00:00.0000000", "timeZone": "UTC" }, "end": { "dateTime": "2026-10-05T02:30:00.0000000", "timeZone": "UTC" } },
+                { "subject": "No thanks", "responseStatus": { "response": "declined" },
+                  "start": { "dateTime": "2026-10-05T02:00:00.0000000", "timeZone": "UTC" }, "end": { "dateTime": "2026-10-05T02:30:00.0000000", "timeZone": "UTC" } } ] }"#,
+        )
+        .unwrap();
+        let ev = graph_events(&v, 7 * 3600);
+        assert_eq!(ev.len(), 2);
+        assert_eq!(ev[0].start, feed_time("2026-10-05T02:00:00Z").unwrap());
+        assert_eq!(ev[0].end - ev[0].start, 30 * 60);
+        assert_eq!(ev[0].join.as_deref(), Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting"));
+        assert_eq!(ev[0].location, "Teams");
+        assert!(ev[1].all_day && ev[1].join.is_none());
+        assert_eq!(ev[1].start, feed_time("2026-10-05T17:00:00Z").unwrap());
+        assert_eq!(ev[1].end - ev[1].start, 86400);
     }
 
     #[test]

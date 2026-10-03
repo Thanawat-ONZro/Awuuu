@@ -73,7 +73,7 @@ export function todayRows(): Row[] {
       icon: "✉️",
       title: str(m.subject) || "(no subject)",
       sub: str(m.from),
-      url: mail.gmail === true && m.messageId ? gmailLink(str(m.messageId)) : null,
+      url: m.url ? str(m.url) : mail.gmail === true && m.messageId ? gmailLink(str(m.messageId)) : null,
     });
   }
 
@@ -204,7 +204,7 @@ export function renderExtraCard(id: string): HTMLElement {
       const d = data(id);
       const rows = list(id, "messages").map((m) => ({
         rank: 0, color: "#EA4335", icon: "✉️", title: str(m.subject) || "(no subject)", sub: str(m.from),
-        url: d.gmail === true && m.messageId ? gmailLink(str(m.messageId)) : null,
+        url: m.url ? str(m.url) : d.gmail === true && m.messageId ? gmailLink(str(m.messageId)) : null,
       }));
       return card("#EA4335", "Mail", `${str(d.unread)} unread`, id, rows, "Inbox zero.");
     }

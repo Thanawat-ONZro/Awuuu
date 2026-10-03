@@ -1,0 +1,257 @@
+/* Integrations page: a grid of cards, each with a clear connected state.
+   Builds on settings.css (palette, buttons, rows). */
+
+.int-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.int-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.int-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.int-mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: #fff;
+  font: 700 12px var(--font);
+}
+
+.int-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.int-title strong {
+  font: 600 13px var(--font);
+}
+
+.int-title span {
+  font: 400 11.5px/1.35 var(--font);
+  color: var(--dim);
+}
+
+/* Connected / not: the one thing to read at a glance. */
+.int-chip {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim);
+  font: 500 11px var(--font);
+  white-space: nowrap;
+}
+
+.int-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dim-2);
+}
+
+.int-chip.on {
+  background: rgba(34, 197, 94, 0.13);
+  color: #86efac;
+}
+
+.int-chip.on::before {
+  background: var(--green);
+}
+
+.int-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.int-who {
+  font: 400 12.5px var(--font);
+  color: var(--dim);
+}
+
+.int-who strong {
+  color: var(--ink);
+  font-weight: 600;
+  user-select: text;
+}
+
+.int-need {
+  font: 400 12px/1.45 var(--font);
+  color: #fbc06a;
+}
+
+/* A link inside a sentence — not one more pill button. */
+button.int-link {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: #f3c79b;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+button.int-link:hover:not(:disabled) {
+  background: none;
+  color: #ffdcb8;
+}
+
+button.int-link:active:not(:disabled) {
+  transform: none;
+}
+
+.int-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 12px var(--font);
+  color: var(--dim);
+}
+
+.int-spin {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: #e4a871;
+  border-radius: 50%;
+  animation: int-spin 0.9s linear infinite;
+}
+
+@keyframes int-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The GitHub device code. */
+.int-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.int-code code {
+  padding: 6px 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  color: var(--ink);
+  font: 600 17px var(--mono);
+  letter-spacing: 0.12em;
+  word-break: normal;
+}
+
+.int-card textarea {
+  width: 100%;
+  resize: vertical;
+  font: 12px var(--mono);
+}
+
+.int-field > label {
+  min-width: 96px;
+}
+
+.int-field input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+/* ── Advanced ────────────────────────────────────────────────────────────── */
+
+.int-adv {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+}
+
+.int-adv > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+  font: 600 13.5px var(--font);
+}
+
+.int-adv > summary::-webkit-details-marker {
+  display: none;
+}
+
+.int-adv > summary::before {
+  content: "";
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid var(--dim);
+  border-bottom: 1.6px solid var(--dim);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.int-adv[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.int-adv > summary small {
+  font: 400 12px var(--font);
+  color: var(--dim);
+}
+
+.int-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.int-block h3 {
+  font: 600 12.5px var(--font);
+}
+
+.int-client {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+
+.int-client p.hint {
+  line-height: 1.5;
+}
+
+.int-block.flash,
+.int-client.flash {
+  outline: 2px solid rgba(245, 165, 36, 0.7);
+  outline-offset: 3px;
+  border-radius: 10px;
+}

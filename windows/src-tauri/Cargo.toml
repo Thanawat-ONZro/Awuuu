@@ -26,6 +26,9 @@ keyring = { version = "3", features = ["windows-native"] }
 # IMAP over TLS for the Mail integration — the same rustls stack reqwest uses.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 webpki-roots = "1"
+# SHA-256 and secure random bytes for the sign-in's PKCE — already in the tree
+# (it is rustls' crypto provider, see above), so nothing new is compiled.
+ring = "0.17"
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",

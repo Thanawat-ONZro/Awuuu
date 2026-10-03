@@ -181,7 +181,34 @@ export const Bridge = {
 
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
+
+  // ── Sign-in for integrations (oauth.rs) ───────────────────────────────────
+  /** Who is signed in, and which client IDs are still missing. */
+  oauthStatus: () =>
+    call<{ google: SignInStatus; microsoft: SignInStatus; github: SignInStatus; githubCli: boolean }>("oauth_status"),
+  /** Opens the browser; resolves once signed in, throws the reason otherwise. */
+  oauthSignIn: (provider: "google" | "microsoft") => callOrThrow<SignInStatus>("oauth_sign_in", { provider }),
+  /** Ends the sign-in that is waiting (browser or GitHub code). */
+  oauthCancel: () => call<void>("oauth_cancel"),
+  /** Forgets the provider's tokens. */
+  oauthSignOut: (provider: "google" | "microsoft" | "github") => callOrThrow<void>("oauth_sign_out", { provider }),
+  /** Takes the token the GitHub CLI (`gh`) already has. */
+  githubCliLogin: () => callOrThrow<SignInStatus>("github_cli_login"),
+  /** GitHub device flow, step 1: the code to type on github.com. */
+  githubDeviceStart: () =>
+    callOrThrow<{ userCode: string; verificationUri: string; expiresIn: number }>("github_device_start"),
+  /** Step 2: resolves once the code was entered; throws when it expired or was cancelled. */
+  githubDeviceWait: () => callOrThrow<SignInStatus>("github_device_wait"),
 };
+
+/** One provider on the Integrations page. */
+export interface SignInStatus {
+  connected: boolean;
+  /** The signed-in address or GitHub login, when known. */
+  account: string | null;
+  /** No OAuth client ID saved yet, so Sign in can't work. */
+  needsClientId: boolean;
+}
 
 export interface UsageLimit {
   /** "5-hour", "Week", "Month"… */

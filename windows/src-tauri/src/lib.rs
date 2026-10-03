@@ -16,6 +16,7 @@ mod transcript;
 mod hermes;
 mod cli;
 mod extras;
+mod oauth;
 mod win_user;
 mod usage;
 mod history;
@@ -816,6 +817,13 @@ pub fn run() {
             history_info,
             export_files,
             reveal_file,
+            oauth::oauth_status,
+            oauth::oauth_sign_in,
+            oauth::oauth_cancel,
+            oauth::oauth_sign_out,
+            oauth::github_cli_login,
+            oauth::github_device_start,
+            oauth::github_device_wait,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
