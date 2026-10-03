@@ -18,6 +18,9 @@ export interface ViewActions {
   setFocus(id: string): void;
   setAgentFocus(id: string): void;
   openTerminal(cwd?: string | null): void;
+  /** Bring the session's own terminal window to the front (VS Code as a last resort). */
+  focusTerminal(task: AgentTask): void;
+  removeSession(id: string): void;
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
@@ -232,12 +235,10 @@ function buildOverview(actions: ViewActions): ViewHost {
 
 // ── Agents Hub ───────────────────────────────────────────────────────────────
 
-/** Agents a prompt can be sent to from a session card (Rust agents::send). */
-const SENDABLE_SOURCES = new Set(["agy", "hermes"]);
 
 function buildAgentsHub(actions: ViewActions): ViewHost {
-  // One full-width column: sessions on top, what the focused one is doing,
-  // then a box to keep it going — readable without opening the terminal.
+  // One full-width column: sessions on top, then what the focused one is
+  // doing — readable without opening the terminal.
   const pills = h("div", { class: "hub-pills" });
   const who = h("div", { class: "hub-who" });
   const steps = h("div", { class: "hub-steps" });
@@ -245,109 +246,34 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     "button",
     {
       class: "icon-btn",
-      title: "Open in VS Code / Terminal",
-      onclick: () => actions.openTerminal(State.focusedAgentSession?.sessionCwd ?? null),
+      title: "Go to this session's terminal",
+      onclick: () => {
+        const s = State.focusedAgentSession;
+        if (s) actions.focusTerminal(s);
+      },
     },
     svg(ICONS.arrowUpRight, 9),
   );
-
-  // Prompt box: keep a session going from the island instead of the terminal.
-  const promptInput = h("input", {
-    type: "text",
-    class: "chat-input",
-    placeholder: "Send to this session…",
-    spellcheck: "false",
-  }) as HTMLInputElement;
-  const promptSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  const promptBar = h("div", { class: "chat-bar hub-prompt" }, promptInput, promptSend);
-  // Hermes sessions live on the Hermes server: list them on request and pick
-  // one to keep it going from here.
-  const hermesList = h("div", { class: "hub-hermes-list" });
-  const hermesBtn = h("button", { class: "hub-hermes-btn", text: "Hermes sessions…", title: "Continue a recent Hermes session" });
-  hermesBtn.addEventListener("click", () => void toggleHermes());
-  async function toggleHermes() {
-    if (hermesList.childElementCount > 0) {
-      clear(hermesList);
-      return;
-    }
-    hermesList.append(h("div", { class: "hub-step dim", text: "Loading…" }));
-    let list: { id: string; title: string; source: string }[] | null = null;
-    let error = "";
-    try {
-      list = await Bridge.hermesSessions();
-    } catch (err) {
-      error = String(err).replace(/^Error:\s*/, "");
-    }
-    clear(hermesList);
-    if (!list || list.length === 0) {
-      hermesList.append(h("div", { class: "hub-step dim", text: error || "No Hermes sessions found." }));
-      return;
-    }
-    for (const s of list.slice(0, 10)) {
-      hermesList.append(h("button", {
-        class: "hub-hermes-item",
-        text: `${s.title}${s.source ? ` · ${s.source}` : ""}`,
-        onclick: () => {
-          const task = State.getOrCreateSession(s.id, "", "hermes");
-          task.name = s.title.slice(0, 40);
-          clear(hermesList);
-          actions.setAgentFocus(task.id);
-        },
-      }));
-    }
-  }
+  // Sessions that are done can be cleared in one go.
+  const clearDone = h("button", {
+    class: "hub-clear",
+    text: "Clear finished",
+    title: "Remove sessions that are idle or finished",
+    onclick: () => {
+      for (const s of [...State.activeAgentSessions]) {
+        if (["idle", "finished", "error"].includes(s.state)) actions.removeSession(s.id);
+      }
+    },
+  });
   const empty = h("div", { class: "hub-empty" },
     h("div", { class: "title", text: "No active agent sessions." }),
-    h("div", { class: "sub", text: "Start Claude Code, AGY, Hermes or OpenCode and it shows up here." }),
+    h("div", { class: "sub", text: "Start Claude Code, AGY, Hermes, OpenCode or Codex and it shows up here." }),
   );
   // A request waiting for an answer is never hidden behind the hub.
   const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
-  const pillRow = h("div", { class: "hub-pill-row" }, pills, hermesBtn);
-  const body = h("div", { class: "hub" }, pillRow, hermesList, waiting, h("div", { class: "hub-head" }, who, jump), steps, promptBar, empty);
+  const pillRow = h("div", { class: "hub-pill-row" }, pills, clearDone);
+  const body = h("div", { class: "hub" }, pillRow, waiting, h("div", { class: "hub-head" }, who, jump), steps, empty);
   const el = h("div", { class: "view hub-view" }, card(null, body));
-  let sending = false;
-
-  promptInput.addEventListener("mousedown", () => {
-    void Bridge.focusWindow(true);
-    window.setTimeout(() => promptInput.focus(), 30);
-  });
-  promptInput.addEventListener("blur", () => void Bridge.focusWindow(false));
-  promptInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void sendPrompt();
-    if (e.key === "Escape") promptInput.blur();
-  });
-  promptSend.addEventListener("click", () => void sendPrompt());
-
-  async function sendPrompt() {
-    const session = State.focusedAgentSession;
-    const text = promptInput.value.trim();
-    if (!session || !text || sending) return;
-    sending = true;
-    promptInput.value = "";
-    promptInput.placeholder = "Sending…";
-    try {
-      const busy = ["working", "thinking", "approval"].includes(session.state);
-      const how = await Bridge.agentSend(
-        session.source,
-        session.id.replace(/^session_/, ""),
-        text,
-        session.sessionCwd ?? null,
-        busy,
-      );
-      State.appendStep(session.id, text.slice(0, 600), "sent");
-      if (how === "started") session.state = "thinking";
-      promptInput.placeholder = how === "queued" ? "Queued — sent at its next step ✓" : "Sent ✓";
-    } catch (err) {
-      promptInput.value = text;
-      promptInput.placeholder = "Send to this session…";
-      promptInput.title = String(err);
-      void Bridge.log(`agent_send failed: ${String(err)}`);
-    } finally {
-      sending = false;
-      window.setTimeout(() => (promptInput.placeholder = "Send to this session…"), 2500);
-      State.notify();
-    }
-  }
 
   let pillKey = "";
   let stepsKey = "";
@@ -379,14 +305,12 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       waiting.textContent = nWaiting === 1 ? "1 request waiting for you — Review" : `${nWaiting} requests waiting for you — Review`;
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
-      for (const part of [pills, who.parentElement!, steps, promptBar]) part.style.display = none ? "none" : "";
-      hermesBtn.style.display = State.settings.model?.startsWith("claude-") ? "none" : "";
+      for (const part of [pillRow, who.parentElement!, steps]) part.style.display = none ? "none" : "";
       if (none) {
         pillKey = stepsKey = "";
         clear(pills);
         return;
       }
-      promptBar.style.display = SENDABLE_SOURCES.has(focused.source) ? "" : "none";
       // The whole hub takes the focused agent's colour (Claude orange, AGY blue…).
       el.style.setProperty("--agent", focused.color);
       el.style.setProperty("--agent-soft", `${focused.color}33`);
@@ -423,12 +347,13 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         lastStepsFocus = focused.id;
       }
 
-      const nextPillKey = sessions.map((s) => `${s.id}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
+      clearDone.style.display = sessions.some((s) => ["idle", "finished", "error"].includes(s.state)) ? "" : "none";
+      const nextPillKey = sessions.map((s) => `${s.id}:${s.name}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
       if (nextPillKey !== pillKey) {
         pillKey = nextPillKey;
         clear(pills);
         for (const s of sessions) {
-          pills.append(buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) }, s.id === focused.id));
+          pills.append(buildPill(s, { ...actions, setFocus: (id) => actions.setAgentFocus(id) }, s.id === focused.id, () => actions.removeSession(s.id)));
         }
         pruneMiniBots();
       }
@@ -471,7 +396,7 @@ function stateLabel(state: string): string {
   }
 }
 
-function buildPill(task: AgentTask, actions: ViewActions, focused = false): HTMLElement {
+function buildPill(task: AgentTask, actions: ViewActions, focused = false, onRemove?: () => void): HTMLElement {
   const label = task.name;
   const canvas = createMiniBot(task, 24);
   const tagText = agentInfo(task.source).short;
@@ -504,6 +429,14 @@ function buildPill(task: AgentTask, actions: ViewActions, focused = false): HTML
     lbl.style.color = lighten(task.color, 0.3);
   });
   pill.addEventListener("mouseleave", rest);
+  if (onRemove) {
+    const x = h("button", { class: "pill-x", title: "Remove this session" }, svg(ICONS.xmark, 7, { stroke: 2.6 }));
+    x.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onRemove();
+    });
+    pill.append(x);
+  }
 
   if (task.pillBadge) {
     const colors = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" } as const;
@@ -722,7 +655,7 @@ function buildError(actions: ViewActions): ViewHost {
             if (task) actions.setAgentFocus(task.id);
             actions.setView("agents");
           }),
-          btn("Open terminal", "secondary", () => actions.openTerminal(task?.sessionCwd ?? null)),
+          btn("Open terminal", "secondary", () => (task ? actions.focusTerminal(task) : actions.openTerminal(null))),
         );
       }
     },
@@ -735,7 +668,11 @@ function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title" });
   const row = h("div", { class: "actions" },
-    btn("Open terminal", "primary", () => actions.openTerminal(State.alertTask?.sessionCwd ?? null)),
+    btn("Open terminal", "primary", () => {
+      const t = State.alertTask;
+      if (t && !t.isIntegration) actions.focusTerminal(t);
+      else actions.openTerminal(t?.sessionCwd ?? null);
+    }),
     btn("OK", "secondary", () => actions.collapse()),
   );
   const el = h("div", { class: "view" }, card("green", stack(116, 16, who, title, row)));

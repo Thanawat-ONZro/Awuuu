@@ -91,8 +91,8 @@ export const Bridge = {
   ) => call<void>("approval_decision", { requestId, decision, answers: answers ?? null, reason: reason ?? null }),
   /** Type into a running agent session from the island (AGY for now). */
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
-  agentSend: (agent: string, session: string, text: string, cwd: string | null, busy: boolean) =>
-    call<"queued" | "started">("agent_send", { agent, session, text, cwd, busy }),
+  /** Bring a session's terminal window forward; false = not found. */
+  focusTerminal: (hwnd: number | null, pids: number[]) => call<boolean>("focus_terminal", { hwnd, pids }),
   awPathStatus: () => call<boolean>("aw_path_status"),
   awPathSet: (on: boolean) => callOrThrow<boolean>("aw_path_set", { on }),
   /** Settings → Test on an integration: "Connected." or the reason it failed. */
@@ -102,8 +102,6 @@ export const Bridge = {
   /** Settings → Detect local: Ollama / LM Studio, on click only. */
   detectLocalProviders: () =>
     call<{ name: string; baseUrl: string; models: string[] }[]>("detect_local_providers"),
-  /** Recent Hermes sessions (Runs API host), only when the user asks. */
-  hermesSessions: () => callOrThrow<{ id: string; title: string; source: string }[]>("hermes_sessions"),
   /** New things the agent said/thought, from its transcript (only new lines). */
   transcriptTail: (agent: string, path: string) =>
     call<{ kind: "prompt" | "say" | "think"; text: string }[]>("transcript_tail", { agent, path }),

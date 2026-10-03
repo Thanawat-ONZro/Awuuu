@@ -57,7 +57,7 @@ export interface IslandLayout {
   h: "center" | "left" | "right";
   /** "top": hangs down from its anchor; "bottom": grows up. */
   v: "top" | "bottom";
-  edge: "top" | "bottom" | "left" | "right" | "free";
+  edge: "top" | "bottom" | "left" | "right";
   /** Hidden tab stands upright (left/right edges). */
   vertical: boolean;
   panelW: number;

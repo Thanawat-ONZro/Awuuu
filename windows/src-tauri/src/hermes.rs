@@ -10,7 +10,6 @@
 // Island events are emitted as the same "hook" payloads Claude Code sends, so
 // the hub shows a Hermes run exactly like any other session.
 
-use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
@@ -230,37 +229,4 @@ pub async fn answer(request_id: &str, decision: &str) -> Result<(), String> {
         return Err(format!("Hermes refused the approval ({status}): {}", text.chars().take(200).collect::<String>()));
     }
     Ok(())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionInfo {
-    pub id: String,
-    pub title: String,
-    pub source: String,
-}
-
-/// Recent Hermes sessions, for the Agents hub. Only when the user asks.
-pub async fn sessions() -> Result<Vec<SessionInfo>, String> {
-    let res = client(5)?
-        .get(format!("{}/api/sessions?limit=15", base_url()))
-        .bearer_auth(key()?)
-        .send()
-        .await
-        .map_err(|e| format!("Can't reach Hermes: {e}"))?;
-    let status = res.status();
-    let v: Value = res.json().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        return Err(format!("Hermes returned {status}"));
-    }
-    let list = v["sessions"].as_array().or_else(|| v["data"].as_array()).or_else(|| v.as_array()).cloned().unwrap_or_default();
-    Ok(list
-        .iter()
-        .filter_map(|s| {
-            let id = s["id"].as_str().or_else(|| s["session_id"].as_str())?.to_string();
-            let title = s["title"].as_str().filter(|t| !t.is_empty()).unwrap_or(&id).to_string();
-            let source = s["source"].as_str().or_else(|| s["platform"].as_str()).unwrap_or("").to_string();
-            Some(SessionInfo { id, title, source })
-        })
-        .collect())
 }

@@ -137,6 +137,22 @@ export class Island {
         const path = cwd ?? State.focusedAgentSession?.sessionCwd ?? State.focusTask?.sessionCwd ?? null;
         void Bridge.openInVSCode(path);
       },
+      focusTerminal: (task) => {
+        void Bridge.focusTerminal(task.terminalHwnd ?? null, task.ancestorPids ?? []).then((ok) => {
+          if (!ok) void Bridge.openInVSCode(task.sessionCwd ?? null);
+        });
+      },
+      removeSession: (id) => {
+        const sid = id.replace(/^session_/, "");
+        for (const a of [...State.approvalQueue]) {
+          if (a.sessionId === sid) {
+            State.removeApproval(a.requestId);
+            void Bridge.approvalDecline(a.requestId);
+          }
+        }
+        State.removeSession(sid);
+        Sound.play("blip");
+      },
       // The ↗ button — same targets as openAgentTarget() on macOS.
       openTarget: () => {
         const task = State.focusTask;
@@ -388,10 +404,10 @@ export class Island {
 
   /** Toast from hook/integration: pop compact for durationSec then auto-hide. */
   toast(view: IslandViewName = "overview", durationSec = State.settings.hideAfter ?? 5) {
-    if (State.mode === "expanded") {
-      this.setView(view);
-      return;
-    }
+    // Open already: don't pull the user away from what they're doing (a chat
+    // reply arriving must not switch to the hub) — the pill badge says it.
+    if (State.mode === "expanded") return;
+    void view;
     this.fsm.revealToast(durationSec);
   }
 
@@ -570,8 +586,7 @@ export class Island {
       edge === "top" ? [0, 0, r, r]
       : edge === "bottom" ? [r, r, 0, 0]
       : edge === "left" ? [0, r, r, 0]
-      : edge === "right" ? [r, 0, 0, r]
-      : [r, r, r, r];
+      : [r, 0, 0, r];
     this.islandEl.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
@@ -993,7 +1008,14 @@ export class Island {
     if (!ctx) return;
 
     const focus = State.focusTask;
-    this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
+    // Awuuu keeps its own cream-and-caramel coat, except where a pill is
+    // picked: the overview wears the focused integration's colour, the
+    // Agents hub the colour of the session you tapped.
+    const tapped = State.view === "agents" && State.mode === "expanded" ? State.focusedAgentSession : null;
+    const tint = State.mode === "expanded" && State.view === "overview" && focus?.isIntegration
+      ? focus.color
+      : tapped?.color ?? null;
+    this.engine.bodyColor = tint ? hexToRGB(tint) : null;
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();

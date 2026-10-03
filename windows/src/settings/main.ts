@@ -868,14 +868,9 @@ function slider(min: number, max: number, step: number, get: () => number, set: 
   return h("span", { class: "slider" }, input, out);
 }
 
-const SIZE_PRESETS: Record<string, [number, number]> = { S: [560, 240], M: [640, 290], L: [820, 420], XL: [1000, 560] };
+const SIZE_PRESETS: Record<string, [number, number]> = { M: [640, 290], L: [820, 420], XL: [1000, 560] };
 
 function layoutSection(): HTMLElement {
-  const mode = select(
-    [["edge", "Docked to a screen edge"], ["free", "Free — anywhere on the screen"]],
-    () => settings.placement ?? "edge",
-    (v) => (settings.placement = v as Settings["placement"]),
-  );
   const edge = select(
     [["top", "Top"], ["bottom", "Bottom (above the taskbar)"], ["left", "Left"], ["right", "Right"]],
     () => settings.position ?? "top",
@@ -907,9 +902,7 @@ function layoutSection(): HTMLElement {
     "section",
     {},
     h("h2", {}, h("span", { text: "Island layout" })),
-    h("div", { class: "row" }, h("label", { text: "Placement" }), mode),
-    h("div", { class: "row" }, h("label", { text: "Edge" }), edge,
-      h("span", { class: "hint", text: "edge mode" })),
+    h("div", { class: "row" }, h("label", { text: "Edge" }), edge),
     h("div", { class: "row" },
       h("label", { text: "Move" }),
       h("span", { class: "hint", text: "drag the ⋮⋮ grip on the open island, or Alt + drag it" }),

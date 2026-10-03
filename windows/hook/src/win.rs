@@ -74,3 +74,56 @@ unsafe fn token_sid(process: HANDLE) -> Option<String> {
     let _ = LocalFree(Some(HLOCAL(text.0 as *mut _)));
     sid
 }
+
+/// The window of the terminal this agent runs in, so "Open terminal" in the
+/// island can bring exactly that window forward. A classic console has its
+/// own visible window; in Windows Terminal (ConPTY) the console window is a
+/// hidden stand-in whose owner is the Windows Terminal window.
+pub fn terminal_window() -> Option<isize> {
+    use windows::Win32::System::Console::GetConsoleWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, IsWindowVisible, GW_OWNER};
+    unsafe {
+        let hwnd = GetConsoleWindow();
+        if hwnd.is_invalid() {
+            return None;
+        }
+        if IsWindowVisible(hwnd).as_bool() {
+            return Some(hwnd.0 as isize);
+        }
+        let owner = GetWindow(hwnd, GW_OWNER).ok()?;
+        (!owner.is_invalid() && IsWindowVisible(owner).as_bool()).then_some(owner.0 as isize)
+    }
+}
+
+/// Our parent, its parent and so on (up to 12), for when the console trick
+/// finds nothing (VS Code's terminal, a hook run without a console).
+pub fn ancestor_pids() -> Vec<u32> {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    let mut parents = std::collections::HashMap::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return Vec::new() };
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        if Process32FirstW(snap, &mut e).is_ok() {
+            loop {
+                parents.insert(e.th32ProcessID, e.th32ParentProcessID);
+                if Process32NextW(snap, &mut e).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+    }
+    let mut out = Vec::new();
+    let mut pid = unsafe { GetCurrentProcessId() };
+    while let Some(&parent) = parents.get(&pid) {
+        if parent == 0 || out.contains(&parent) || out.len() >= 12 {
+            break;
+        }
+        out.push(parent);
+        pid = parent;
+    }
+    out
+}

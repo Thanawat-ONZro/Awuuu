@@ -246,8 +246,10 @@ pub fn compute(
     collapsed: bool,
 ) -> ((f64, f64, f64, f64), Layout) {
     let (panel_w, panel_h) = s.panel_size();
-    let free = s.placement == "free";
-    let edge = if free { "free".to_string() } else { s.position.clone() };
+    let edge = match s.position.as_str() {
+        "bottom" | "left" | "right" => s.position.clone(),
+        _ => "top".to_string(),
+    };
     let vertical = matches!(edge.as_str(), "left" | "right");
     let (lw, lh) = match (collapsed, vertical) {
         (true, true) => (STRIP_H, STRIP_W),
@@ -261,17 +263,7 @@ pub fn compute(
     // Half the compact island's height: a side-docked island centres on `along`.
     let half_compact = 16.0 * scale;
 
-    let (x, y, h, v) = if free {
-        let px = work.x + s.free_x.clamp(0.0, 1.0) * work.w;
-        let fy = s.free_y.clamp(0.0, 1.0);
-        let py = work.y + fy * work.h;
-        let x = clamp_x(px - pw / 2.0);
-        if fy > 0.5 {
-            (x, clamp_y(py - ph), "center", "bottom")
-        } else {
-            (x, clamp_y(py), "center", "top")
-        }
-    } else {
+    let (x, y, h, v) = {
         match edge.as_str() {
             "bottom" => {
                 let ax = screen.x + along * screen.w;
@@ -297,11 +289,7 @@ pub fn compute(
     };
     // Where the island's centre falls inside the window (it may sit off-centre
     // when the window is held back by the screen edge).
-    let target_x = if free {
-        work.x + s.free_x.clamp(0.0, 1.0) * work.w
-    } else {
-        screen.x + along * screen.w
-    };
+    let target_x = screen.x + along * screen.w;
     let anchor_x = ((target_x - x) / scale).clamp(0.0, lw);
     let layout = Layout {
         anchor_x,
@@ -349,24 +337,9 @@ pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed:
 
 /// Where the island should go after being dropped: the dragged island's rect
 /// in screen physical px → new placement fields in `s`.
-pub fn place_from_drop(s: &mut crate::settings::Settings, island: Rect, screen: Rect, work: Rect, scale: f64) {
+pub fn place_from_drop(s: &mut crate::settings::Settings, island: Rect, screen: Rect, work: Rect, _scale: f64) {
     let cx = island.x + island.w / 2.0;
     let cy = island.y + island.h / 2.0;
-    if s.placement == "free" {
-        s.free_x = ((cx - work.x) / work.w).clamp(0.0, 1.0);
-        let snap = 24.0 * scale;
-        let top = island.y;
-        let bottom = island.y + island.h;
-        // Upper half: remember the top edge (grows down); lower: the bottom one.
-        s.free_y = if (top - work.y) / work.h <= 0.5 {
-            if top - work.y < snap { 0.0 } else { ((top - work.y) / work.h).clamp(0.0, 1.0) }
-        } else if work.y + work.h - bottom < snap {
-            1.0
-        } else {
-            ((bottom - work.y) / work.h).clamp(0.0, 1.0)
-        };
-        return;
-    }
     // Edge: the nearest edge wins; slide along it to where it was dropped.
     let d = [
         ("top", (cy - screen.y).abs()),
@@ -574,8 +547,8 @@ impl Watch {
         let island = Rect { x: wx + r.x * scale, y: wy + r.y * scale, w: r.w * scale, h: r.h * scale };
         place_from_drop(&mut settings, island, screen, work, scale);
         crate::log::line(format!(
-            "island moved: {} {} along={:.2} free=({:.2},{:.2})",
-            settings.placement, settings.position, settings.along, settings.free_x, settings.free_y
+            "island moved: {} along={:.2}",
+            settings.position, settings.along
         ));
         crate::commit_settings(&self.app, shared.inner(), settings);
     }
@@ -820,14 +793,6 @@ mod tests {
     }
 
     #[test]
-    fn free_lower_half_grows_up() {
-        let s = Settings { placement: "free".into(), free_x: 0.25, free_y: 0.9, ..Settings::default() };
-        let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
-        assert_eq!(l.v, "bottom");
-        assert!((y + h - 0.9 * 1032.0).abs() < 1.0);
-    }
-
-    #[test]
     fn dropping_near_the_left_side_docks_left() {
         let mut s = Settings::default();
         place_from_drop(&mut s, Rect { x: 5.0, y: 600.0, w: 288.0, h: 32.0 }, SCREEN, WORK, 1.0);
@@ -836,10 +801,4 @@ mod tests {
         assert!((s.along - 616.0 / 1032.0).abs() < 1e-6);
     }
 
-    #[test]
-    fn free_drop_near_the_top_snaps_to_it() {
-        let mut s = Settings { placement: "free".into(), ..Settings::default() };
-        place_from_drop(&mut s, Rect { x: 100.0, y: 10.0, w: 288.0, h: 32.0 }, SCREEN, WORK, 1.0);
-        assert_eq!(s.free_y, 0.0);
-    }
 }

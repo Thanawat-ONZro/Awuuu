@@ -1,4 +1,4 @@
-// Notification-area icon: Open, Settings, placement, Check for updates, Pause, Quit.
+// Notification-area icon: Open, Settings, Reset position, Check for updates, Pause, Quit.
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -11,13 +11,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let updates = MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
-    let placement = MenuItem::with_id(app, "placement", "Switch placement (edge ⇄ free)", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset-position", "Reset island position", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&open, &sep1, &settings, &placement, &reset, &updates, &pause, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &sep1, &settings, &reset, &updates, &pause, &sep2, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("awuuu")
         .tooltip("Awuuu")
@@ -26,7 +25,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "settings" => crate::show_settings_window(app),
             "updates" => crate::updater::check_now(app),
-            "placement" => crate::toggle_placement(app),
             "reset-position" => crate::reset_island_position(app),
             id => {
                 let _ = app.emit_to(WINDOW_LABEL, "tray", id.to_string());

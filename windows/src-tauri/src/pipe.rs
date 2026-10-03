@@ -127,31 +127,6 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
 
     let is_agy = payload.get("agent_source").and_then(Value::as_str) == Some("agy");
 
-    // AGY asks before each model call and before stopping whether a prompt was
-    // typed in the island meanwhile; the answer goes back at once.
-    if is_agy && (event == "PreInvocation" || event == "Stop") {
-        let session = payload.get("session_id").and_then(Value::as_str).unwrap_or_default().to_string();
-        let reply = match crate::agents::take_queued(&session) {
-            Some(text) if event == "PreInvocation" => {
-                log::line(format!("hook {event} — handing a queued prompt to agy"));
-                json!({ "injectSteps": [{ "userMessage": text }] })
-            }
-            Some(text) => {
-                log::line(format!("hook {event} — agy continues with a queued prompt"));
-                json!({ "decision": "continue", "reason": format!("The user sent a new message: {text}") })
-            }
-            None => {
-                log::line(format!("hook {event}"));
-                json!({})
-            }
-        };
-        let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
-        let _ = pipe.write_all(format!("{reply}\n").as_bytes()).await;
-        let _ = pipe.flush().await;
-        let _ = pipe.disconnect();
-        return;
-    }
-
     let is_agy_pre_tool = is_agy && event == "PreToolUse";
     let waits_for_answer = event == "PermissionRequest" || is_agy_pre_tool;
 

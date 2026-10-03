@@ -17,16 +17,9 @@ pub struct Settings {
     /// above the taskbar), "left" or "right". Missing in older settings.json → top.
     #[serde(default = "default_position")]
     pub position: String,
-    /// "edge": docked to `position`, slid to `along` (0..1) along that edge.
-    /// "free": anywhere, at (`free_x`, `free_y`) as fractions of the work area.
-    #[serde(default = "default_placement")]
-    pub placement: String,
+    /// Where along that edge, 0..1 (left→right on top/bottom, top→bottom on the sides).
     #[serde(default = "half")]
     pub along: f64,
-    #[serde(default = "half")]
-    pub free_x: f64,
-    #[serde(default)]
-    pub free_y: f64,
     /// Width of the open island, logical px.
     #[serde(default = "default_island_width")]
     pub island_width: f64,
@@ -84,10 +77,6 @@ fn default_position() -> String {
     "top".into()
 }
 
-fn default_placement() -> String {
-    "edge".into()
-}
-
 fn half() -> f64 {
     0.5
 }
@@ -143,10 +132,7 @@ impl Default for Settings {
             ],
             screen: "primary".into(),
             position: default_position(),
-            placement: default_placement(),
             along: 0.5,
-            free_x: 0.5,
-            free_y: 0.0,
             island_width: default_island_width(),
             hub_height: default_hub_height(),
             providers: Vec::new(),

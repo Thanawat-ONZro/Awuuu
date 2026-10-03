@@ -116,8 +116,6 @@ impl Agent {
     fn waits_on(self, event: &str) -> Wait {
         match (self, event) {
             (Self::Agy, "PreToolUse") => Wait::Decision,
-            // Prompts typed in the island while AGY works are handed over here.
-            (Self::Agy, "PreInvocation" | "Stop") => Wait::Query,
             (Self::Agy, _) => Wait::Nothing,
             (_, "PermissionRequest") => Wait::Decision,
             _ => Wait::Nothing,
@@ -493,6 +491,14 @@ fn read_event(args: &Args) -> Option<HookEvent> {
             let value = std::env::var(var).unwrap_or_default();
             map.insert(key.into(), serde_json::Value::String(value));
         }
+    }
+
+    // Where "Open terminal" in the island should go.
+    if !map.contains_key("terminal_hwnd") {
+        if let Some(hwnd) = win::terminal_window() {
+            map.insert("terminal_hwnd".into(), serde_json::json!(hwnd));
+        }
+        map.insert("ancestor_pids".into(), serde_json::json!(win::ancestor_pids()));
     }
 
     let tool_input = map.get("tool_input").cloned();

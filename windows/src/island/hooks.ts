@@ -30,6 +30,8 @@ interface HookPayload {
   transcriptPath?: string; // AGY
   /** Claude Code Stop: the final answer. */
   last_assistant_message?: string;
+  terminal_hwnd?: number;
+  ancestor_pids?: number[];
 }
 
 const KNOWN_SOURCES = new Set<AgentSource>(["claude", "agy", "hermes", "opencode", "codex"]);
@@ -313,6 +315,8 @@ function handleHook(island: Island, payload: HookPayload) {
   const sessionId = payload.session_id || payload.conversationId || "default";
   const session = State.getOrCreateSession(sessionId, cwd, source);
   const taskId = session.id;
+  if (payload.terminal_hwnd) session.terminalHwnd = payload.terminal_hwnd;
+  if (payload.ancestor_pids?.length) session.ancestorPids = payload.ancestor_pids;
 
   let tool = payload.tool_name ?? "";
   let input = payload.tool_input ?? {};

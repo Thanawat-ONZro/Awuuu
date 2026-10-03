@@ -365,10 +365,9 @@ body {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25);
 }
 
-/* Docked to a side, or floating: borders on the sides that face the screen. */
+/* Docked to a side: borders on the sides that face the screen. */
 #root[data-edge="left"] #island,
-#root[data-edge="right"] #island,
-#root[data-edge="free"] #island {
+#root[data-edge="right"] #island {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1710,27 +1709,6 @@ input[type="range"]::-webkit-slider-thumb {
   display: none;
 }
 
-.hub-prompt .chat-input {
-  font-size: calc(13px * var(--hub-scale, 1));
-}
-
-.hub-prompt {
-  flex: 0 0 auto;
-  border: 1px solid transparent;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.hub-prompt:focus-within {
-  border-color: var(--agent, var(--hairline));
-  box-shadow: 0 0 0 3px var(--agent-soft, transparent);
-}
-
-.hub-prompt .send-btn {
-  background: var(--agent, var(--ink));
-  color: #fff;
-  transition: transform 0.08s ease-out, background 0.2s;
-}
-
 /* The focused agent tints the hub: a soft glow at the card's edge. */
 .hub-view .card {
   border-color: var(--agent-soft, var(--hairline));
@@ -1750,46 +1728,48 @@ input[type="range"]::-webkit-slider-thumb {
   min-width: 0;
 }
 
-.hub-hermes-btn {
+.hub-clear {
   flex: 0 0 auto;
-  margin-top: 2px;
-  height: 30px;
+  margin-top: 4px;
+  height: 26px;
   padding: 0 10px;
   border-radius: 999px;
-  border: 1px dashed rgba(139, 92, 246, 0.55);
-  background: rgba(139, 92, 246, 0.1);
-  color: #c4b5fd;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim-2);
   font: 600 11px var(--font);
   cursor: default;
 }
 
-.hub-hermes-btn:hover {
-  background: rgba(139, 92, 246, 0.22);
-}
-
-.hub-hermes-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.hub-hermes-list:empty {
-  display: none;
-}
-
-.hub-hermes-item {
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  background: rgba(139, 92, 246, 0.12);
+.hub-clear:hover {
+  background: rgba(255, 255, 255, 0.1);
   color: var(--ink);
-  font: 500 11.5px var(--font);
-  border-radius: 8px;
-  padding: 4px 8px;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.pill-x {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 0;
+  background: #3a322b;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
   cursor: default;
+  z-index: 2;
+}
+
+.pill:hover .pill-x {
+  opacity: 1;
+}
+
+.pill-x:hover {
+  background: #f4505e;
 }
 
 .hub-waiting {

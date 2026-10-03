@@ -44,6 +44,9 @@ export interface AgentTask {
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
   sessionCwd?: string | null;
+  /** The terminal window the agent runs in (from awuuu-hook), for "Open terminal". */
+  terminalHwnd?: number | null;
+  ancestorPids?: number[];
   /** Agent sessions: what happened, newest last. */
   log?: LogEntry[];
 }
@@ -137,13 +140,10 @@ export interface Settings {
   autoCloseInterval: number;
   activeIntegrations: string[];
   screen: "primary" | "cursor";
-  /** Edge the island docks to in "edge" placement. */
+  /** The screen edge the island docks to. */
   position: "top" | "bottom" | "left" | "right";
-  /** "edge": docked to `position` at `along`; "free": anywhere at (freeX, freeY). */
-  placement: "edge" | "free";
+  /** Where along that edge, 0..1. */
   along: number;
-  freeX: number;
-  freeY: number;
   /** Width of the open island, px. */
   islandWidth: number;
   /** Height of the Agents hub, px. */
@@ -178,10 +178,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   screen: "primary",
   position: "top",
-  placement: "edge",
   along: 0.5,
-  freeX: 0.5,
-  freeY: 0,
   islandWidth: 640,
   hubHeight: 290,
   providers: [],
@@ -331,7 +328,8 @@ class AppState {
       const cleaned = cwd.replace(/[\\/]+$/, "");
       const idx = Math.max(cleaned.lastIndexOf("\\"), cleaned.lastIndexOf("/"));
       const dirName = idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
-      const name = dirName || agentInfo(source).short;
+      // The island's own Hermes chat shows up as a session too.
+      const name = sessionId.startsWith("awuuu-chat-") ? "Island chat" : dirName || agentInfo(source).short;
       const color = agentInfo(source).color;
       existing = {
         id,

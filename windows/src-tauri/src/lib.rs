@@ -1,6 +1,5 @@
 // Awuuu for Windows — app wiring and the commands the island calls.
 
-mod agents;
 mod claude;
 mod files;
 mod hooks;
@@ -76,10 +75,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         let mut current = shared.settings.lock().unwrap();
         let screen_changed = current.screen != settings.screen
             || current.position != settings.position
-            || current.placement != settings.placement
             || current.along != settings.along
-            || current.free_x != settings.free_x
-            || current.free_y != settings.free_y
             || current.panel_size() != settings.panel_size();
         let autostart_changed = current.autostart != settings.autostart;
         *current = settings.clone();
@@ -170,23 +166,11 @@ pub fn reset_island_position(app: &AppHandle) {
         let mut s = shared.settings.lock().unwrap();
         s.position = "top".into();
         s.along = 0.5;
-        s.free_x = 0.5;
-        s.free_y = 0.0;
         s.clone()
     };
     commit_settings(app, shared.inner(), settings);
 }
 
-/// Tray: docked to an edge ⇄ free anywhere.
-pub fn toggle_placement(app: &AppHandle) {
-    let Some(shared) = app.try_state::<Shared>() else { return };
-    let settings = {
-        let mut s = shared.settings.lock().unwrap();
-        s.placement = if s.placement == "free" { "edge".into() } else { "free".into() };
-        s.clone()
-    };
-    commit_settings(app, shared.inner(), settings);
-}
 
 /// Saves settings changed on the Rust side, re-places the island and tells
 /// both windows.
@@ -209,6 +193,15 @@ fn open_url(url: String) {
         .args(["url.dll,FileProtocolHandler", &url])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
+}
+
+/// Brings the session's own terminal window forward. False = not found, and
+/// the island falls back to opening the folder.
+#[tauri::command]
+fn focus_terminal(hwnd: Option<i64>, pids: Vec<u32>) -> bool {
+    let ok = win_user::focus_terminal(hwnd, &pids);
+    log::line(format!("focus terminal hwnd={hwnd:?} pids={pids:?} -> {ok}"));
+    ok
 }
 
 /// "Open terminal" opens the working folder in VS Code when `code` is on PATH,
@@ -319,34 +312,15 @@ fn approval_decision(
     pipe::answer(&app, &request_id, &decision, answers, reason);
 }
 
-/// Recent Hermes sessions for the Agents hub (fetched only when asked).
-#[tauri::command]
-async fn hermes_sessions() -> Result<Vec<hermes::SessionInfo>, String> {
-    hermes::sessions().await
-}
-
-/// The island has the card on screen, so the long wait for a human may begin.
-/// Until this arrives the relay only waits a few hundred milliseconds, which is
-/// what stops a paused or unresponsive island from freezing Claude Code.
-/// The prompt box on a session card: send text into a running agent session.
-#[tauri::command]
-fn agent_send(
-    app: AppHandle,
-    agent: String,
-    session: String,
-    text: String,
-    cwd: Option<String>,
-    busy: bool,
-) -> Result<agents::Sent, String> {
-    agents::send(&app, &agent, &session, &text, cwd.as_deref(), busy)
-}
-
 /// What the agent said or thought since the last look at its transcript.
 #[tauri::command]
 fn transcript_tail(agent: String, path: String) -> Vec<transcript::Step> {
     transcript::tail(&agent, &path).unwrap_or_default()
 }
 
+/// The island has the card on screen, so the long wait for a human may begin.
+/// Until this arrives the relay only waits a few hundred milliseconds, which is
+/// what stops a paused or unresponsive island from freezing Claude Code.
 #[tauri::command]
 fn approval_ack(app: AppHandle, request_id: String) {
     if request_id.starts_with(hermes::APPROVAL_PREFIX) {
@@ -603,13 +577,12 @@ pub fn run() {
             island_resize_mode,
             open_url,
             open_in_vscode,
+            focus_terminal,
             quit_app,
             agent_hooks_status,
             agent_hooks_preview,
             agent_hooks_apply,
             approval_decision,
-            agent_send,
-            hermes_sessions,
             transcript_tail,
             approval_ack,
             approval_decline,
