@@ -134,11 +134,34 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
     island::apply_geometry(&app, &settings, collapsed);
 }
 
-/// The grip on the island was pressed: the window follows the mouse until the
-/// button is released, then docks (see island.rs `Watch::end_drag`).
+/// The grip (or Alt + press) on the island: the window becomes a full-work-area
+/// overlay so the island can be drawn being pulled off its edge. Returns the
+/// overlay's logical size.
 #[tauri::command]
-fn island_drag_begin(shared: State<Shared>) {
-    shared.gate.begin_drag();
+fn island_overlay_begin(app: AppHandle, shared: State<Shared>) -> Option<(f64, f64)> {
+    let pref = shared.settings.lock().unwrap().screen.clone();
+    shared.gate.overlay.store(true, Ordering::Relaxed);
+    shared.gate.forget_ignore_state();
+    let size = island::overlay_begin(&app, &pref);
+    if size.is_none() {
+        shared.gate.overlay.store(false, Ordering::Relaxed);
+    }
+    size
+}
+
+/// Released: dock to `edge` at `along` (the front end already animated the
+/// island into place), or just restore when `edge` is empty.
+#[tauri::command]
+fn island_overlay_end(app: AppHandle, shared: State<Shared>, edge: String, along: f64) {
+    shared.gate.overlay.store(false, Ordering::Relaxed);
+    let mut settings = shared.settings.lock().unwrap().clone();
+    if matches!(edge.as_str(), "top" | "bottom" | "left" | "right") {
+        settings.position = edge;
+        settings.along = along.clamp(0.0, 1.0);
+        log::line(format!("island moved: {} along={:.2}", settings.position, settings.along));
+    }
+    commit_settings(&app, shared.inner(), settings);
+    shared.gate.forget_ignore_state();
 }
 
 /// Resizing the island by its corner: the window takes the largest size for
@@ -572,7 +595,8 @@ pub fn run() {
             set_island_rect,
             focus_window,
             reposition,
-            island_drag_begin,
+            island_overlay_begin,
+            island_overlay_end,
             reset_position,
             island_resize_mode,
             open_url,

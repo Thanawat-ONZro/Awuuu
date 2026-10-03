@@ -19,7 +19,7 @@ use windows::Win32::Foundation::{HWND, POINT};
 use windows::core::BOOL;
 use windows::Win32::Foundation::LPARAM;
 use windows::Win32::System::Ole::RevokeDragDrop;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_MENU};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
@@ -70,8 +70,9 @@ pub struct PollGate {
     rect: Mutex<IslandRect>,
     /// Mirrors the window flag so we only call into Win32 when it changes.
     ignoring: AtomicBool,
-    /// The island's grip was pressed: the watcher starts moving the window.
-    drag_requested: AtomicBool,
+    /// Moving the island: the window covers the whole work area and the front
+    /// end draws the island under the cursor; the watcher leaves it alone.
+    pub overlay: AtomicBool,
 }
 
 impl PollGate {
@@ -81,7 +82,7 @@ impl PollGate {
             collapsed: AtomicBool::new(true),
             rect: Mutex::new(IslandRect::default()),
             ignoring: AtomicBool::new(false),
-            drag_requested: AtomicBool::new(false),
+            overlay: AtomicBool::new(false),
         }
     }
 
@@ -98,11 +99,6 @@ impl PollGate {
 
     pub fn set_active(&self, on: bool) {
         self.active.store(on, Ordering::Relaxed);
-        crate::mouse::poke();
-    }
-
-    pub fn begin_drag(&self) {
-        self.drag_requested.store(true, Ordering::Relaxed);
         crate::mouse::poke();
     }
 
@@ -160,9 +156,6 @@ fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
-fn alt_down() -> bool {
-    unsafe { (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000) != 0 }
-}
 
 fn monitor_contains(m: &Monitor, x: f64, y: f64) -> bool {
     let p = m.position();
@@ -260,8 +253,9 @@ pub fn compute(
     let clamp_x = |x: f64| x.clamp(screen.x, (screen.x + screen.w - pw).max(screen.x));
     let clamp_y = |y: f64| y.clamp(work.y, (work.y + work.h - ph).max(work.y));
     let along = s.along.clamp(0.0, 1.0);
-    // Half the compact island's height: a side-docked island centres on `along`.
-    let half_compact = 16.0 * scale;
+    // Half the upright compact pill (168 px, layout.ts SIDE_COMPACT): a
+    // side-docked island centres on `along`.
+    let half_compact = 84.0 * scale;
 
     let (x, y, h, v) = {
         match edge.as_str() {
@@ -322,6 +316,9 @@ fn rect_of(m: &Monitor) -> (Rect, Rect) {
 /// the wake strip instead of the panel. Tells the island where to draw itself.
 pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed: bool) -> Option<Layout> {
     let win = window(app)?;
+    if app.try_state::<crate::Shared>().is_some_and(|sh| sh.gate.overlay.load(Ordering::Relaxed)) {
+        return None; // the move overlay owns the window until it ends
+    }
     let m = target_monitor(app, &s.screen)?;
     let (screen, work) = rect_of(&m);
     let ((x, y, pw, ph), layout) = compute(s, screen, work, m.scale_factor(), collapsed);
@@ -335,24 +332,20 @@ pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed:
     Some(layout)
 }
 
-/// Where the island should go after being dropped: the dragged island's rect
-/// in screen physical px → new placement fields in `s`.
-pub fn place_from_drop(s: &mut crate::settings::Settings, island: Rect, screen: Rect, work: Rect, _scale: f64) {
-    let cx = island.x + island.w / 2.0;
-    let cy = island.y + island.h / 2.0;
-    // Edge: the nearest edge wins; slide along it to where it was dropped.
-    let d = [
-        ("top", (cy - screen.y).abs()),
-        ("bottom", (work.y + work.h - cy).abs()),
-        ("left", (cx - work.x).abs()),
-        ("right", (work.x + work.w - cx).abs()),
-    ];
-    let edge = d.iter().min_by(|a, b| a.1.total_cmp(&b.1)).map(|e| e.0).unwrap_or("top");
-    s.position = edge.to_string();
-    s.along = match edge {
-        "left" | "right" => ((cy - work.y) / work.h).clamp(0.0, 1.0),
-        _ => ((cx - screen.x) / screen.w).clamp(0.0, 1.0),
-    };
+/// Moving the island: the window covers the display's work area (logical
+/// size returned) so the front end can draw the island anywhere under the
+/// cursor, with the liquid effect. `island_overlay_end` puts it back.
+pub fn overlay_begin(app: &AppHandle, pref: &str) -> Option<(f64, f64)> {
+    let win = window(app)?;
+    let m = target_monitor(app, pref)?;
+    let (_, work) = rect_of(&m);
+    let scale = m.scale_factor();
+    let size = PhysicalSize::new(work.w as u32, work.h as u32);
+    let _ = win.set_size(size);
+    let _ = win.set_position(PhysicalPosition::new(work.x as i32, work.y as i32));
+    let _ = win.set_size(size);
+    let _ = win.set_ignore_cursor_events(false);
+    Some((work.w / scale, work.h / scale))
 }
 
 pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
@@ -494,8 +487,6 @@ struct Watch {
     screen_checked: Instant,
     cursor_sent: Instant,
     cursor_pending: Option<CursorPayload>,
-    /// Moving the island: cursor minus window origin (physical px).
-    drag: Option<(f64, f64)>,
 }
 
 impl Watch {
@@ -516,41 +507,7 @@ impl Watch {
             screen_checked: Instant::now(),
             cursor_sent: Instant::now(),
             cursor_pending: None,
-            drag: None,
         }
-    }
-
-    fn start_drag(&mut self, win: &WebviewWindow, cx: f64, cy: f64) {
-        let Ok(o) = win.outer_position() else { return };
-        self.drag = Some((cx - o.x as f64, cy - o.y as f64));
-        self.pressed_off_island = false;
-        let _ = win.emit("island-drag", true);
-    }
-
-    /// While moving: the window follows the cursor. Released: dock it.
-    fn drag_event(&mut self, win: &WebviewWindow, cx: f64, cy: f64, edge: Option<bool>) {
-        let Some((ox, oy)) = self.drag else { return };
-        let _ = win.set_position(PhysicalPosition::new((cx - ox).round() as i32, (cy - oy).round() as i32));
-        if edge == Some(false) || !left_button_down() {
-            self.drag = None;
-            self.geometry = None;
-            self.end_drag(win, cx - ox, cy - oy);
-        }
-    }
-
-    fn end_drag(&mut self, win: &WebviewWindow, wx: f64, wy: f64) {
-        let _ = win.emit("island-drag", false);
-        let Some(shared) = self.app.try_state::<crate::Shared>() else { return };
-        let mut settings = shared.settings.lock().unwrap().clone();
-        let Some((screen, work, scale)) = monitor_rects(&self.app, &settings.screen) else { return };
-        let r = *self.gate.rect.lock().unwrap();
-        let island = Rect { x: wx + r.x * scale, y: wy + r.y * scale, w: r.w * scale, h: r.h * scale };
-        place_from_drop(&mut settings, island, screen, work, scale);
-        crate::log::line(format!(
-            "island moved: {} along={:.2}",
-            settings.position, settings.along
-        ));
-        crate::commit_settings(&self.app, shared.inner(), settings);
     }
 
     fn unblock_drops(&self) {
@@ -636,11 +593,8 @@ impl Watch {
             }
         };
         let Some(win) = window(&self.app) else { return };
-        if self.gate.drag_requested.swap(false, Ordering::Relaxed) && left_button_down() && self.drag.is_none() {
-            self.start_drag(&win, cx, cy);
-        }
-        if self.drag.is_some() {
-            self.drag_event(&win, cx, cy, edge);
+        // Moving the island: the overlay window takes every mouse event itself.
+        if self.gate.overlay.load(Ordering::Relaxed) {
             return;
         }
         let Some(g) = self.geometry(&win) else { return };
@@ -664,11 +618,6 @@ impl Watch {
         // A press may be the start of a drag: make sure the drop target is ours
         // before the file arrives. Recorded while collapsed too — a file is
         // usually picked up while the island sleeps, then dragged onto the notch.
-        // Alt + drag anywhere on the open island moves it.
-        if edge == Some(true) && active && on_island && alt_down() {
-            self.start_drag(&win, cx, cy);
-            return;
-        }
         if edge == Some(true) {
             self.pressed_outside = !in_window;
             self.pressed_under = active && in_window && self.gate.ignoring.load(Ordering::Relaxed);
@@ -792,13 +741,5 @@ mod tests {
         assert_eq!(l.h, "right");
     }
 
-    #[test]
-    fn dropping_near_the_left_side_docks_left() {
-        let mut s = Settings::default();
-        place_from_drop(&mut s, Rect { x: 5.0, y: 600.0, w: 288.0, h: 32.0 }, SCREEN, WORK, 1.0);
-        // Centre x = 149 is nearer the left side (149) than the top (616).
-        assert_eq!(s.position, "left");
-        assert!((s.along - 616.0 / 1032.0).abs() < 1e-6);
-    }
 
 }

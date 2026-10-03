@@ -52,8 +52,10 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
-  /** The grip was pressed: Rust moves the window until the button is released. */
-  islandDragBegin: () => call<void>("island_drag_begin"),
+  /** Moving: the window becomes a work-area overlay; its logical [w, h]. */
+  islandOverlayBegin: () => call<[number, number]>("island_overlay_begin"),
+  /** Dock on `edge` at `along` ("" = put it back) and end the overlay. */
+  islandOverlayEnd: (edge: string, along: number) => call<void>("island_overlay_end", { edge, along }),
   resetPosition: () => call<void>("reset_position"),
   islandResizeMode: (on: boolean) => call<void>("island_resize_mode", { on }),
 

@@ -11,7 +11,10 @@ import { registerIntegrationHandlers, refreshConfigured } from "./island/integra
 
 // A script error must leave a trace in awuuu.log, or a broken view is a mystery.
 window.addEventListener("error", (e) => void Bridge.log(`js error: ${e.message} @ ${e.filename}:${e.lineno}`));
-window.addEventListener("unhandledrejection", (e) => void Bridge.log(`js rejection: ${String(e.reason)}`));
+window.addEventListener("unhandledrejection", (e) => {
+  void Bridge.log(`js rejection: ${String(e.reason)}`);
+  console.error("[awuuu] rejection", e.reason?.stack ?? e.reason);
+});
 
 async function main() {
   const root = document.getElementById("root");
@@ -29,7 +32,6 @@ async function main() {
   if (boot?.layout) island.setLayout(boot.layout);
   await onEvent<IslandLayout>("layout", (l) => island.setLayout(l));
   // Moving the island (grip or Alt + drag): a click must not also land on a button.
-  await onEvent<boolean>("island-drag", (on) => root.classList.toggle("dragging", on));
   root.addEventListener("click", (e) => { if (e.altKey) { e.stopPropagation(); e.preventDefault(); } }, true);
   State.loadIntegrationTasks();
 

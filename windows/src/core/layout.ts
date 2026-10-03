@@ -68,6 +68,36 @@ export const DEFAULT_LAYOUT: IslandLayout = {
   anchorX: 360, h: "center", v: "top", edge: "top", vertical: false, panelW: 720, panelH: 320,
 };
 
+/** The header is 34 px: a row along the top (top edge), along the bottom
+ * (bottom edge, upside down) or a rail down the docked side (left/right). */
+export const HEADER_SIZE = 34;
+
+/** The island is upright on the sides: a tall pill, a rail for the header. */
+export function onSide(): boolean {
+  return geo.layout.edge === "left" || geo.layout.edge === "right";
+}
+
+/**
+ * How the open island differs from the top-edge layout every view was drawn
+ * for: where the card sits (dx, dy) and how the island grows (dw, dh) so the
+ * card keeps exactly the same size whichever edge it hangs from.
+ */
+export function edgeShift(): { dx: number; dy: number; dw: number; dh: number } {
+  switch (geo.layout.edge) {
+    case "bottom":
+      return { dx: 0, dy: -HEADER_SIZE, dw: 0, dh: 0 };
+    case "left":
+      return { dx: HEADER_SIZE, dy: -HEADER_SIZE, dw: HEADER_SIZE, dh: -HEADER_SIZE };
+    case "right":
+      return { dx: 0, dy: -HEADER_SIZE, dw: HEADER_SIZE, dh: -HEADER_SIZE };
+    default:
+      return { dx: 0, dy: 0, dw: 0, dh: 0 };
+  }
+}
+
+/** Compact pill on a side: upright. */
+export const SIDE_COMPACT = { w: 32, h: 168 };
+
 /** Current layout and user sizes; island.ts keeps these up to date. */
 export const geo = {
   layout: { ...DEFAULT_LAYOUT },
@@ -157,7 +187,7 @@ export function islandSize(
       // Subtle notch tab protruding slightly from the screen edge
       return geo.layout.vertical ? { w: NOTCH_TAB_H, h: NOTCH_TAB_W } : { w: NOTCH_TAB_W, h: NOTCH_TAB_H };
     case "compact":
-      return { w: COMPACT_W, h: NOTCH_H };
+      return onSide() ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
       const h =
         view === "prompt"
@@ -167,7 +197,8 @@ export function islandSize(
           : view === "agents"
           ? geo.hubH
           : VIEW_LAYOUTS[view].height;
-      return { w: geo.expandedW, h };
+      const s = edgeShift();
+      return { w: geo.expandedW + s.dw, h: h + s.dh };
     }
   }
 }
@@ -190,27 +221,35 @@ export function botPosition(
     case "hidden":
       return { cx: 46, cy: 16, diameter: 6, opacity: 0 };
     case "compact":
-      return { cx: 40, cy: 16, diameter: 20, opacity: 1 };
+      return onSide() ? { cx: 16, cy: 26, diameter: 20, opacity: 1 } : { cx: 40, cy: 16, diameter: 20, opacity: 1 };
     case "expanded": {
-      const layout = VIEW_LAYOUTS[view];
-      if (view === "uploading") {
-        return {
-          cx: 36 + uploadProgress * 526,
-          cy: layout.botY ?? 103,
-          diameter: layout.botDiameter,
-          opacity: 1,
-        };
-      }
-      if (layout.botY != null) {
-        return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
-      }
-      // Centre of the fixed 84 pt card (8 pt top inset + 34 pt header → content at y = 42)
-      const headerBottom = HEADER_BOTTOM;
-      const cardH = 84;
-      const cy = headerBottom + (islandH - headerBottom - cardH) / 2 + cardH / 2;
-      return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: 1 };
+      const p = expandedBot(view, islandH, uploadProgress);
+      const s = edgeShift();
+      return { ...p, cx: p.cx + s.dx, cy: p.cy + s.dy };
     }
   }
+}
+
+function expandedBot(view: IslandViewName, islandH: number, uploadProgress: number): BotPlacement {
+  const layout = VIEW_LAYOUTS[view];
+  if (view === "uploading") {
+    return {
+      cx: 36 + uploadProgress * 526,
+      cy: layout.botY ?? 103,
+      diameter: layout.botDiameter,
+      opacity: 1,
+    };
+  }
+  if (layout.botY != null) {
+    return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
+  }
+  // Centre of the fixed 84 pt card (8 pt top inset + 34 pt header → content at y = 42).
+  // islandH here is the top-edge height: undo the side layout's shrink.
+  const headerBottom = HEADER_BOTTOM;
+  const cardH = 84;
+  const h = islandH - edgeShift().dh;
+  const cy = headerBottom + (h - headerBottom - cardH) / 2 + cardH / 2;
+  return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: 1 };
 }
 
 export function botGlowColor(s: BotStateName): string {

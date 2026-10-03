@@ -4,11 +4,10 @@
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, type IslandLayout,
+  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
-  type IslandMode, type IslandViewName,
-} from "../core/layout";
+  type IslandMode, type IslandViewName, SIDE_COMPACT, COMPACT_W, NOTCH_H,} from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
@@ -19,6 +18,7 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
+import { Mover, type Edge } from "./move";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -46,6 +46,9 @@ export class Island {
   private miniGrid!: HTMLElement;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
+  private mover!: Mover;
+  /** Set while the island is being moved (move.ts). */
+  private moveAt: { x: number; y: number; transform: string } | null = null;
   private resizeGrip!: HTMLElement;
   private resizing: { sx: number; sy: number; w: number; h: number } | null = null;
   private notchNub!: HTMLElement;
@@ -95,6 +98,35 @@ export class Island {
     this.root = root;
     this.build();
     this.wireFsm();
+    this.mover = new Mover(
+      {
+        pillSize: (edge: Edge) =>
+          edge === "left" || edge === "right" ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H },
+        setMoveOverride: (at) => {
+          this.moveAt = at;
+          this.applyGeometry();
+        },
+        previewEdge: (edge: Edge) => {
+          geo.layout = { ...geo.layout, edge, vertical: edge === "left" || edge === "right" };
+          this.animateGeometry(false);
+        },
+        enterMove: () => {
+          const saved = { wasExpanded: State.mode === "expanded", view: State.view };
+          this.fsm.pinned = true;
+          if (State.mode !== "compact") this.collapse();
+          this.fsm.pinned = true;
+          return saved;
+        },
+        leaveMove: (saved) => {
+          this.fsm.pinned = State.isPinned;
+          if (saved.wasExpanded) {
+            this.fsm.forceHome();
+            this.expand(saved.view as IslandViewName);
+          }
+        },
+      },
+      this.root,
+    );
     this.wireInput();
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => this.fsm.greetComplete();
@@ -142,6 +174,7 @@ export class Island {
           if (!ok) void Bridge.openInVSCode(task.sessionCwd ?? null);
         });
       },
+      beginMove: (e, el) => void this.mover.begin(e, el),
       removeSession: (id) => {
         const sid = id.replace(/^session_/, "");
         for (const a of [...State.approvalQueue]) {
@@ -566,6 +599,7 @@ export class Island {
     this.islandEl.style.width = `${w}px`;
     this.islandEl.style.height = `${hh}px`;
     const rect0 = this.islandRect();
+    this.islandEl.style.transform = this.moveAt?.transform ?? "none";
     // The resize grip sits on the corner away from the docked edge.
     const L0 = geo.layout;
     const showGrip = State.mode === "expanded" && State.view === "agents";
@@ -579,7 +613,6 @@ export class Island {
     this.islandEl.style.left = `${rect0.x}px`;
     this.islandEl.style.top = `${rect0.y}px`;
     this.islandEl.style.bottom = "auto";
-    this.islandEl.style.transform = "none";
     // Round every corner that does not touch the screen edge it is docked to.
     const edge = geo.layout.edge;
     const [tl, tr, br, bl] =
@@ -587,11 +620,18 @@ export class Island {
       : edge === "bottom" ? [r, r, 0, 0]
       : edge === "left" ? [0, r, r, 0]
       : [r, 0, 0, r];
-    this.islandEl.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
+    this.islandEl.style.borderRadius = this.moveAt ? `${r}px` : `${tl}px ${tr}px ${br}px ${bl}px`;
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
-    this.miniGrid.style.left = `${w - 40 - 14.5}px`;
-    this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
+    // The mini bots ride at the far end of the compact pill: right on top and
+    // bottom edges, the bottom of the upright pill on the sides.
+    if (onSide()) {
+      this.miniGrid.style.left = `${w / 2 - 14.5}px`;
+      this.miniGrid.style.top = `${hh - 40 - 14.5}px`;
+    } else {
+      this.miniGrid.style.left = `${w - 40 - 14.5}px`;
+      this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
+    }
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
@@ -610,6 +650,8 @@ export class Island {
   private islandRect(): { x: number; y: number; w: number; h: number } {
     const w = this.width.value;
     const hh = this.height.value;
+    // Being moved: centred under the cursor in the overlay.
+    if (this.moveAt) return { x: this.moveAt.x - w / 2, y: this.moveAt.y - hh / 2, w, h: hh };
     const L = geo.layout;
     if (this.collapsed) {
       // The window is only the wake strip; the tab sits in it.
@@ -746,6 +788,11 @@ export class Island {
     this.islandEl.addEventListener("mouseleave", () => {
       this.wasInIsland = false;
       this.fsm.mouseLeft();
+    });
+
+    // Alt + press anywhere on the island moves it.
+    this.islandEl.addEventListener("pointerdown", (e) => {
+      if (e.altKey && e.button === 0) void this.mover.begin(e, this.islandEl);
     });
 
     this.islandEl.addEventListener("mousedown", (e) => {

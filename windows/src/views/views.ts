@@ -21,6 +21,8 @@ export interface ViewActions {
   /** Bring the session's own terminal window to the front (VS Code as a last resort). */
   focusTerminal(task: AgentTask): void;
   removeSession(id: string): void;
+  /** Pick the island up (grip / Alt + press) — move.ts. */
+  beginMove(e: PointerEvent, el: HTMLElement): void;
   /** The ↗ button: opens whatever the focused pill points at. */
   openTarget(): void;
   openUrl(url: string): void;
@@ -115,11 +117,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   // Grip: press and drag to move the island (Alt + drag works anywhere on it).
   const grip = h("div", { class: "grip", title: "Drag to move the island (or Alt + drag)" },
     ...Array.from({ length: 6 }, () => h("i")));
-  grip.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    void Bridge.islandDragBegin();
-  });
+  grip.addEventListener("pointerdown", (e) => actions.beginMove(e, grip));
 
   const el = h(
     "div",

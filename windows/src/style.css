@@ -361,8 +361,79 @@ body {
   opacity: 1;
 }
 
-#root.dragging #island {
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25);
+/* Being moved: the liquid layer sits behind the island, which keeps all its
+   borders while it floats. */
+.move-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root.moving #island {
+  z-index: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  transition: none;
+}
+
+#root.moving #wake-strip {
+  display: none;
+}
+
+/* ── Docked to the bottom: upside down, the header rides the screen edge. ── */
+
+#root[data-edge="bottom"] #content {
+  flex-direction: column-reverse;
+  padding: 10px 10px 8px;
+}
+
+/* ── Docked to a side: the header is a rail down the docked edge. ───────── */
+
+#root[data-edge="left"] #content,
+#root[data-edge="right"] #content {
+  flex-direction: row;
+  padding: 10px 10px 10px 0;
+}
+
+#root[data-edge="right"] #content {
+  flex-direction: row-reverse;
+  padding: 10px 0 10px 10px;
+}
+
+#root[data-edge="left"] #header,
+#root[data-edge="right"] #header {
+  flex-direction: column;
+  width: 34px;
+  height: auto;
+  flex: 0 0 34px;
+  margin: -10px 0;
+  padding: 12px 0;
+}
+
+#root[data-edge="left"] .tabs,
+#root[data-edge="right"] .tabs {
+  flex-direction: column;
+  padding: 0;
+  gap: 6px;
+}
+
+#root[data-edge="left"] .header-actions,
+#root[data-edge="right"] .header-actions {
+  flex-direction: column;
+  margin: auto 0 0;
+  padding: 0;
+  gap: 12px;
+}
+
+#root[data-edge="left"] .grip,
+#root[data-edge="right"] .grip {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+#root[data-edge="left"] #countdown,
+#root[data-edge="right"] #countdown {
+  display: none;
 }
 
 /* Docked to a side: borders on the sides that face the screen. */
@@ -1803,3 +1874,8 @@ input[type="range"]::-webkit-slider-thumb {
   flex-direction: column;
   gap: 6px;
 }
+
+/* The collapse chevron points at the edge the island folds into. */
+#root[data-edge="bottom"] .collapse-btn svg { transform: rotate(180deg); }
+#root[data-edge="left"] .collapse-btn svg { transform: rotate(-90deg); }
+#root[data-edge="right"] .collapse-btn svg { transform: rotate(90deg); }
