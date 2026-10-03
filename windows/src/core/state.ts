@@ -226,6 +226,8 @@ export interface Settings {
   model: string;
   /** Seconds before the idle compact island hides; 0 = never. */
   hideAfter: number;
+  /** "22:00-07:00": no finish/question pop-ups or sounds then; "" = off. */
+  quietHours: string;
   /** Automatic update checks; null = not asked yet. */
   updateCheck: boolean | null;
   /** Always-allowed tool commands or patterns. */
@@ -277,6 +279,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hooksInstalled: false,
   model: "hermes-agent",
   hideAfter: 5,
+  quietHours: "",
   updateCheck: null,
   alwaysAllowedRules: [],
   historyEnabled: true,

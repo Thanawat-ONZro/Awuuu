@@ -11,6 +11,15 @@ import { History, toolFiles, type HistoryCall, type HistoryCtx } from "./history
 import { noteEdit, overlapMessage } from "./overlap";
 import { isPlanTool, reducePlan } from "./plan";
 import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
+import { Nudger } from "./quiet";
+
+/** A pop-up that can wait (quiet.ts): skipped in quiet hours and right after another. */
+const nudges = new Nudger();
+function nudge(island: Island, sec: number, sound?: string) {
+  if (!nudges.allow(State.settings.quietHours ?? "", new Date())) return;
+  if (sound) Sound.play(sound);
+  island.toast("agents", sec);
+}
 
 // ── Two agents, one file ────────────────────────────────────────────────────
 
@@ -21,7 +30,7 @@ function warnOverlap(island: Island, session: AgentTask, taskId: string, tool: s
     const prev = noteEdit(session.id, session.name, f.path);
     if (!prev) continue;
     State.appendStep(taskId, overlapMessage(f.path, prev), "info");
-    island.toast("agents", 6);
+    nudge(island, 6);
   }
 }
 
@@ -480,7 +489,7 @@ function handleHook(island: Island, payload: HookPayload) {
       } else if (message.endsWith("?")) {
         session.state = "question";
         State.appendStep(taskId, message, "info");
-        island.toast("agents", 5);
+        nudge(island, 5);
       }
       break;
     }
@@ -495,12 +504,11 @@ function handleHook(island: Island, payload: HookPayload) {
         // git's entry lands first, so it belongs to this turn.
         void grounded.finally(() => History.done(who(), last ? plainText(last) : null));
       }, who);
-      Sound.play("finish");
       session.pillBadge = "finished";
       if (State.mode === "expanded" && State.view === "agents") {
-        // stay on agents
+        Sound.play("finish");
       } else {
-        island.toast("agents", 5);
+        nudge(island, 5, "finish");
       }
       window.setTimeout(() => {
         if (session.state === "finished") {
