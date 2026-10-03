@@ -18,6 +18,9 @@ const KEY_FOR: Record<string, string> = {
   integration_calcom: "calcom-api-key",
 };
 
+const ALL_IDS = [...Object.keys(KEY_FOR), "integration_calendar", "integration_mail", "integration_todoist",
+  "integration_uptime", "integration_weather", "integration_feeds"];
+
 const clearTimers = new Map<string, number>();
 
 export function registerIntegrationHandlers(island: Island) {
@@ -29,11 +32,10 @@ export function registerIntegrationHandlers(island: Island) {
 
 /** Asks Rust which keys exist so the idle cards can say so. */
 export async function refreshConfigured() {
-  for (const [id, key] of Object.entries(KEY_FOR)) {
-    let present = (await Bridge.secretPresent(key)) ?? false;
-    if (id === "integration_n8n") present = present && ((await Bridge.secretPresent("n8n-url")) ?? false);
+  const on = new Set((await Bridge.integrationsConfigured()) ?? []);
+  for (const id of ALL_IDS) {
     const info = State.integrations[id] ?? { data: {}, error: null, loaded: false, configured: false };
-    State.integrations[id] = { ...info, configured: present };
+    State.integrations[id] = { ...info, configured: on.has(id) };
   }
   State.loadIntegrationTasks();
   State.notify();

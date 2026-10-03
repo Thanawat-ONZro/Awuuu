@@ -100,6 +100,8 @@ export const Bridge = {
     call<{ id: HookAgentId; name: string; present: boolean; hooksInstalled: boolean }[]>("detect_agents"),
   awPathStatus: () => call<boolean>("aw_path_status"),
   awPathSet: (on: boolean) => callOrThrow<boolean>("aw_path_set", { on }),
+  /** Integrations that are set up (their pills show). */
+  integrationsConfigured: () => call<string[]>("integrations_configured"),
   /** Settings → Test on an integration: "Connected." or the reason it failed. */
   integrationTest: (id: string) => callOrThrow<string>("integration_test", { id }),
   /** Settings → Test: a provider's model list. */

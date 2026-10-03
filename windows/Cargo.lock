@@ -247,6 +247,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
+ "tokio-rustls",
+ "webpki-roots",
  "windows 0.61.3",
 ]
 

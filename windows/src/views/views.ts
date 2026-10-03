@@ -11,6 +11,7 @@ import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
+import { EXTRA_IDS, hasExtraData, renderExtraCard, renderToday, weatherChip } from "./today";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -148,25 +149,27 @@ export function buildHeader(actions: ViewActions): ViewHost {
 // ── Overview (Integrations) ──────────────────────────────────────────────────
 
 function buildOverview(actions: ViewActions): ViewHost {
-  const leftBody = h("div", { class: "left-body" });
-  const jump = h(
-    "button",
-    { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
-    svg(ICONS.arrowUpRight, 8),
+  // Today first: one list of what needs you, from every integration. Tap a
+  // pill for that integration's own card; tap Today to come back.
+  const pills = h("div", { class: "hub-pills" });
+  const todayPill = h("button", { class: "today-pill", text: "Today" });
+  todayPill.addEventListener("click", () => {
+    State.overviewToday = true;
+    cardKey = "";
+    actions.blip();
+    State.notify();
+  });
+  const weather = h("span", { class: "today-weather-slot" });
+  const body = h("div", { class: "today-body" });
+  const wrap = h("div", { class: "hub today-wrap" },
+    h("div", { class: "hub-pill-row" }, todayPill, pills, weather),
+    body,
   );
-  const left = card(null, leftBody, jump);
-  const pills = h("div", { class: "pills" });
-  const right = card(null, pills);
+  const el = h("div", { class: "view hub-view overview" }, card(null, wrap));
 
-  const el = h("div", { class: "view overview" },
-    h("div", { class: "left" }, left),
-    h("div", { class: "right" }, right),
-  );
-
-  let pillIds = "";
-  let detailOpen = false;
-  let lastFocus: string | null = null;
+  let pillKey = "";
   let cardKey = "";
+  let detailOpen = false;
 
   const hooks: IntegrationCardHooks = {
     get detailOpen() {
@@ -188,45 +191,49 @@ function buildOverview(actions: ViewActions): ViewHost {
   return {
     el,
     sync() {
-      const task = State.focusTask;
-      if (task?.id !== lastFocus) {
-        lastFocus = task?.id ?? null;
-        detailOpen = false;
-        cardKey = "";
-      }
+      const tasks = State.tasks.filter((t) => t.isIntegration);
+      const focused = State.overviewToday ? null : State.focusTask?.isIntegration ? State.focusTask : null;
+      todayPill.classList.toggle("on", !focused);
 
-      if (task && task.isIntegration) {
-        const info = State.integrations[task.id];
-        const key = [
-          task.id, detailOpen, task.state, task.steps.join("|"),
-          info?.loaded, info?.error, info?.configured,
-          JSON.stringify(info?.data ?? {}),
-        ].join("~");
-        if (key !== cardKey) {
-          cardKey = key;
-          clear(leftBody);
-          leftBody.append(renderIntegrationCard(task, hooks));
-        }
-      } else {
-        clear(leftBody);
-        leftBody.append(
-          h("div", { class: "stack", style: "padding:0 18px 0 118px;justify-content:center;gap:6px" },
-            h("div", { class: "title", text: "Integrations Overview" }),
-            h("div", { class: "sub", text: "Connect GitHub, Stripe, Vercel, Resend in Settings." }),
-          ),
-        );
-      }
-
-      jump.style.display = detailOpen ? "none" : "";
-
-      const others = State.otherTasks.slice(0, 4);
-      const pillKey = others.map((t) => `${t.id}:${t.pillBadge ?? ""}`).join("|");
-      if (pillKey !== pillIds) {
-        pillIds = pillKey;
+      const nextPills = tasks.map((t) => `${t.id}:${t.pillBadge ?? ""}:${focused?.id === t.id ? 1 : 0}`).join("|");
+      if (nextPills !== pillKey) {
+        pillKey = nextPills;
         clear(pills);
-        for (const t of others) pills.append(buildPill(t, actions));
+        for (const t of tasks) {
+          pills.append(buildPill(t, {
+            ...actions,
+            setFocus: (id) => {
+              State.overviewToday = false;
+              detailOpen = false;
+              actions.setFocus(id);
+            },
+          }, focused?.id === t.id));
+        }
         pruneMiniBots();
       }
+
+      const w = weatherChip();
+      clear(weather);
+      if (w) weather.append(w);
+
+      const key = focused
+        ? [focused.id, detailOpen, focused.state, focused.steps.join("|"), JSON.stringify(State.integrations[focused.id] ?? {})].join("~")
+        : `today~${JSON.stringify(State.integrations)}~${Math.floor(Date.now() / 30000)}`;
+      if (key === cardKey) return;
+      cardKey = key;
+      clear(body);
+      if (!focused) {
+        body.append(renderToday(() => actions.openSettingsWindow()));
+      } else if (EXTRA_IDS.has(focused.id)) {
+        const info = State.integrations[focused.id];
+        body.append(hasExtraData(focused.id)
+          ? renderExtraCard(focused.id)
+          : h("div", { class: "today-sub", text: info?.error ?? (info?.configured ? "Loading…" : "Not set up — see Settings.") }));
+      } else {
+        body.append(renderIntegrationCard(focused, hooks));
+      }
+      el.style.setProperty("--agent", focused?.color ?? "#C9956A");
+      el.style.setProperty("--agent-soft", `${focused?.color ?? "#C9956A"}33`);
     },
   };
 }

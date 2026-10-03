@@ -644,6 +644,117 @@ const INTEGRATIONS: IntegrationDef[] = [
 ];
 
 
+// ── Everyday: mail, calendar, tasks, sites, weather, news ──────────────────
+
+function testRow(id: string): HTMLElement {
+  const result = h("span", { class: "hint", style: "font-size:11.5px" });
+  const btn = h("button", { text: "Test" });
+  btn.addEventListener("click", async () => {
+    result.textContent = "Testing…";
+    result.style.color = "";
+    try {
+      result.textContent = await Bridge.integrationTest(id);
+      result.style.color = "#22c55e";
+    } catch (err) {
+      result.textContent = String(err).replace(/^Error:\s*/, "");
+      result.style.color = "#f4505e";
+    }
+  });
+  return h("div", { class: "row" }, btn, result);
+}
+
+function secretField(key: string, placeholder: string): HTMLElement {
+  const input = h("input", { type: "password", placeholder, autocomplete: "off", spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  void Bridge.secretPresent(key).then((has) => {
+    if (has) input.placeholder = "••••••••  (stored)";
+  });
+  const saveBtn = h("button", { text: "Save" });
+  saveBtn.addEventListener("click", async () => {
+    await Bridge.secretSet(key, input.value.trim());
+    input.placeholder = input.value.trim() ? "••••••••  (stored)" : placeholder;
+    input.value = "";
+  });
+  return h("span", { style: "display:flex;gap:6px;flex:1 1 auto;min-width:0" }, input, saveBtn);
+}
+
+function textField(get: () => string, set: (v: string) => void, placeholder: string): HTMLInputElement {
+  const input = h("input", { type: "text", value: get(), placeholder, spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  input.addEventListener("change", () => {
+    set(input.value.trim());
+    void save();
+  });
+  return input;
+}
+
+function listField(get: () => string[], set: (v: string[]) => void, placeholder: string): HTMLTextAreaElement {
+  const area = h("textarea", { rows: "3", placeholder, spellcheck: "false", style: "flex:1 1 auto;min-width:0;resize:vertical" }) as HTMLTextAreaElement;
+  area.value = get().join("\n");
+  area.addEventListener("change", () => {
+    set(area.value.split(/\s*\n\s*/).map((x) => x.trim()).filter((x) => /^https?:\/\//.test(x)));
+    area.value = get().join("\n");
+    void save();
+  });
+  return area;
+}
+
+function everydaySection(): HTMLElement {
+  const host = h("select", {}) as HTMLSelectElement;
+  for (const [v, t] of [["gmail", "Gmail"], ["outlook", "Outlook / Hotmail"], ["icloud", "iCloud"], ["yahoo", "Yahoo"], ["custom", "Other (IMAP host)"]]) {
+    host.append(h("option", { value: v, text: t }));
+  }
+  const customHost = textField(() => (["gmail", "outlook", "icloud", "yahoo"].includes(settings.mailHost) ? "" : settings.mailHost), (v) => (settings.mailHost = v), "imap.example.com:993");
+  host.value = ["gmail", "outlook", "icloud", "yahoo", ""].includes(settings.mailHost ?? "") ? settings.mailHost || "gmail" : "custom";
+  customHost.style.display = host.value === "custom" ? "" : "none";
+  host.addEventListener("change", () => {
+    customHost.style.display = host.value === "custom" ? "" : "none";
+    if (host.value !== "custom") {
+      settings.mailHost = host.value;
+      void save();
+    }
+  });
+  if (!settings.mailHost) settings.mailHost = "gmail";
+
+  const group = (title: string, color: string, hint: string, ...rows: (Node | null)[]) =>
+    h("div", { class: "everyday" },
+      h("div", { class: "everyday-head" }, h("i", { class: "dot", style: `background:${color}` }), h("strong", { text: title })),
+      h("div", { class: "hint", text: hint }),
+      ...rows,
+    );
+
+  return h("section", { id: "everyday" },
+    h("h2", {}, h("span", { text: "Everyday — shown in Today" })),
+    h("div", { class: "hint", text: "These need no special app setup. Passwords, tokens and private links stay in the Windows Credential Manager. Each turns on as soon as it is filled in." }),
+    group("Mail", "#EA4335",
+      "Unread mail and who it is from, with a nudge for new messages. Gmail: turn on 2-step verification, create an app password (myaccount.google.com/apppasswords) and paste it here — not your normal password.",
+      h("div", { class: "row" }, h("label", { text: "Service" }), host, customHost),
+      h("div", { class: "row" }, h("label", { text: "Email" }), textField(() => settings.mailUser ?? "", (v) => (settings.mailUser = v), "you@gmail.com")),
+      h("div", { class: "row" }, h("label", { text: "App password" }), secretField("mail-password", "xxxx xxxx xxxx xxxx")),
+      testRow("integration_mail"),
+    ),
+    group("Calendar", "#4285F4",
+      "Today's meetings with a Join button, and a heads-up 10 minutes before. Google Calendar: Settings → your calendar → \"Secret address in iCal format\". Outlook: Calendar → Shared calendars → Publish → ICS.",
+      h("div", { class: "row" }, h("label", { text: "iCal link" }), secretField("ical-url", "https://calendar.google.com/calendar/ical/…/basic.ics")),
+      testRow("integration_calendar"),
+    ),
+    group("Todoist", "#E44332", "Tasks due today or overdue. Todoist → Settings → Integrations → Developer → API token.",
+      h("div", { class: "row" }, h("label", { text: "API token" }), secretField("todoist-token", "token")),
+      testRow("integration_todoist"),
+    ),
+    group("Uptime", "#22C55E", "Sites to check every 5 minutes; you hear when one goes down or comes back. One URL per line.",
+      h("div", { class: "row" }, listField(() => settings.uptimeUrls ?? [], (v) => (settings.uptimeUrls = v), "https://your-site.com")),
+      testRow("integration_uptime"),
+    ),
+    group("News", "#F59E0B", "RSS or Atom feeds — blogs, release notes, news. One URL per line.",
+      h("div", { class: "row" }, listField(() => settings.rssFeeds ?? [], (v) => (settings.rssFeeds = v), "https://github.com/tauri-apps/tauri/releases.atom")),
+      testRow("integration_feeds"),
+    ),
+    group("Weather", "#38BDF8", "Today's weather and the chance of rain (Open-Meteo, no key).",
+      h("div", { class: "row" }, h("label", { text: "City" }), textField(() => settings.weatherCity ?? "", (v) => (settings.weatherCity = v), "Bangkok")),
+      testRow("integration_weather"),
+    ),
+  );
+}
+
 function integrationsSection(present: Record<string, boolean>): HTMLElement {
   const note = h("div", {
     class: "hint",
@@ -1104,6 +1215,7 @@ async function main() {
     alwaysAllowSection(),
     hermesSection(),
     apiSection(hasKey),
+    everydaySection(),
     integrationsSection(present),
     generalSection(),
     layoutSection(),

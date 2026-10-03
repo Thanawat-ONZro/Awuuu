@@ -15,6 +15,7 @@ mod tray;
 mod transcript;
 mod hermes;
 mod cli;
+mod extras;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -472,9 +473,28 @@ fn secret_clear(app: AppHandle, key: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Which integrations are set up (key, link or list saved): their pills show.
+#[tauri::command]
+fn integrations_configured(app: AppHandle) -> Vec<&'static str> {
+    [
+        "integration_calendar", "integration_mail", "integration_github", "integration_todoist",
+        "integration_uptime", "integration_weather", "integration_feeds", "integration_stripe",
+        "integration_vercel", "integration_resend", "integration_n8n", "integration_notion", "integration_calcom",
+    ]
+    .into_iter()
+    .filter(|id| integrations::configured(id) || extras::configured(&app, id))
+    .collect()
+}
+
 /// Settings → Test on an integration.
 #[tauri::command]
-async fn integration_test(id: String) -> Result<String, String> {
+async fn integration_test(app: AppHandle, id: String) -> Result<String, String> {
+    if matches!(
+        id.as_str(),
+        "integration_mail" | "integration_calendar" | "integration_feeds" | "integration_uptime" | "integration_weather" | "integration_todoist"
+    ) {
+        return extras::test(&app, &id).await;
+    }
     integrations::test(&id).await
 }
 
@@ -690,6 +710,7 @@ pub fn run() {
             secret_clear,
             refresh_integration,
             integration_test,
+            integrations_configured,
             open_n8n,
             open_settings_window,
             aw_path_status,

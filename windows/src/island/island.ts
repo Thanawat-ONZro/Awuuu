@@ -1107,7 +1107,7 @@ export class Island {
     // picked: the overview wears the focused integration's colour, the
     // Agents hub the colour of the session you tapped.
     const tapped = State.view === "agents" && State.mode === "expanded" ? State.focusedAgentSession : null;
-    const tint = State.mode === "expanded" && State.view === "overview" && focus?.isIntegration
+    const tint = State.mode === "expanded" && State.view === "overview" && !State.overviewToday && focus?.isIntegration
       ? focus.color
       : tapped?.color ?? null;
     this.engine.bodyColor = tint ? hexToRGB(tint) : null;

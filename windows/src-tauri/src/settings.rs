@@ -45,6 +45,20 @@ pub struct Settings {
     pub hermes_provider: String,
     #[serde(default)]
     pub reasoning_effort: String,
+    /// Mail integration: "gmail" | "outlook" | "icloud" | "yahoo" | host[:port],
+    /// and the account. The app password lives in the Credential Manager.
+    #[serde(default)]
+    pub mail_host: String,
+    #[serde(default)]
+    pub mail_user: String,
+    /// RSS/Atom feeds and sites to watch (not secret).
+    #[serde(default)]
+    pub rss_feeds: Vec<String>,
+    #[serde(default)]
+    pub uptime_urls: Vec<String>,
+    /// City for the weather.
+    #[serde(default)]
+    pub weather_city: String,
     /// The Welcome page (what hooks and `aw` are) has been read.
     #[serde(default)]
     pub onboarded: bool,
@@ -147,6 +161,11 @@ impl Default for Settings {
             island_width: default_island_width(),
             hub_height: default_hub_height(),
             providers: Vec::new(),
+            mail_host: String::new(),
+            mail_user: String::new(),
+            rss_feeds: Vec::new(),
+            uptime_urls: Vec::new(),
+            weather_city: String::new(),
             onboarded: false,
             hermes_model: String::new(),
             hermes_provider: String::new(),

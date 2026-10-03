@@ -1920,3 +1920,129 @@ input[type="range"]::-webkit-slider-thumb {
 #root[data-edge="bottom"] .collapse-btn svg { transform: rotate(180deg); }
 #root[data-edge="left"] .collapse-btn svg { transform: rotate(-90deg); }
 #root[data-edge="right"] .collapse-btn svg { transform: rotate(90deg); }
+
+/* ── Today ─────────────────────────────────────────────────────────────── */
+
+.today-pill {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim-2);
+  font: 700 11.5px var(--font);
+  cursor: default;
+}
+
+.today-pill.on {
+  background: rgba(201, 149, 106, 0.22);
+  border-color: rgba(201, 149, 106, 0.6);
+  color: var(--ink);
+}
+
+.today-weather-slot {
+  margin-left: auto;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.today-weather {
+  font: 600 11.5px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+}
+
+.today-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.today {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.today-row.link {
+  cursor: pointer;
+}
+
+.today-row.link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.today-row.bad .today-title {
+  color: #f4505e;
+}
+
+.today-icon {
+  flex: 0 0 18px;
+  text-align: center;
+  font: 700 12px var(--font);
+}
+
+.today-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.today-title {
+  font: 500 calc(12.5px * var(--hub-scale, 1)) var(--font);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-sub {
+  font: 400 calc(11px * var(--hub-scale, 1)) var(--font);
+  color: var(--dim-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-action {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: #4285f4;
+  color: #fff;
+  font: 700 11px var(--font);
+  cursor: default;
+}
+
+.today-empty {
+  padding: 18px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.today-weather-big {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 4px;
+}
+
+.today-weather-big .big {
+  font: 700 28px var(--font);
+  color: var(--ink);
+}

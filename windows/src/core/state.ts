@@ -107,6 +107,12 @@ const task = (
 
 /** AgentTask.integrationAgents — pure integrations without static VS Code. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
+  task("integration_calendar", "Calendar", "#4285F4", "integration"),
+  task("integration_mail", "Mail", "#EA4335", "integration"),
+  task("integration_todoist", "Todoist", "#E44332", "integration"),
+  task("integration_uptime", "Uptime", "#22C55E", "integration"),
+  task("integration_weather", "Weather", "#38BDF8", "integration"),
+  task("integration_feeds", "News", "#F59E0B", "integration"),
   task("integration_resend", "Resend", "#22C55E", "integration"),
   task("integration_n8n", "n8n", "#F29B38", "integration"),
   task("integration_vercel", "Vercel", "#7C5CFF", "integration"),
@@ -151,6 +157,11 @@ export interface Settings {
   providers: ChatProvider[];
   /** "" = Hermes / Claude by `model`; else a provider id. */
   chatProvider: string;
+  mailHost: string;
+  mailUser: string;
+  rssFeeds: string[];
+  uptimeUrls: string[];
+  weatherCity: string;
   /** The Welcome page has been read. */
   onboarded: boolean;
   /** Hermes chat: model + provider for the turn ("" = Hermes' default) and effort. */
@@ -189,6 +200,11 @@ export const DEFAULT_SETTINGS: Settings = {
   hubHeight: 290,
   providers: [],
   chatProvider: "",
+  mailHost: "",
+  mailUser: "",
+  rssFeeds: [],
+  uptimeUrls: [],
+  weatherCity: "",
   onboarded: false,
   hermesModel: "",
   hermesProvider: "",
@@ -272,6 +288,8 @@ class AppState {
   }
 
   integrations: Record<string, IntegrationInfo> = {};
+  /** The overview shows Today (true) or the focused integration's card. */
+  overviewToday = true;
 
   lastActivity = performance.now();
 

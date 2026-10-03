@@ -320,3 +320,26 @@ section.welcome.folded h2::after {
   color: #f5a524;
   font-size: 12px;
 }
+
+.everyday {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.everyday-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.everyday textarea {
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font: 12px ui-monospace, monospace;
+}

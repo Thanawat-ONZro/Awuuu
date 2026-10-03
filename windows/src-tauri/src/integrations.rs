@@ -41,7 +41,7 @@ pub struct IntegrationEvent {
     pub detail: Option<String>,
 }
 
-fn emit(app: &AppHandle, update: IntegrationUpdate) {
+pub fn emit(app: &AppHandle, update: IntegrationUpdate) {
     let _ = app.emit_to(WINDOW_LABEL, "integration", update);
 }
 
@@ -68,7 +68,13 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_resend", 6, 60, poll_resend);
     spawn(app.clone(), "integration_github", 7, 300, poll_github);
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
-    spawn(app, "integration_notion", 9, 300, poll_notion);
+    spawn(app.clone(), "integration_notion", 9, 300, poll_notion);
+    spawn(app.clone(), "integration_mail", 4, 120, crate::extras::poll_mail);
+    spawn(app.clone(), "integration_calendar", 5, 300, crate::extras::poll_calendar);
+    spawn(app.clone(), "integration_feeds", 10, 900, crate::extras::poll_feeds);
+    spawn(app.clone(), "integration_uptime", 11, 300, crate::extras::poll_uptime);
+    spawn(app.clone(), "integration_weather", 12, 1800, crate::extras::poll_weather);
+    spawn(app, "integration_todoist", 13, 300, crate::extras::poll_todoist);
 }
 
 /// An integration is on when its key is saved (n8n needs its URL too). There
@@ -93,8 +99,8 @@ fn key_for(id: &str) -> Option<&'static str> {
     })
 }
 
-fn enabled(_app: &AppHandle, id: &str) -> bool {
-    configured(id)
+fn enabled(app: &AppHandle, id: &str) -> bool {
+    configured(id) || crate::extras::configured(app, id)
 }
 
 /// The service could not be reached at all: the card says so instead of
@@ -154,6 +160,12 @@ pub async fn test(id: &str) -> Result<String, String> {
     }
 }
 
+/// The first GitHub poll only fills the card (no events for old reviews).
+fn first_github_poll() -> bool {
+    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    !DONE.swap(true, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Bookings already announced as starting soon.
 static ANNOUNCED: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
@@ -190,6 +202,12 @@ pub async fn poll_once(app: AppHandle, id: &str) {
         "integration_resend" => poll_resend(app).await,
         "integration_notion" => poll_notion(app).await,
         "integration_calcom" => poll_calcom(app).await,
+        "integration_mail" => crate::extras::poll_mail(app).await,
+        "integration_calendar" => crate::extras::poll_calendar(app).await,
+        "integration_feeds" => crate::extras::poll_feeds(app).await,
+        "integration_uptime" => crate::extras::poll_uptime(app).await,
+        "integration_weather" => crate::extras::poll_weather(app).await,
+        "integration_todoist" => crate::extras::poll_todoist(app).await,
         _ => {}
     }
 }
@@ -439,9 +457,52 @@ async fn poll_github(app: AppHandle) {
         }
     }
 
+    // Pull requests waiting for your review, and your own open ones.
+    let search = |q: String| gh(format!("https://api.github.com/search/issues?q={}&per_page=6&sort=updated", q.replace(' ', "+")));
+    let prs = |v: Value| -> Vec<Value> {
+        v["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|i| {
+                let repo = i["repository_url"].as_str().unwrap_or("").rsplit('/').take(2).collect::<Vec<_>>();
+                json!({
+                    "title": i["title"],
+                    "url": i["html_url"],
+                    "repo": if repo.len() == 2 { format!("{}/{}", repo[1], repo[0]) } else { String::new() },
+                    "updated": i["updated_at"],
+                })
+            })
+            .collect()
+    };
+    let mut reviews = Vec::new();
+    let mut mine = Vec::new();
+    if !login.is_empty() {
+        if let Ok(r) = search(format!("is:open is:pr review-requested:{login}")).send().await {
+            if r.status().is_success() {
+                reviews = prs(r.json().await.unwrap_or(json!({})));
+            }
+        }
+        if let Ok(r) = search(format!("is:open is:pr author:{login}")).send().await {
+            if r.status().is_success() {
+                mine = prs(r.json().await.unwrap_or(json!({})));
+            }
+        }
+    }
+    let quiet = first_github_poll();
+    for pr in &reviews {
+        let url = pr["url"].as_str().unwrap_or("").to_string();
+        if ANNOUNCED.lock().unwrap().insert(format!("gh-review-{url}")) && event.is_none() && !quiet {
+            event = Some(IntegrationEvent { success: true, label: format!("Review requested · {}", pr["title"].as_str().unwrap_or("")), detail: None });
+        }
+    }
+
     emit(&app, IntegrationUpdate {
         id: "integration_github",
         data: json!({
+            "reviewRequests": reviews,
+            "myPrs": mine,
             "totalRepos": public + private,
             "totalStars": stars,
             "login": login,

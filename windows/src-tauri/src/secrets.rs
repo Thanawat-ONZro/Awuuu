@@ -18,6 +18,9 @@ pub const KNOWN_KEYS: &[&str] = &[
     "resend-api-key",
     "notion-api-key",
     "calcom-api-key",
+    "mail-password",
+    "ical-url",
+    "todoist-token",
 ];
 
 /// `provider-key:<id>` for a chat provider added in Settings: a short id of
