@@ -67,6 +67,67 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
     })
 }
 
+/// A free name in the inbox: "name", then "name (2)"…
+fn free_name(dir: &Path, name: &str) -> PathBuf {
+    let dest = dir.join(name);
+    if !dest.exists() {
+        return dest;
+    }
+    let p = Path::new(name);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let ext = p.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
+    for i in 2..1000 {
+        let candidate = dir.join(format!("{stem} ({i}){ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    dest
+}
+
+/// A dropped file given as bytes: written into the inbox under its own name,
+/// stripped of any path or characters Windows won't take.
+pub fn ingest_bytes(name: &str, bytes: &[u8]) -> Result<DroppedFile, String> {
+    let clean: String = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("file")
+        .chars()
+        .map(|c| if "<>:\"|?*".contains(c) || c.is_control() { '_' } else { c })
+        .collect();
+    let clean = clean.trim().trim_matches('.').to_string();
+    let clean = if clean.is_empty() { "file".to_string() } else { clean };
+    let dir = inbox_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = free_name(&dir, &clean);
+    std::fs::write(&dest, bytes).map_err(|e| format!("cannot save: {e}"))?;
+    sweep(&dir);
+    Ok(DroppedFile {
+        name: dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(clean),
+        path: dest.to_string_lossy().to_string(),
+        size: bytes.len() as u64,
+    })
+}
+
+/// `%E0%B8%81.txt` → `ก.txt` (headers carry ASCII only).
+pub fn uri_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
 /// Drops anything copied here more than a week ago. `ingest` stamps every copy
 /// with the time it landed, so this really is the age of the copy and not the
 /// age of whatever the user happened to drag in.
@@ -85,6 +146,15 @@ fn sweep(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_and_names_are_safe() {
+        assert_eq!(uri_decode("%E0%B8%81.txt"), "ก.txt");
+        let f = ingest_bytes("..\\..\\evil:name?.txt", b"x").unwrap();
+        assert!(f.path.starts_with(inbox_dir().to_string_lossy().as_ref()));
+        assert_eq!(f.name, "evil_name_.txt");
+        let _ = std::fs::remove_file(&f.path);
+    }
 
     #[test]
     fn ingest_copies_and_never_overwrites() {

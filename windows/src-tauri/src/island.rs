@@ -129,11 +129,13 @@ fn cursor_physical() -> Option<(f64, f64)> {
 ///
 /// Cheap and idempotent, so it is simply re-run whenever a drag might be starting.
 pub fn unblock_webview_drops(app: &AppHandle) {
-    for label in [WINDOW_LABEL, "settings"] {
-        let Some(win) = app.get_webview_window(label) else { continue };
-        let Some(hwnd) = hwnd_of(&win) else { continue };
-        unsafe {
-            let _ = EnumChildWindows(Some(hwnd), Some(revoke_render_widget), LPARAM(0));
+    // The island takes drops in the page itself (HTML5, WebView2's own
+    // target), so only the settings window needs wry's target uncovered.
+    if let Some(win) = app.get_webview_window("settings") {
+        if let Some(hwnd) = hwnd_of(&win) {
+            unsafe {
+                let _ = EnumChildWindows(Some(hwnd), Some(revoke_render_widget), LPARAM(0));
+            }
         }
     }
 }
@@ -481,6 +483,10 @@ struct Watch {
     hovered_notch: bool,
     /// The current press is a drag from outside that has reached the panel.
     drag_in: bool,
+    /// When the current press began.
+    press_time: Instant,
+    /// A drag from elsewhere came near the hidden island and woke it.
+    drag_near: bool,
     last: (f64, f64),
     geometry: Option<Geometry>,
     last_screen: Option<(i32, i32, u32, u32, u64)>,
@@ -501,6 +507,8 @@ impl Watch {
             press_at: (0.0, 0.0),
             hovered_notch: false,
             drag_in: false,
+            press_time: Instant::now(),
+            drag_near: false,
             last: (f64::MIN, f64::MIN),
             geometry: None,
             last_screen: None,
@@ -618,7 +626,13 @@ impl Watch {
         // A press may be the start of a drag: make sure the drop target is ours
         // before the file arrives. Recorded while collapsed too — a file is
         // usually picked up while the island sleeps, then dragged onto the notch.
+        if edge == Some(false) && self.drag_near {
+            // Released: if no file reached the island, it may fold away again.
+            self.drag_near = false;
+            let _ = win.emit("notch-drag-end", ());
+        }
         if edge == Some(true) {
+            self.press_time = Instant::now();
             self.pressed_outside = !in_window;
             self.pressed_under = active && in_window && self.gate.ignoring.load(Ordering::Relaxed);
             self.pressed_off_island = active && !on_island;
@@ -682,12 +696,28 @@ impl Watch {
     /// pressing on it wakes the island.
     fn collapsed_event(&mut self, win: &WebviewWindow, g: Geometry, cx: f64, cy: f64, edge: Option<bool>) {
         self.cursor_pending = None;
-        let margin = (6.0 * g.scale).round() as i32;
         let (cx, cy) = (cx as i32, cy as i32);
-        let in_notch = cx >= g.origin.x - margin
-            && cx <= g.origin.x + g.size.width as i32 + margin
-            && cy >= g.origin.y
-            && cy <= g.origin.y + g.size.height as i32 + margin;
+        let around = |m: f64| {
+            let m = (m * g.scale).round() as i32;
+            cx >= g.origin.x - m
+                && cx <= g.origin.x + g.size.width as i32 + m
+                && cy >= g.origin.y - m
+                && cy <= g.origin.y + g.size.height as i32 + m
+        };
+        let in_notch = around(6.0);
+
+        // Something (a file, usually) is being dragged from elsewhere toward
+        // the sleeping island: wake it on its drop page before it arrives.
+        if self.down
+            && self.pressed_outside
+            && !self.drag_near
+            && self.press_time.elapsed() > Duration::from_millis(250)
+            && around(80.0)
+        {
+            self.drag_near = true;
+            self.unblock_drops();
+            let _ = win.emit("notch-drag-near", ());
+        }
 
         if in_notch && edge == Some(true) {
             let _ = win.emit("notch-click", ());

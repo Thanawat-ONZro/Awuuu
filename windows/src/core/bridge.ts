@@ -123,6 +123,11 @@ export const Bridge = {
   updateCheckNow: () => call<void>("update_check_now"),
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
+  /** A dropped File (no path in the page): its bytes go straight to the inbox. */
+  ingestBytes: async (file: File) =>
+    callOrThrowRaw<DroppedFile>("ingest_bytes", new Uint8Array(await file.arrayBuffer()), {
+      "x-file-name": encodeURIComponent(file.name),
+    }),
   /** Only ever tells you whether a key exists — never its value. */
   secretPresent: (key: string) => call<boolean>("secret_present", { key }),
   secretSet: (key: string, value: string) => callOrThrow<void>("secret_set", { key, value }),
@@ -170,6 +175,11 @@ export interface HookPreview {
 }
 
 /** Same as `call`, but surfaces the error so the UI can show what went wrong. */
+async function callOrThrowRaw<T>(cmd: string, body: Uint8Array, headers: Record<string, string>): Promise<T> {
+  if (!IS_TAURI) throw new Error("not running inside Awuuu");
+  return invoke<T>(cmd, body, { headers });
+}
+
 async function callOrThrow<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!IS_TAURI) throw new Error("not running inside Awuuu");
   return invoke<T>(cmd, args);

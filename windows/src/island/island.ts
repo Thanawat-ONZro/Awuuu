@@ -2,7 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core/bridge";
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
@@ -47,6 +47,8 @@ export class Island {
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
   private mover!: Mover;
+  /** The drop page was opened by a drag coming near (notch-drag-near). */
+  private dropWoke = false;
   /** Set while the island is being moved (move.ts). */
   private moveAt: { x: number; y: number; transform: string } | null = null;
   private resizeGrip!: HTMLElement;
@@ -455,7 +457,36 @@ export class Island {
 
   // ── File drop ───────────────────────────────────────────────────────────────
 
-  private onDragDrop(e: { type: string; paths?: string[] }) {
+  /** HTML5 drag events in the page: WebView2 delivers files dropped on the island. */
+  private wireHtmlDrop() {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    let depth = 0;
+    window.addEventListener("dragenter", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (depth++ === 0) this.onDragDrop({ type: "enter" });
+    });
+    window.addEventListener("dragover", (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+    window.addEventListener("dragleave", (e) => {
+      if (!hasFiles(e)) return;
+      if (--depth <= 0) {
+        depth = 0;
+        this.onDragDrop({ type: "leave" });
+      }
+    });
+    window.addEventListener("drop", (e) => {
+      e.preventDefault();
+      depth = 0;
+      const file = e.dataTransfer?.files?.[0];
+      this.onDragDrop({ type: "drop", file: file ?? undefined });
+    });
+  }
+
+  private onDragDrop(e: { type: string; paths?: string[]; file?: File }) {
     if (e.type !== "over") void Bridge.log(`drag ${e.type} ${e.paths?.length ?? 0} file(s)`);
     if (State.paused) return;
     switch (e.type) {
@@ -482,12 +513,16 @@ export class Island {
       case "drop": {
         State.fileDragOver = false;
         const path = e.paths?.[0];
+        if (e.file) {
+          this.swallow(e.file.name, () => Bridge.ingestBytes(e.file!));
+          break;
+        }
         if (!path) {
           this.engine.animateMorph(0);
           this.setView(State.defaultView());
           return;
         }
-        this.swallow(path);
+        this.swallow(path.split(/[\\/]/).pop() || "file", () => Bridge.ingestFile(path));
         break;
       }
     }
@@ -498,8 +533,8 @@ export class Island {
    * the inbox runs in the background and swaps the path in when it lands, so a
    * slow disk can never stall the animation — same as FileDropHandler on macOS.
    */
-  private swallow(path: string) {
-    const name = path.split(/[\\/]/).pop() || "file";
+  private swallow(name: string, ingest: () => Promise<DroppedFile>) {
+    const path = "";
     State.droppedFile = { name, path };
     State.promptContext = { kind: "file", name, path };
     State.chatHistory = [];
@@ -518,7 +553,7 @@ export class Island {
     this.setView("uploading");
     this.ensureRunning();
 
-    void Bridge.ingestFile(path)
+    void ingest()
       .then((file) => {
         State.droppedFile = { name: file.name, path: file.path };
         State.promptContext = { kind: "file", name: file.name, path: file.path };
@@ -823,6 +858,19 @@ export class Island {
     });
 
     void onDragDrop((e) => this.onDragDrop(e));
+    this.wireHtmlDrop();
+    // A drag from elsewhere is heading for the sleeping island: open the drop page.
+    void onEvent<null>("notch-drag-near", () => {
+      if (State.paused || UploadSeq.isActive) return;
+      this.dropWoke = true;
+      this.alert("upload", true);
+    });
+    void onEvent<null>("notch-drag-end", () => {
+      window.setTimeout(() => {
+        if (this.dropWoke && !State.fileDragOver && !UploadSeq.isActive && State.view === "upload") this.collapse();
+        this.dropWoke = false;
+      }, 400);
+    });
 
     // Outside Tauri (plain browser) drive the cursor from DOM events so the
     // island can be inspected with `npm run dev`.

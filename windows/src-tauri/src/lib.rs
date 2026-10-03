@@ -429,6 +429,22 @@ fn ingest_file(path: String) -> Result<DroppedFile, String> {
     files::ingest(&path)
 }
 
+/// A file dropped on the island arrives as its bytes (the page gets no path):
+/// the raw IPC body, its name in the `x-file-name` header (URI-encoded).
+#[tauri::command]
+fn ingest_bytes(request: tauri::ipc::Request<'_>) -> Result<DroppedFile, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the file's bytes".into());
+    };
+    let name = request
+        .headers()
+        .get("x-file-name")
+        .and_then(|v| v.to_str().ok())
+        .map(files::uri_decode)
+        .unwrap_or_else(|| "file".into());
+    files::ingest_bytes(&name, bytes)
+}
+
 /// The island may only ask whether a key exists — never read it.
 #[tauri::command]
 fn secret_present(key: String) -> bool {
@@ -618,6 +634,7 @@ pub fn run() {
             hermes_status,
             update_check_now,
             ingest_file,
+            ingest_bytes,
             secret_present,
             secret_set,
             secret_clear,
