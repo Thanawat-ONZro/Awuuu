@@ -184,6 +184,17 @@ export interface Settings {
   updateCheck: boolean | null;
   /** Always-allowed tool commands or patterns. */
   alwaysAllowedRules: string[];
+  /** Keep what the agents did for the dashboard, and for how many days. */
+  historyEnabled: boolean;
+  historyDays: number;
+  /** Height of the open chat, px (0 = grows with the conversation). */
+  chatHeight: number;
+  /** How Awuuu looks (mochi/dog.ts DogLook); null = the classic Shiba. */
+  dog: Record<string, unknown> | null;
+  /** OAuth client ids for "Sign in with…". */
+  googleClientId: string;
+  microsoftClientId: string;
+  githubClientId: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -219,6 +230,13 @@ export const DEFAULT_SETTINGS: Settings = {
   hideAfter: 5,
   updateCheck: null,
   alwaysAllowedRules: [],
+  historyEnabled: true,
+  historyDays: 7,
+  chatHeight: 0,
+  dog: null,
+  googleClientId: "",
+  microsoftClientId: "",
+  githubClientId: "",
 };
 
 type Listener = () => void;

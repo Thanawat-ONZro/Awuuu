@@ -547,9 +547,9 @@ fn create_settings_window(app: &AppHandle) {
     let url = settings_page_url(app);
     match WebviewWindowBuilder::new(app, "settings", url)
         .additional_browser_args(BROWSER_ARGS)
-        .title("Settings — Awuuu")
-        .inner_size(560.0, 680.0)
-        .min_inner_size(460.0, 480.0)
+        .title("Awuuu")
+        .inner_size(1040.0, 720.0)
+        .min_inner_size(560.0, 480.0)
         .resizable(true)
         .visible(false)
         .center()
@@ -622,7 +622,8 @@ fn detect_agents() -> Vec<AgentFound> {
     .collect()
 }
 
-/// Opens Settings scrolled to one agent's section (`aw setup <agent>`).
+/// Opens the Awuuu window at a page ("sessions", "chat"…) or at one agent's
+/// card (`aw setup <agent>`).
 pub fn open_settings_at(app: &AppHandle, agent: &str) {
     show_settings_window(app);
     if !agent.is_empty() {
@@ -643,8 +644,9 @@ fn aw_path_set(on: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn open_settings_window(app: AppHandle) {
-    show_settings_window(&app);
+fn open_settings_window(app: AppHandle, page: Option<String>) {
+    // `page`: a page of the Awuuu window ("sessions", "agents", "chat"…).
+    open_settings_at(&app, page.as_deref().unwrap_or(""));
 }
 
 pub fn run() {

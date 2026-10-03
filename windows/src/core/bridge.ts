@@ -66,7 +66,8 @@ export const Bridge = {
 
   quit: () => call<void>("quit_app"),
 
-  openSettingsWindow: () => call<void>("open_settings_window"),
+  /** Opens the Awuuu window, optionally at a page ("sessions", "chat", "agents"…). */
+  openSettingsWindow: (page?: string) => call<void>("open_settings_window", { page: page ?? null }),
 
   /** Writes to %LOCALAPPDATA%\Awuuu\awuuu.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),
@@ -150,9 +151,92 @@ export const Bridge = {
   /** Opens the configured n8n instance in the browser. */
   openN8n: () => call<void>("open_n8n"),
 
+  // ── Usage limits, history (usage.rs, history.rs) ──────────────────────────
+  /** Plan limits of the connected agents, read from files on this PC. */
+  usageRead: () => call<AgentUsage[]>("usage_read"),
+  /** Claude Code's status line feeds the Claude limits (same flow as hooks). */
+  statuslineStatus: () => call<HookStatus>("statusline_status"),
+  statuslinePreview: (install: boolean) => callOrThrow<HookPreview>("statusline_preview", { install }),
+  statuslineApply: (install: boolean, fingerprint: string) =>
+    callOrThrow<string>("statusline_apply", { install, fingerprint }),
+  /** Upserts activity entries by id (the island reports what the agents do). */
+  historyAppend: (entries: HistoryEntry[], sessions: Record<string, HistorySession>) =>
+    call<void>("history_append", { entries, sessions }),
+  /** Everything kept, oldest first (`sinceMs` = only entries at or after it). */
+  historyQuery: (sinceMs?: number) => call<HistoryData>("history_query", { sinceMs: sinceMs ?? null }),
+  /** Forgets everything and deletes history.json. */
+  historyClear: () => callOrThrow<void>("history_clear"),
+  /** Where history.json lives and how big it is. */
+  historyInfo: () => call<{ path: string; bytes: number; entries: number }>("history_info"),
+  /** Saves `<name>.md` and `<name>.json` to Downloads; returns the paths. */
+  exportFiles: (name: string, markdown: string, json: string) =>
+    callOrThrow<string[]>("export_files", { name, markdown, json }),
+  /** Shows a file in Explorer. */
+  revealFile: (path: string) => call<void>("reveal_file", { path }),
+
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
 };
+
+export interface UsageLimit {
+  /** "5-hour", "Week", "Month"… */
+  label: string;
+  /** 0–100. */
+  usedPercent: number;
+  /** Epoch ms; null when unknown or already reset. */
+  resetsAt: number | null;
+}
+
+export interface AgentUsage {
+  /** "claude" | "codex". */
+  agent: string;
+  /** Plan name when the agent reports one ("free", "pro"…). */
+  plan: string | null;
+  limits: UsageLimit[];
+  /** When the numbers were written (epoch ms). */
+  updatedAt: number | null;
+  /** Set when something must be installed first: "statusline". */
+  setup: string | null;
+}
+
+export type HistoryKind =
+  | "prompt" | "say" | "read" | "edit" | "write" | "run" | "search" | "web"
+  | "agent" | "mcp" | "skill" | "plan" | "tool" | "done" | "error";
+
+export type HistoryStatus = "running" | "waiting" | "ok" | "failed" | "stopped" | "info";
+
+/** One thing an agent did. Start and result share an id and are merged. */
+export interface HistoryEntry {
+  /** `<session>:<tool use id>` or `<session>:<n>`. */
+  id: string;
+  session: string;
+  /** "claude" | "agy" | "hermes" | "opencode" | "codex". */
+  agent: string;
+  /** Epoch ms. */
+  at: number;
+  kind: HistoryKind;
+  /** Tool name as the agent calls it ("Bash", "Edit"…), "" for prompt/say/done. */
+  tool: string;
+  /** One line: the prompt, the command, the file, what was said. */
+  title: string;
+  /** Longer text: command output (clipped), the agent's summary… */
+  detail?: string;
+  files?: { path: string; change: "read" | "edit" | "write" | "delete" }[];
+  status: HistoryStatus;
+  /** How long it took. */
+  ms?: number;
+}
+
+export interface HistorySession {
+  cwd?: string;
+  /** The name shown in the hub. */
+  name?: string;
+}
+
+export interface HistoryData {
+  entries: HistoryEntry[];
+  sessions: Record<string, HistorySession>;
+}
 
 export interface IntegrationUpdate {
   id: string;

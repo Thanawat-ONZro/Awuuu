@@ -9,6 +9,7 @@ use crate::island::WINDOW_LABEL;
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Awuuu", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard…", true, None::<&str>)?;
     let updates = MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset-position", "Reset island position", true, None::<&str>)?;
@@ -17,14 +18,15 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&open, &sep1, &welcome, &settings, &reset, &updates, &pause, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &sep1, &dashboard, &welcome, &settings, &reset, &updates, &pause, &sep2, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("awuuu")
         .tooltip("Awuuu")
         .menu(&menu)
         .on_menu_event(|app: &AppHandle, event| match event.id.as_ref() {
             "quit" => app.exit(0),
-            "settings" => crate::show_settings_window(app),
+            "settings" => crate::open_settings_at(app, "settings"),
+            "dashboard" => crate::open_settings_at(app, "sessions"),
             "updates" => crate::updater::check_now(app),
             "reset-position" => crate::reset_island_position(app),
             "welcome" => crate::open_settings_at(app, "welcome"),

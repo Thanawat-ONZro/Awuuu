@@ -82,6 +82,25 @@ pub struct Settings {
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+    /// Keep what the agents did (history.json) for the dashboard, and for how
+    /// many days (1–90).
+    #[serde(default = "yes")]
+    pub history_enabled: bool,
+    #[serde(default = "default_history_days")]
+    pub history_days: u32,
+    /// Height of the open chat, logical px (0 = grows with the conversation).
+    #[serde(default)]
+    pub chat_height: f64,
+    /// How Awuuu looks (coat, ears, tail…). The front end owns the shape.
+    #[serde(default)]
+    pub dog: serde_json::Value,
+    /// OAuth client ids for "Sign in with…" (public identifiers, not secrets).
+    #[serde(default)]
+    pub google_client_id: String,
+    #[serde(default)]
+    pub microsoft_client_id: String,
+    #[serde(default)]
+    pub github_client_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,6 +131,10 @@ fn one() -> f64 {
 
 fn yes() -> bool {
     true
+}
+
+fn default_history_days() -> u32 {
+    7
 }
 
 fn default_log_lines() -> u32 {
@@ -180,6 +203,13 @@ impl Default for Settings {
             model: default_model(),
             hide_after: default_hide_after(),
             update_check: None,
+            history_enabled: true,
+            history_days: default_history_days(),
+            chat_height: 0.0,
+            dog: serde_json::Value::Null,
+            google_client_id: String::new(),
+            microsoft_client_id: String::new(),
+            github_client_id: String::new(),
         }
     }
 }
