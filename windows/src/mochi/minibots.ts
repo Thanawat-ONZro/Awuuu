@@ -1,7 +1,9 @@
 // Mini Mochis (pills + compact grid) — port of MiniBotCanvasView.
 // Each canvas owns a BotEngine; the island's frame loop ticks every live one.
+// Every agent wears its own dog (looks.ts lookForAgent), not a flat colour.
 
-import { BotEngine, hexToRGB } from "./engine";
+import { BotEngine } from "./engine";
+import { lookForAgent } from "./looks";
 import type { AgentTask } from "../core/state";
 
 interface MiniBot {
@@ -39,7 +41,7 @@ export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
 
   const engine = new BotEngine();
   engine.isMini = true;
-  engine.bodyColor = hexToRGB(task.color);
+  engine.setLook(lookForAgent(task.source, task.color), false);
   engine.setState(task.state, true);
   if (task.emote) engine.setPermanentEmote(task.emote);
   if (task.miniEye) {
@@ -68,7 +70,7 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
     const task = tasks.find((t) => t.id === mb.taskId);
     if (!task) continue;
     mb.engine.setState(task.state);
-    mb.engine.bodyColor = hexToRGB(task.color);
+    mb.engine.setLook(lookForAgent(task.source, task.color));
   }
 }
 

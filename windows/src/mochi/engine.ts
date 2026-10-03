@@ -8,9 +8,10 @@ import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 import {
-  DOG, drawBrows, drawEars, drawMuzzle, drawTail,
-  type DogMouth, type FacePose,
+  drawBrows, drawCollarTag, drawEars, drawEarsFront, drawMuzzle, drawTail, paintCoat, paletteFor,
+  type CoatPose, type DogMouth, type FacePose, type Palette,
 } from "./dog";
+import { CLASSIC, sameLook, type DogLook } from "./looks";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ interface Tween {
 type PropKey =
   | "yaw" | "pitch" | "roll" | "tilt" | "open" | "sx" | "sy"
   | "oy" | "ox" | "tint" | "morph" | "hands" | "blush" | "es" | "badgeS"
-  | "wag" | "ear";
+  | "wag" | "ear" | "lookFade";
 
 interface BotStateCfg {
   color: RGB;
@@ -70,8 +71,6 @@ const EYE_H = 0.27;
 const EYE_SP = 0.37;
 // Eyes sit a little higher than Mochi's to leave room for Awuuu's muzzle.
 const EYE_P = -0.03;
-const BASE_TOP: RGB = DOG.furTop;
-const BASE_BOTTOM: RGB = DOG.furBottom;
 const INK = "rgb(26,20,18)"; // #1A1412
 const MINI_INK = "rgb(16,19,26)"; // #10131A
 
@@ -172,8 +171,12 @@ const FONT = `system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif`;
 
 export class BotEngine {
   isMini = false;
-  /** Solid body colour for mini bots / integration pills (null = Mochi gradient). */
-  bodyColor: RGB | null = null;
+
+  // The dog being drawn; while a look change cross-fades, the previous one too.
+  private pal: Palette = paletteFor(CLASSIC);
+  private prevPal: Palette | null = null;
+  lookFade = 1;
+  private coat: CoatPose = { faceX: 0, faceY: 0, squash: 1, faceAlpha: 1, alpha: 1, small: false };
 
   // Animated state (BotEngine `s`)
   yaw = 0; pitch = 0; roll = 0; tilt = 0; open = 1;
@@ -281,6 +284,29 @@ export class BotEngine {
       default:
         if (prev !== "idle" || next !== "idle") this.blink();
     }
+  }
+
+  get look(): DogLook {
+    return this.pal.look;
+  }
+
+  /**
+   * Changes how the dog looks (coat, markings, ears, tail, eyes, collar).
+   * With `fade` the old look dissolves into the new one over a few frames.
+   */
+  setLook(look: DogLook, fade = true) {
+    if (sameLook(look, this.pal.look)) return;
+    if (fade) {
+      this.prevPal = this.pal;
+      this.lookFade = 0;
+      this.anim("lookFade", [[1, 200, Ease.out]], () => { this.prevPal = null; });
+    } else {
+      this.tweens.delete("lookFade");
+      this.locks.delete("lookFade");
+      this.prevPal = null;
+      this.lookFade = 1;
+    }
+    this.pal = paletteFor(look);
   }
 
   setBadge(b: Badge | null) {
@@ -757,6 +783,36 @@ export class BotEngine {
     const cx = W / 2 + this.ox * R;
     const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
 
+    const t = now();
+    this.earPerk += (this.earPerkTarget() - this.earPerk) * 0.12;
+
+    const prev = this.prevPal;
+    if (prev && this.lookFade < 1) {
+      // Look change: the new dog fades in over the old one.
+      const next = this.pal;
+      this.pal = prev;
+      this.drawDog(x, R, rx, ry, cx, cy, t, false);
+      this.pal = next;
+      x.save();
+      x.globalAlpha *= this.lookFade;
+      this.drawDog(x, R, rx, ry, cx, cy, t, true);
+      x.restore();
+    } else {
+      this.drawDog(x, R, rx, ry, cx, cy, t, true);
+    }
+
+    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
+      this.drawBadge(x, this.badge, R, cx, cy);
+    }
+    this.drawParticles(x, R, cx, cy);
+  }
+
+  /** The whole dog in the current look. `ease` advances the eased parts (once per frame). */
+  private drawDog(
+    x: CanvasRenderingContext2D,
+    R: number, rx: number, ry: number, cx: number, cy: number, t: number, ease: boolean,
+  ) {
+    const pal = this.pal;
     this.drawHandsBehind(x, R, rx, ry, cx, cy);
 
     x.save();
@@ -764,27 +820,26 @@ export class BotEngine {
     if (this.tilt !== 0) x.rotate(this.tilt);
     x.scale(this.sx, this.sy);
 
-    const t = now();
     const dogA = Math.max(0, 1 - this.morph * 2.2);
-    this.earPerk += (this.earPerkTarget() - this.earPerk) * 0.12;
     if (!this.isMini && R > 14 && dogA > 0.01) {
       x.save();
       x.globalAlpha *= dogA;
-      drawTail(x, rx, ry, this.tailWag(t), this.bodyColor);
+      drawTail(x, rx, ry, this.tailWag(t), pal);
       x.restore();
     }
-    if (R > 7) {
+    const ears = R > 7 && dogA > 0.01;
+    const earShift = Math.sin(this.yaw) * rx * 0.22;
+    if (ears) {
       drawEars(x, rx, ry, {
-        shift: Math.sin(this.yaw) * rx * 0.22,
+        shift: earShift,
         perk: this.earPerk,
         twitch: this.earSide < 0 ? [-this.ear, 0] : [0, this.ear],
-        solid: this.bodyColor,
         alpha: dogA,
-      });
+      }, pal);
     }
 
     const body = this.bodyPath(rx, ry, R);
-    this.drawBody(x, body, R, rx, ry);
+    this.drawBody(x, body, R, rx, ry, dogA);
 
     const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
     if (blushVal > 0.01) {
@@ -800,16 +855,20 @@ export class BotEngine {
       x.restore();
     }
 
-    if (dogA > 0.01) this.drawDogFace(x, body, R, rx, ry, t, dogA);
+    if (dogA > 0.01) this.drawDogFace(x, body, R, rx, ry, t, dogA, ease);
     this.drawEyes(x, body, R, rx, ry);
+    if (ears && pal.look.ears === "floppy") {
+      drawEarsFront(x, rx, ry, {
+        shift: earShift,
+        perk: this.earPerk,
+        twitch: this.earSide < 0 ? [-this.ear, 0] : [0, this.ear],
+        alpha: dogA,
+      }, pal);
+    }
+    if (R > 9) drawCollarTag(x, rx, ry, dogA, pal);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
 
     x.restore();
-
-    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
-      this.drawBadge(x, this.badge, R, cx, cy);
-    }
-    this.drawParticles(x, R, cx, cy);
   }
 
   private bodyPath(rx: number, ry: number, R: number): Path2D {
@@ -840,18 +899,38 @@ export class BotEngine {
     return p;
   }
 
-  private drawBody(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
-    if (this.bodyColor) {
-      // Mini bots: flat solid fill — no gradient, no reflection, no highlight
-      x.fillStyle = rgba(this.bodyColor, 1);
-      x.fill(body);
-      return;
-    }
+  private drawBody(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number, dogA: number) {
+    const pal = this.pal;
     const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
-    g.addColorStop(0, rgba(BASE_TOP));
-    g.addColorStop(1, rgba(BASE_BOTTOM));
+    g.addColorStop(0, pal.bodyTop);
+    g.addColorStop(1, pal.bodyBottom);
     x.fillStyle = g;
     x.fill(body);
+
+    if (pal.hasCoat && dogA > 0.01) {
+      // Markings turn with the head, like the eyes and the muzzle.
+      const p = wrapAngle(this.pitch + this.roll);
+      const cyaw = Math.cos(this.yaw);
+      const cp = Math.cos(p);
+      const c = this.coat;
+      c.faceX = Math.sin(this.yaw) * cp * rx;
+      c.faceY = -Math.sin(p) * ry;
+      c.squash = Math.max(0.2, cyaw);
+      c.faceAlpha = Math.min(1, Math.max(0, (cyaw * cp - 0.08) * 6));
+      c.alpha = dogA;
+      c.small = R <= 14;
+      x.save();
+      x.clip(body);
+      paintCoat(x, rx, ry, c, pal);
+      x.restore();
+    }
+    if (pal.rim) {
+      x.strokeStyle = pal.rim;
+      x.lineWidth = 1;
+      x.stroke(body);
+    }
+    // Mini bots: no state tint, no reflection, no highlight.
+    if (this.isMini) return;
 
     const effectiveTint = this.tint * (1 - this.morph);
     if (effectiveTint > 0.01) {
@@ -885,7 +964,7 @@ export class BotEngine {
 
     x.save();
     x.clip(body);
-    const ink = this.isMini ? MINI_INK : INK;
+    const ink = this.pal.eyeInk ?? (this.isMini ? MINI_INK : INK);
     x.fillStyle = ink;
     x.strokeStyle = ink;
 
@@ -922,12 +1001,9 @@ export class BotEngine {
       case "wide":
         this.drawEyeShape(x, "pill", w * 1.16, h * 1.12, sd, ink);
         break;
-      case "pill": {
-        const hh = Math.max(h * this.open, w * 0.3);
-        roundRectPath(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2));
-        x.fill();
+      case "pill":
+        this.drawOpenEye(x, w, h, ink);
         break;
-      }
       case "dot":
         x.beginPath();
         x.arc(0, 0, w * 0.45, 0, Math.PI * 2);
@@ -992,9 +1068,7 @@ export class BotEngine {
         break;
       case "wink":
         if (sd < 0) {
-          const hh = Math.max(h * this.open, w * 0.3);
-          roundRectPath(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2));
-          x.fill();
+          this.drawOpenEye(x, w, h, ink);
         } else {
           x.lineWidth = w * 0.5;
           x.lineCap = "round";
@@ -1019,6 +1093,56 @@ export class BotEngine {
         break;
       }
     }
+  }
+
+  /** The everyday open eye, in the look's style: plain, sparkling or half-lidded, with an iris if it has one. */
+  private drawOpenEye(x: CanvasRenderingContext2D, w: number, h: number, ink: string) {
+    const pal = this.pal;
+    const style = pal.look.eyes;
+    const hh = Math.max(h * this.open, w * 0.3);
+    const open = hh > w * 0.62;
+    // Sleepy eyes keep their lower two thirds, under a flat lid.
+    const top = style === "sleepy" && open ? -hh / 2 + hh * 0.36 : -hh / 2;
+    if (top > -hh / 2) {
+      const r = Math.min(w / 2, (hh / 2 - top) * 0.9);
+      x.beginPath();
+      x.moveTo(-w / 2, top);
+      x.lineTo(w / 2, top);
+      x.lineTo(w / 2, hh / 2 - r);
+      x.quadraticCurveTo(w / 2, hh / 2, w / 2 - r, hh / 2);
+      x.lineTo(-w / 2 + r, hh / 2);
+      x.quadraticCurveTo(-w / 2, hh / 2, -w / 2, hh / 2 - r);
+      x.closePath();
+      x.fill();
+      roundRectPath(x, -w * 0.64, top - w * 0.12, w * 1.28, w * 0.24, w * 0.12);
+      x.fill();
+    } else {
+      roundRectPath(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2));
+      x.fill();
+    }
+    if (!open) return;
+
+    const midY = (top + hh / 2) / 2;
+    const span = hh / 2 - top;
+    if (pal.iris) {
+      const iw = w * 0.74;
+      const ih = span - w * 0.26;
+      roundRectPath(x, -iw / 2, midY - ih / 2, iw, ih, Math.min(iw / 2, ih / 2));
+      x.fillStyle = pal.iris;
+      x.fill();
+      x.fillStyle = INK;
+      x.beginPath();
+      x.ellipse(0, midY + span * 0.04, w * 0.2, Math.min(span * 0.24, w * 0.3), 0, 0, Math.PI * 2);
+      x.fill();
+    }
+    if (style === "sparkle") {
+      x.fillStyle = "rgba(255,255,255,0.95)";
+      x.beginPath();
+      x.arc(w * 0.15, midY - span * 0.22, w * 0.17, 0, Math.PI * 2);
+      x.arc(-w * 0.15, midY + span * 0.24, w * 0.08, 0, Math.PI * 2);
+      x.fill();
+    }
+    x.fillStyle = ink;
   }
 
   /** Mailbox slot: dark pill cut into the box face, with rim and lip highlights. */
@@ -1113,13 +1237,8 @@ export class BotEngine {
       x.translate(worldX, worldY);
       if (handRot !== 0) x.rotate(handRot);
       const g = x.createLinearGradient(hew * 0.7, -heh * 0.85, -hew * 0.8, heh * 0.9);
-      if (this.bodyColor) {
-        g.addColorStop(0, rgba(mix3(this.bodyColor, [1, 1, 1], 0.35)));
-        g.addColorStop(1, rgba(this.bodyColor));
-      } else {
-        g.addColorStop(0, rgba(BASE_TOP));
-        g.addColorStop(1, rgba(BASE_BOTTOM));
-      }
+      g.addColorStop(0, this.pal.pawTop);
+      g.addColorStop(1, this.pal.pawBottom);
       x.beginPath();
       x.ellipse(0, 0, hew, heh, 0, 0, Math.PI * 2);
       x.fillStyle = g;
@@ -1172,10 +1291,11 @@ export class BotEngine {
   /** Muzzle, nose, mouth, tongue and brows — follow the head turn like the eyes. */
   private drawDogFace(
     x: CanvasRenderingContext2D, body: Path2D,
-    R: number, rx: number, ry: number, t: number, alpha: number,
+    R: number, rx: number, ry: number, t: number, alpha: number, ease: boolean,
   ) {
-    const wrap = (a: number) => (((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
-    const solid = this.isMini || this.bodyColor !== null;
+    const wrap = wrapAngle;
+    const pal = this.pal;
+    const solid = this.isMini;
     const cy = Math.cos(this.yaw);
     const squash = Math.max(0.2, cy);
 
@@ -1190,7 +1310,7 @@ export class BotEngine {
 
     const wantsTongue = !solid && this.state !== "sleeping"
       && (this.isExcited() || this.state === "dizzy");
-    this.tongue += ((wantsTongue ? 1 : 0) - this.tongue) * 0.15;
+    if (ease) this.tongue += ((wantsTongue ? 1 : 0) - this.tongue) * 0.15;
     const tongue = this.tongue * (0.85 + Math.sin(t * 7.5) * 0.15);
 
     const pose: FacePose = {
@@ -1200,7 +1320,9 @@ export class BotEngine {
       mouth,
       tongue,
       ink: this.isMini ? MINI_INK : INK,
-      markings: !solid && R > 14,
+      // The classic's white muzzle on cream is skipped at compact sizes; a
+      // contrasting one (mask, tan points…) is what keeps a small dog readable.
+      markings: R > 14 || (pal.muzzleSmall && R > 9),
       alpha: alpha * Math.min(1, (cy * cmp - 0.08) * 6),
     };
 
@@ -1212,9 +1334,9 @@ export class BotEngine {
         const by = sd * EYE_SP * 0.92 + this.yaw;
         return [Math.sin(by) * Math.cos(bp) * rx, -Math.sin(bp) * ry, sd] as const;
       });
-      drawBrows(x, R, brows, pose);
+      if (!solid) drawBrows(x, R, brows, pose, pal);
     }
-    drawMuzzle(x, solid ? R * 1.25 : R, rx, -Math.sin(mp) * ry, pose);
+    drawMuzzle(x, solid ? R * 1.25 : R, rx, -Math.sin(mp) * ry, pose, pal);
     x.restore();
   }
 
@@ -1336,6 +1458,8 @@ export class BotEngine {
     }
   }
 }
+
+const wrapAngle = (a: number) => (((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
 
 /** Ray → rounded-rect boundary intersection, for the mailbox morph. */
 function rrPoint(ca: number, sa: number, W: number, H: number, cr: number): { x: number; y: number } {
