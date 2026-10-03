@@ -1,5 +1,5 @@
 // `aw`, the command-line companion: `aw claude`, `aw agy`, `aw hermes`,
-// `aw opencode`, `aw setup <agent>`.
+// `aw opencode`, `aw codex`, `aw setup <agent>`, `aw dashboard`, `aw settings`.
 //
 // aw.cmd ships inside the app and is copied next to awuuu-hook.exe in
 // %LOCALAPPDATA%\Awuuu\bin at launch. Putting that folder on the user PATH is
@@ -141,9 +141,14 @@ pub fn set_on_path(on: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// `--settings=<agent>` on the command line (aw setup <agent>).
+/// `--settings=<target>` on the command line: an agent (`aw setup <agent>`),
+/// a page (`aw dashboard` sends `sessions`) or `settings` (`aw settings`: the
+/// page the window was left on). Anything that is not a short plain word
+/// only opens the window.
 pub fn settings_arg(args: &[String]) -> Option<String> {
-    args.iter().find_map(|a| a.strip_prefix("--settings").map(|rest| rest.trim_start_matches('=').to_string()))
+    let target = args.iter().find_map(|a| a.strip_prefix("--settings"))?.trim_start_matches('=').to_ascii_lowercase();
+    let plain = target.len() <= 24 && target.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    Some(if plain { target } else { String::new() })
 }
 
 #[cfg(test)]
@@ -170,5 +175,10 @@ mod tests {
         assert_eq!(settings_arg(&args(&["awuuu.exe", "--settings=agy"])).as_deref(), Some("agy"));
         assert_eq!(settings_arg(&args(&["awuuu.exe", "--settings"])).as_deref(), Some(""));
         assert_eq!(settings_arg(&args(&["awuuu.exe"])), None);
+        // aw dashboard / aw settings.
+        assert_eq!(settings_arg(&args(&["awuuu.exe", "--settings=sessions"])).as_deref(), Some("sessions"));
+        assert_eq!(settings_arg(&args(&["awuuu.exe", "--settings=Settings"])).as_deref(), Some("settings"));
+        // Not a page or an agent name: the window opens, nothing more.
+        assert_eq!(settings_arg(&args(&["awuuu.exe", "--settings=<img src=x>"])).as_deref(), Some(""));
     }
 }
