@@ -37,6 +37,14 @@ pub struct Settings {
     /// otherwise the id of one of `providers`.
     #[serde(default)]
     pub chat_provider: String,
+    /// Hermes chat: model and provider for this turn ("" = Hermes' default)
+    /// and reasoning effort ("" = default, "low", "medium", "high").
+    #[serde(default)]
+    pub hermes_model: String,
+    #[serde(default)]
+    pub hermes_provider: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
     /// Log lines kept on screen in the hub (0 = all).
     #[serde(default = "default_log_lines")]
     pub log_lines: u32,
@@ -136,6 +144,9 @@ impl Default for Settings {
             island_width: default_island_width(),
             hub_height: default_hub_height(),
             providers: Vec::new(),
+            hermes_model: String::new(),
+            hermes_provider: String::new(),
+            reasoning_effort: String::new(),
             chat_provider: String::new(),
             hub_scale: 1.0,
             log_lines: default_log_lines(),

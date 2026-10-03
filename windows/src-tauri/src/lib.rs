@@ -398,6 +398,12 @@ async fn hermes_status() -> Result<Vec<String>, String> {
     claude::hermes_models().await
 }
 
+/// The chat's model picker: Hermes' providers and models.
+#[tauri::command]
+async fn hermes_model_options() -> Result<hermes::ModelOptions, String> {
+    hermes::model_options().await
+}
+
 /// Settings → Test on a chat provider: its model list.
 #[tauri::command]
 async fn provider_models(base_url: String, id: String) -> Result<Vec<String>, String> {
@@ -630,6 +636,7 @@ pub fn run() {
             chat_send,
             chat_reset,
             provider_models,
+            hermes_model_options,
             detect_local_providers,
             hermes_status,
             update_check_now,

@@ -60,25 +60,135 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     spellcheck: "false",
   }) as HTMLInputElement;
   const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  // Which provider answers: Hermes / Claude (by model) or one added in Settings.
-  const switcher = h("select", { class: "chat-provider", title: "Chat provider" }) as HTMLSelectElement;
-  switcher.addEventListener("mousedown", (e) => e.stopPropagation());
-  switcher.addEventListener("change", () => {
-    State.settings.chatProvider = switcher.value;
+  // ── Who answers ─────────────────────────────────────────────────────────
+  // Provider (Hermes, Claude, or one added in Settings) · model · effort, and
+  // what really answered the last turn — the server's word, fallbacks included.
+  const stop = (e: Event) => e.stopPropagation();
+  const providerSel = h("select", { class: "chat-pick", title: "Who answers" }) as HTMLSelectElement;
+  const modelSel = h("select", { class: "chat-pick wide", title: "Model" }) as HTMLSelectElement;
+  const effortSel = h("select", { class: "chat-pick", title: "Reasoning effort" }) as HTMLSelectElement;
+  for (const [v, t] of [["", "Effort: auto"], ["low", "Low"], ["medium", "Medium"], ["high", "High"]]) {
+    effortSel.append(h("option", { value: v, text: t }));
+  }
+  const usedChip = h("span", { class: "chat-used", title: "What answered the last message" });
+  for (const sel of [providerSel, modelSel, effortSel]) sel.addEventListener("mousedown", stop);
+  const head = h("div", { class: "chat-head" }, providerSel, modelSel, effortSel, usedChip);
+  let hermesOptions: Awaited<ReturnType<typeof Bridge.hermesModelOptions>> | null = null;
+  let headKey = "";
+
+  const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
+  const which = () =>
+    State.settings.chatProvider ? "custom" : State.settings.model?.startsWith("claude-") ? "claude" : "hermes";
+
+  function save() {
     void Bridge.saveSettings(State.settings);
+    headKey = "";
+    State.notify();
+  }
+  function resetChat() {
     void Bridge.chatReset();
     State.chatHistory = [];
-    State.notify();
+  }
+  providerSel.addEventListener("change", () => {
+    const v = providerSel.value;
+    if (v === "hermes") {
+      State.settings.chatProvider = "";
+      State.settings.model = "hermes-agent";
+    } else if (v === "claude") {
+      State.settings.chatProvider = "";
+      if (!State.settings.model?.startsWith("claude-")) State.settings.model = CLAUDE_MODELS[1];
+    } else {
+      State.settings.chatProvider = v;
+    }
+    usedChip.textContent = "";
+    resetChat();
+    save();
   });
-  let switcherKey = "";
-  const bar = h("div", { class: "chat-bar" }, switcher, input, send);
+  modelSel.addEventListener("change", () => {
+    const v = modelSel.value;
+    const kind = which();
+    if (kind === "hermes") {
+      const [provider, model] = v ? v.split("|") : ["", ""];
+      State.settings.hermesProvider = provider;
+      State.settings.hermesModel = model;
+    } else if (kind === "claude") {
+      State.settings.model = v;
+    } else {
+      const p = State.settings.providers.find((x) => x.id === State.settings.chatProvider);
+      if (p) p.model = v;
+    }
+    save();
+  });
+  effortSel.addEventListener("change", () => {
+    State.settings.reasoningEffort = effortSel.value;
+    save();
+  });
+  // The Hermes list is fetched when the picker is first used, not before.
+  modelSel.addEventListener("focus", () => {
+    if (which() === "hermes" && !hermesOptions) {
+      void Bridge.hermesModelOptions()
+        .then((o) => {
+          hermesOptions = o;
+          headKey = "";
+          State.notify();
+        })
+        .catch((err) => {
+          usedChip.textContent = String(err).replace(/^Error:\s*/, "");
+        });
+    }
+  });
+
+  function syncHead() {
+    const s = State.settings;
+    const kind = which();
+    const key = [kind, s.chatProvider, s.model, s.hermesModel, s.hermesProvider, s.reasoningEffort,
+      (s.providers ?? []).map((p) => p.id + p.model).join(","), hermesOptions ? "1" : "0"].join("|");
+    if (key === headKey) return;
+    headKey = key;
+    clear(providerSel);
+    providerSel.append(h("option", { value: "hermes", text: "Hermes" }), h("option", { value: "claude", text: "Claude" }));
+    for (const p of s.providers ?? []) providerSel.append(h("option", { value: p.id, text: p.name }));
+    providerSel.value = kind === "custom" ? s.chatProvider : kind;
+
+    clear(modelSel);
+    if (kind === "hermes") {
+      const def = hermesOptions ? `Default · ${hermesOptions.model}` : "Default model";
+      modelSel.append(h("option", { value: "", text: def }));
+      for (const p of hermesOptions?.providers ?? []) {
+        const group = h("optgroup", { label: p.name }) as HTMLOptGroupElement;
+        for (const m of p.models) group.append(h("option", { value: `${p.slug}|${m}`, text: m }));
+        modelSel.append(group);
+      }
+      if (s.hermesModel && !hermesOptions) {
+        modelSel.append(h("option", { value: `${s.hermesProvider}|${s.hermesModel}`, text: s.hermesModel }));
+      }
+      modelSel.value = s.hermesModel ? `${s.hermesProvider}|${s.hermesModel}` : "";
+    } else if (kind === "claude") {
+      for (const m of CLAUDE_MODELS) modelSel.append(h("option", { value: m, text: m }));
+      if (!CLAUDE_MODELS.includes(s.model)) modelSel.append(h("option", { value: s.model, text: s.model }));
+      modelSel.value = s.model;
+    } else {
+      const p = (s.providers ?? []).find((x) => x.id === s.chatProvider);
+      if (p) {
+        modelSel.append(h("option", { value: p.model, text: p.model || "model" }));
+        modelSel.value = p.model;
+      }
+    }
+    // Effort: Hermes only (Claude and OpenAI-compatible servers take the defaults).
+    effortSel.style.display = kind === "hermes" ? "" : "none";
+    effortSel.value = s.reasoningEffort ?? "";
+
+    // The card's glow follows who answers: Hermes violet, Claude coral, others neutral.
+    const glow = kind === "hermes" ? "rgba(139,92,246,0.5)" : kind === "claude" ? "rgba(240,101,67,0.45)" : "rgba(148,163,184,0.35)";
+    (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", glow);
+  }
+  const bar = h("div", { class: "chat-bar" }, input, send);
 
   const el = h(
     "div",
     { class: "view" },
-    h("div", { class: "card wash chat-card" }, h("div", { class: "chat-body" }, chipRow, log, bar)),
+    h("div", { class: "card wash chat-card" }, h("div", { class: "chat-body" }, head, chipRow, log, bar)),
   );
-  (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", "rgba(99,102,241,0.5)");
 
   let sending = false;
   let renderedKey = "";
@@ -102,6 +212,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     streaming = null;
     try {
       const reply = await Bridge.chatSend(query, context);
+      if (reply.used) usedChip.textContent = reply.used;
       if (streaming) (streaming as ChatMessage).content = reply.text;
       else State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });
       State.stateOverride = null;
@@ -153,17 +264,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         log.scrollTop = log.scrollHeight;
       }
 
-      const providers = State.settings.providers ?? [];
-      const sk = `${providers.map((p) => p.id + p.name + p.model).join("|")}:${State.settings.chatProvider}:${State.settings.model}`;
-      if (sk !== switcherKey) {
-        switcherKey = sk;
-        clear(switcher);
-        const base = State.settings.model?.startsWith("claude-") ? "Claude" : "Hermes";
-        switcher.append(h("option", { value: "", text: base }));
-        for (const p of providers) switcher.append(h("option", { value: p.id, text: p.name }));
-        switcher.value = State.settings.chatProvider ?? "";
-        switcher.style.display = providers.length ? "" : "none";
-      }
+      syncHead();
 
       input.placeholder = State.chatHistory.length === 0 ? "Ask Awuuu anything…" : "Continue…";
       input.disabled = sending;

@@ -1071,14 +1071,14 @@ export class Island {
       const hubSession = State.view === "agents" ? State.focusedAgentSession : null;
       const color = hubSession && !["approval", "error", "ratelimit"].includes(hubSession.state)
         ? hubSession.color
-        : botGlowColor(State.effectiveState);
+        : botGlowColor(this.botState());
       this.botGlow.style.display = "block";
       this.botGlow.style.width = `${d * 2.2}px`;
       this.botGlow.style.height = `${d * 2.2}px`;
       this.botGlow.style.left = `${this.botCx.value - d * 1.1}px`;
       this.botGlow.style.top = `${this.botCy.value - d * 1.1}px`;
       this.botGlow.style.background = `radial-gradient(circle, ${color} 0%, transparent 62%)`;
-      this.botGlow.style.opacity = String(hubSession ? Math.max(0.4, botGlowOpacity(hubSession.state)) : botGlowOpacity(State.effectiveState));
+      this.botGlow.style.opacity = String(hubSession ? Math.max(0.4, botGlowOpacity(hubSession.state)) : botGlowOpacity(this.botState()));
     } else {
       this.botGlow.style.display = "none";
     }
@@ -1199,7 +1199,18 @@ export class Island {
     }
 
     syncMiniBotStates(State.tasks);
-    this.engine.setState(State.effectiveState);
+    this.engine.setState(this.botState());
+  }
+
+  /**
+   * How Mochi looks right now. In the chat and on the drop page it is the
+   * chat's own companion — thinking while a reply is on its way, calm
+   * otherwise — not a mirror of some session running elsewhere.
+   */
+  private botState() {
+    const own = ["prompt", "upload", "uploading", "choose", "searching", "result", "note"];
+    if (State.mode === "expanded" && own.includes(State.view)) return State.stateOverride ?? "idle";
+    return State.effectiveState;
   }
 
   /** Applies settings coming from Rust at boot. */

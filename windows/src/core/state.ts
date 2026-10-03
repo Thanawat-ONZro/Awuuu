@@ -151,6 +151,10 @@ export interface Settings {
   providers: ChatProvider[];
   /** "" = Hermes / Claude by `model`; else a provider id. */
   chatProvider: string;
+  /** Hermes chat: model + provider for the turn ("" = Hermes' default) and effort. */
+  hermesModel: string;
+  hermesProvider: string;
+  reasoningEffort: string;
   /** Agents hub text size, 1 = normal. */
   hubScale: number;
   /** Log lines kept on screen in the hub; 0 = all. */
@@ -183,6 +187,9 @@ export const DEFAULT_SETTINGS: Settings = {
   hubHeight: 290,
   providers: [],
   chatProvider: "",
+  hermesModel: "",
+  hermesProvider: "",
+  reasoningEffort: "",
   hubScale: 1,
   logLines: 40,
   showThinking: true,

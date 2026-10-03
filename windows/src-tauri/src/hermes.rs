@@ -16,6 +16,66 @@ use tauri::{AppHandle, Emitter};
 use crate::claude::{get_hermes_key, get_hermes_url, ChatReply};
 use crate::island::WINDOW_LABEL;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProvider {
+    pub slug: String,
+    pub name: String,
+    pub models: Vec<String>,
+    /// Models that take a reasoning effort.
+    pub reasoning: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOptions {
+    pub model: String,
+    pub provider: String,
+    pub providers: Vec<ModelProvider>,
+}
+
+/// What the chat's model picker offers: Hermes' default and every provider
+/// it is signed in to (GET /api/model/options). Only when the picker opens.
+pub async fn model_options() -> Result<ModelOptions, String> {
+    let res = client(10)?
+        .get(format!("{}/api/model/options", base_url()))
+        .bearer_auth(key()?)
+        .send()
+        .await
+        .map_err(|e| format!("Can't reach Hermes: {e}"))?;
+    let status = res.status();
+    let v: Value = res.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Hermes returned {status}"));
+    }
+    let providers = v["providers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p["authenticated"] == true)
+        .map(|p| {
+            let models: Vec<String> =
+                p["models"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(str::to_string)).collect();
+            let reasoning = p["capabilities"]
+                .as_object()
+                .map(|caps| caps.iter().filter(|(_, c)| c["reasoning"] == true).map(|(m, _)| m.clone()).collect())
+                .unwrap_or_default();
+            ModelProvider {
+                slug: p["slug"].as_str().unwrap_or("").to_string(),
+                name: p["name"].as_str().unwrap_or("").to_string(),
+                models,
+                reasoning,
+            }
+        })
+        .collect();
+    Ok(ModelOptions {
+        model: v["model"].as_str().unwrap_or("").to_string(),
+        provider: v["provider"].as_str().unwrap_or("").to_string(),
+        providers,
+    })
+}
+
 /// Approval card ids for runs carry the run: "hermes-run:<run_id>:<request_id>".
 pub const APPROVAL_PREFIX: &str = "hermes-run:";
 
@@ -62,11 +122,19 @@ pub enum RunError {
 
 /// One turn in Hermes session `session`, streamed. `show_in_hub` also mirrors
 /// the run into the Agents hub (tool steps, approvals, the answer).
+/// The model the user picked in the chat ("" = Hermes' own default).
+pub struct Pick {
+    pub model: String,
+    pub provider: String,
+    pub effort: String,
+}
+
 pub async fn run_turn(
     app: &AppHandle,
     session: &str,
     input: &str,
     instructions: Option<&str>,
+    pick: Option<&Pick>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, RunError> {
     let key = key().map_err(RunError::Failed)?;
@@ -76,6 +144,19 @@ pub async fn run_turn(
     let mut body = json!({ "input": input, "session_id": session });
     if let Some(i) = instructions {
         body["instructions"] = json!(i);
+    }
+    // /v1/runs always honours a requested model (api-server.md, per-request
+    // model selection).
+    if let Some(p) = pick {
+        if !p.model.is_empty() {
+            body["model"] = json!(p.model);
+            if !p.provider.is_empty() {
+                body["provider"] = json!(p.provider);
+            }
+        }
+        if !p.effort.is_empty() {
+            body["model_options"] = json!({ "reasoning_effort": p.effort });
+        }
     }
     let res = http
         .post(format!("{base}/v1/runs"))
@@ -109,6 +190,7 @@ pub async fn run_turn(
 
     let mut reply = String::new();
     let mut final_text: Option<String> = None;
+    let mut used: Option<String> = None;
     let mut buf: Vec<u8> = Vec::new();
     'read: loop {
         let chunk = match res.chunk().await {
@@ -180,6 +262,15 @@ pub async fn run_turn(
                 }
                 "run.completed" => {
                     final_text = ev["output"].as_str().map(str::to_string);
+                    // The pair that really served the turn (after any fallback).
+                    let rt = &ev["runtime"];
+                    if let (Some(prov), Some(model)) = (rt["provider"].as_str(), rt["model"].as_str()) {
+                        let effort = pick.map(|p| p.effort.as_str()).filter(|e| !e.is_empty());
+                        used = Some(match effort {
+                            Some(e) => format!("{prov} · {model} · {e}"),
+                            None => format!("{prov} · {model}"),
+                        });
+                    }
                     break 'read;
                 }
                 "run.failed" | "run.cancelled" | "run.interrupted" => {
@@ -200,7 +291,7 @@ pub async fn run_turn(
         return Err(RunError::Failed("No response received from Hermes Agent.".into()));
     }
     hook(app, "Stop", session, json!({ "last_assistant_message": text }));
-    Ok(ChatReply { text })
+    Ok(ChatReply { text, used })
 }
 
 /// The island's Allow / Always / Deny for a run's approval card.

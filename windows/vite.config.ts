@@ -43,7 +43,13 @@ function sharedSounds(): Plugin {
 export default defineConfig({
   plugins: [sharedSounds()],
   clearScreen: false,
-  server: { port: 1420, strictPort: true, host: "127.0.0.1" },
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: "127.0.0.1",
+    // Cargo rewrites (and locks) files under target/ while the dev server runs.
+    watch: { ignored: ["**/target/**", "**/src-tauri/**", "**/release/**"] },
+  },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
     target: "chrome110",

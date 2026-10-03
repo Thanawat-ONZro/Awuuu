@@ -91,6 +91,8 @@ pub enum ChatContext {
 #[serde(rename_all = "camelCase")]
 pub struct ChatReply {
     pub text: String,
+    /// What actually answered ("provider · model"), when the server says.
+    pub used: Option<String>,
 }
 
 /// The `.env` files Hermes writes its API_SERVER_KEY to, in lookup order.
@@ -214,7 +216,18 @@ pub async fn send(
     if !has_image {
         let input = with_context(chat.is_empty() && chat.hermes_session.lock().unwrap().is_none(), &context, &query);
         let session = chat.hermes_session();
-        match crate::hermes::run_turn(app, &session, &input, Some(HERMES_SYSTEM), on_delta).await {
+        let pick = {
+            use tauri::Manager;
+            app.try_state::<crate::Shared>().map(|s| {
+                let s = s.settings.lock().unwrap();
+                crate::hermes::Pick {
+                    model: s.hermes_model.clone(),
+                    provider: s.hermes_provider.clone(),
+                    effort: s.reasoning_effort.clone(),
+                }
+            })
+        };
+        match crate::hermes::run_turn(app, &session, &input, Some(HERMES_SYSTEM), pick.as_ref(), on_delta).await {
             Ok(reply) => return Ok(reply),
             Err(crate::hermes::RunError::Failed(e)) => return Err(e),
             Err(crate::hermes::RunError::Unsupported) => {
@@ -291,7 +304,7 @@ async fn send_openai(
     match stream_chat(&url, key.as_deref(), &body, on_delta, &p.name).await {
         Ok(text) => {
             chat.push(json!({ "role": "assistant", "content": text }));
-            Ok(ChatReply { text })
+            Ok(ChatReply { text, used: Some(format!("{} · {}", p.name, p.model)) })
         }
         Err(e) => {
             chat.pop();
@@ -537,7 +550,7 @@ async fn send_hermes(
     }
 
     chat.push(json!({ "role": "assistant", "content": reply_text }));
-    Ok(ChatReply { text: reply_text })
+    Ok(ChatReply { text: reply_text, used: Some(format!("Hermes · {model}")) })
 }
 
 async fn send_claude(
@@ -619,7 +632,7 @@ async fn send_claude(
     if text.is_empty() {
         return Err("No response text.".into());
     }
-    Ok(ChatReply { text })
+    Ok(ChatReply { text, used: Some(format!("Claude · {model}")) })
 }
 
 async fn call(key: &str, body: &Value) -> Result<Value, String> {
