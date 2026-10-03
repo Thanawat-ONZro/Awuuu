@@ -101,6 +101,16 @@ pub struct Settings {
     pub microsoft_client_id: String,
     #[serde(default)]
     pub github_client_id: String,
+    /// How Awuuu talks in the chat: "warm" (default), "calm" or "pro".
+    #[serde(default = "default_tone")]
+    pub chat_tone: String,
+    /// What Awuuu calls you ("" = nothing).
+    #[serde(default)]
+    pub user_name: String,
+    /// Tell Hermes what the island already knows (next meeting, failing agents…) with the
+    /// first message of a chat.
+    #[serde(default = "yes")]
+    pub chat_awareness: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -131,6 +141,10 @@ fn one() -> f64 {
 
 fn yes() -> bool {
     true
+}
+
+fn default_tone() -> String {
+    "warm".into()
 }
 
 fn default_history_days() -> u32 {
@@ -215,6 +229,9 @@ impl Default for Settings {
             google_client_id: String::new(),
             microsoft_client_id: String::new(),
             github_client_id: String::new(),
+            chat_tone: default_tone(),
+            user_name: String::new(),
+            chat_awareness: true,
         }
     }
 }

@@ -25,11 +25,38 @@ const MAX_INLINE_TEXT: u64 = 200_000;
 const SYSTEM_PROMPT: &str = "You are Awuuu, a personal AI companion dog living at the top of the user's screen. \
 Respond in the user's language. Be thorough, helpful and concise.";
 
-/// Sent ahead of the Hermes history. Kept light on persona so the agent's own
-/// profile and memories stay in charge; it only sets the display constraints.
-const HERMES_SYSTEM: &str = "You are talking through Awuuu, a small dog companion that lives at the top of the user's screen. \
-Your reply appears in a small chat bubble: keep it clear and reasonably short, plain text with line breaks, no markdown. \
-Respond in the user's language.";
+/// Sent ahead of the Hermes history. Light on persona so the agent's own profile and
+/// memories stay in charge: it sets the display limits and a tone.
+const HERMES_SYSTEM: &str = "You are talking through Awuuu, a small dog companion that lives at the top of the user's screen. Your reply appears in a small chat bubble: keep it clear and reasonably short. Light markdown is fine (**bold**, lists, `code`, fenced code blocks); no tables, no headings. Respond in the user's language.";
+
+/// The system text for a turn: the display limits, then the tone and the user's name.
+/// Tone never outranks being right, and Hermes' own profile wins when it has one.
+pub fn hermes_system(tone: &str, name: &str) -> String {
+    let mut text = HERMES_SYSTEM.to_string();
+    text.push_str(match tone {
+        "calm" => " Be calm and gentle, with no exclamation marks or emoji.",
+        "pro" => " Be professional and to the point: no small talk, no emoji.",
+        _ => " Be warm, friendly and encouraging, like a loyal dog who is glad to help; at most one 🐾 or playful touch per reply. Say so plainly when you are unsure or something failed.",
+    });
+    let name = name.trim();
+    if !name.is_empty() {
+        text.push_str(&format!(" The user's name is {name}; use it now and then, not in every reply."));
+    }
+    text.push_str(" If you already have a personality or profile of your own, keep it: this only adds tone.");
+    text
+}
+
+/// The tone and name from the saved settings.
+fn system_for(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+    match app.try_state::<crate::Shared>() {
+        Some(s) => {
+            let s = s.settings.lock().unwrap();
+            hermes_system(&s.chat_tone, &s.user_name)
+        }
+        None => HERMES_SYSTEM.to_string(),
+    }
+}
 
 /// Images larger than this are not sent inline (base64 grows them by a third).
 const MAX_INLINE_IMAGE: u64 = 5_000_000;
@@ -297,7 +324,7 @@ pub async fn send(
                 }
             })
         };
-        match crate::hermes::run_turn(app, &session, &input, Some(HERMES_SYSTEM), pick.as_ref(), on_delta).await {
+        match crate::hermes::run_turn(app, &session, &input, Some(&system_for(app)), pick.as_ref(), on_delta).await {
             Ok(reply) => return Ok(reply),
             Err(crate::hermes::RunError::Failed(e)) => return Err(e),
             Err(crate::hermes::RunError::Unsupported) => {
@@ -305,7 +332,7 @@ pub async fn send(
             }
         }
     }
-    send_hermes(chat, model, query, context, on_delta).await
+    send_hermes(chat, model, query, context, &system_for(app), on_delta).await
 }
 
 /// The first message of a chat carries the dropped files or the window it was
@@ -484,6 +511,7 @@ async fn send_hermes(
     model: &str,
     query: String,
     context: Option<ChatContext>,
+    system: &str,
     on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
     let key = get_hermes_key().ok_or_else(missing_key_message)?;
@@ -519,7 +547,7 @@ async fn send_hermes(
     };
     chat.push(json!({ "role": "user", "content": content }));
 
-    let mut messages = vec![json!({ "role": "system", "content": HERMES_SYSTEM })];
+    let mut messages = vec![json!({ "role": "system", "content": system })];
     messages.extend(chat.snapshot());
     let body = json!({ "model": model, "messages": messages, "stream": true });
 
@@ -846,6 +874,17 @@ mod tests {
         assert_eq!(with_context(false, &context, "and now?"), "and now?");
         assert!(!is_inline_image(a.to_str().unwrap()));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tone_and_name_shape_the_system_text() {
+        assert!(hermes_system("warm", "").contains("warm, friendly"));
+        assert!(hermes_system("calm", "").contains("no exclamation"));
+        assert!(hermes_system("pro", "").contains("professional"));
+        assert!(hermes_system("anything else", "").contains("warm, friendly"));
+        assert!(hermes_system("warm", "  Owen ").contains("name is Owen;"));
+        assert!(!hermes_system("warm", "  ").contains("name is"));
+        assert!(hermes_system("pro", "").contains("Respond in the user's language"));
     }
 
     #[test]

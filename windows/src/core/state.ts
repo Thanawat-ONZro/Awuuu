@@ -233,6 +233,12 @@ export interface Settings {
   googleClientId: string;
   microsoftClientId: string;
   githubClientId: string;
+  /** How Awuuu talks in the chat. */
+  chatTone: "warm" | "calm" | "pro";
+  /** What Awuuu calls you ("" = nothing). */
+  userName: string;
+  /** Tell Hermes what the island knows with the first message of a chat. */
+  chatAwareness: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -271,6 +277,9 @@ export const DEFAULT_SETTINGS: Settings = {
   historyEnabled: true,
   historyDays: 7,
   chatHeight: 0,
+  chatTone: "warm",
+  userName: "",
+  chatAwareness: true,
   dog: null,
   googleClientId: "",
   microsoftClientId: "",

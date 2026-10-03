@@ -9,6 +9,8 @@ import { State, type ChatMessage } from "../core/state";
 import { dropdown, type SelectOption } from "../ui/select";
 import { clearOfDog, syncFileChips } from "./upload";
 import type { ViewHost } from "./views";
+import { renderMarkdown } from "./markdown";
+import { awarenessNote } from "./awareness";
 import "./drop-chat.css";
 
 let nextId = 1;
@@ -101,7 +103,7 @@ function bubble(message: ChatMessage): HTMLElement {
       h("div", { class: "bubble", text: message.content }),
     );
   }
-  return h("div", { class: "chat-row" }, h("div", { class: "reply", text: message.content }));
+  return h("div", { class: "chat-row" }, renderMarkdown(message.content));
 }
 
 function typingDots(): HTMLElement {
@@ -351,7 +353,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         const files = State.droppedFiles.filter((f) => f.path).map((f) => ({ name: f.name, path: f.path }));
         if (files.length > 0) context = { kind: "files", files };
       }
-      const reply = await Bridge.chatSend(query, context);
+      // Hermes is the user's own agent, so it may know what the island knows.
+      const note = first && kindOf(chosen()) === "hermes" ? awarenessNote() : "";
+      const reply = await Bridge.chatSend(note + query, context);
       if (reply.used) usedChip.textContent = reply.used;
       if (streaming) (streaming as ChatMessage).content = reply.text;
       else State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });

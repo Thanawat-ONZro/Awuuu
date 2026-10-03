@@ -3,7 +3,7 @@
 import { Bridge } from "../../core/bridge";
 import type { ChatProvider } from "../../core/state";
 import { h, clear } from "../../views/dom";
-import { pageOf, save, settings, statusDot } from "../ui";
+import { pageOf, save, settings, statusDot, toggle } from "../ui";
 
 // ── Agent / API section ────────────────────────────────────────────────────────
 
@@ -349,8 +349,34 @@ function apiSection(hasKey: boolean): HTMLElement {
 }
 
 
+function personalitySection(): HTMLElement {
+  const tone = h("select", {}) as HTMLSelectElement;
+  tone.append(
+    h("option", { value: "warm", text: "Warm and playful (default)" }),
+    h("option", { value: "calm", text: "Calm and gentle" }),
+    h("option", { value: "pro", text: "Professional, to the point" }),
+  );
+  tone.value = settings.chatTone ?? "warm";
+  tone.addEventListener("change", () => { settings.chatTone = tone.value as typeof settings.chatTone; void save(); });
+
+  const name = h("input", { type: "text", placeholder: "What should Awuuu call you?", value: settings.userName ?? "", style: "flex:1 1 auto;min-width:0", spellcheck: "false" }) as HTMLInputElement;
+  name.addEventListener("change", () => { settings.userName = name.value.trim(); void save(); });
+
+  return h("section", {},
+    h("h2", {}, h("span", { text: "Personality" })),
+    h("div", { class: "hint", text: "Applies to Hermes. Its own profile and memories still come first." }),
+    h("div", { class: "row" }, h("label", { text: "Tone" }), tone),
+    h("div", { class: "row" }, h("label", { text: "Your name" }), name),
+    h("div", { class: "row" },
+      h("label", { text: "Know my day" }),
+      toggle(settings.chatAwareness !== false, (v) => { settings.chatAwareness = v; void save(); }),
+      h("span", { class: "hint", text: "tell Hermes your next meeting, what needs you and which agents failed, when a chat starts" }),
+    ),
+  );
+}
+
 export async function page(): Promise<HTMLElement> {
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   return pageOf("Chat & models", "The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server.",
-    hermesSection(), providersSection(), apiSection(hasKey));
+    hermesSection(), personalitySection(), providersSection(), apiSection(hasKey));
 }
