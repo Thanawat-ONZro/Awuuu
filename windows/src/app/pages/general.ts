@@ -3,9 +3,17 @@
 import { Bridge } from "../../core/bridge";
 import type { Settings } from "../../core/state";
 import { h } from "../../views/dom";
-import { pageOf, save, settings, toggle } from "../ui";
+import { pageOf, save, select, settings, toggle } from "../ui";
 
 // ── General section ───────────────────────────────────────────────────────────
+
+const QUIET: [string, string][] = [
+  ["", "Off"],
+  ["22:00-07:00", "22:00 – 07:00"],
+  ["23:00-08:00", "23:00 – 08:00"],
+  ["21:00-08:00", "21:00 – 08:00"],
+  ["12:00-13:00", "Lunch, 12:00 – 13:00"],
+];
 
 function generalSection(): HTMLElement {
   const volume = h("input", {
@@ -71,6 +79,11 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Notification auto-hide" }),
       hide,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Quiet hours" }),
+      select(QUIET, () => settings.quietHours ?? "", (v) => (settings.quietHours = v)),
+      h("span", { class: "hint", text: "no finish pop-ups or sounds; approvals still show" }),
     ),
     h("div", { class: "row" },
       h("label", { text: "Island lives on" }),

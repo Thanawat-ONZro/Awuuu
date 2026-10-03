@@ -77,6 +77,9 @@ pub struct Settings {
     /// Hermes and providers on this machine), "always" or "off".
     #[serde(default)]
     pub chat_awareness: String,
+    /// "22:00-07:00": the island skips finish/question pop-ups then; "" = off.
+    #[serde(default)]
+    pub quiet_hours: String,
     #[serde(default = "yes")]
     pub show_time: bool,
     pub autostart: bool,
@@ -215,6 +218,7 @@ impl Default for Settings {
             chat_tone: String::new(),
             user_name: String::new(),
             chat_awareness: String::new(),
+            quiet_hours: String::new(),
             show_time: true,
             autostart: false,
             hooks_installed: false,
