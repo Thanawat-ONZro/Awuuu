@@ -559,6 +559,49 @@ pub fn show_settings_window(app: &AppHandle) {
     let _ = win.set_focus();
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentFound {
+    id: &'static str,
+    name: &'static str,
+    /// The agent is on this machine.
+    present: bool,
+    hooks_installed: bool,
+}
+
+/// Welcome page: which coding agents are on this machine, and whether
+/// Awuuu is hooked into each.
+#[tauri::command]
+fn detect_agents() -> Vec<AgentFound> {
+    let local = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_default();
+    let present = |id: &str| match id {
+        "claude" => find_on_path("claude").is_some(),
+        "agy" => find_on_path("agy").is_some() || local.join("agy").join("bin").join("agy.exe").exists(),
+        "hermes" => find_on_path("hermes").is_some() || hooks::hermes_home().join("config.yaml").exists(),
+        "opencode" => {
+            find_on_path("opencode").is_some()
+                || local.join("Programs").join("@opencode-aidesktop").join("OpenCode.exe").exists()
+        }
+        "codex" => find_on_path("codex").is_some(),
+        _ => false,
+    };
+    [
+        ("claude", "Claude Code"),
+        ("agy", "Antigravity CLI"),
+        ("hermes", "Hermes Agent"),
+        ("opencode", "OpenCode"),
+        ("codex", "Codex CLI"),
+    ]
+    .into_iter()
+    .map(|(id, name)| AgentFound {
+        id,
+        name,
+        present: present(id),
+        hooks_installed: hooks::HookAgent::parse(id).map(|a| hooks::status_for(a).installed).unwrap_or(false),
+    })
+    .collect()
+}
+
 /// Opens Settings scrolled to one agent's section (`aw setup <agent>`).
 pub fn open_settings_at(app: &AppHandle, agent: &str) {
     show_settings_window(app);
@@ -650,6 +693,7 @@ pub fn run() {
             open_n8n,
             open_settings_window,
             aw_path_status,
+            detect_agents,
             aw_path_set,
             set_paused,
         ])
@@ -676,6 +720,14 @@ pub fn run() {
             log::line(format!("--- Awuuu {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);
             cli::ensure_aw_cmd(&handle);
+            // First launch: the Welcome page explains hooks and `aw`.
+            if !loaded.onboarded {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(6000)).await;
+                    open_settings_at(&h, "welcome");
+                });
+            }
             // Started by `aw setup <agent>`.
             if let Some(agent) = cli::settings_arg(&std::env::args().collect::<Vec<_>>()) {
                 let h = handle.clone();

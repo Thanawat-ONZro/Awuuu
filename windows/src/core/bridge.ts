@@ -95,6 +95,9 @@ export const Bridge = {
   /** "queued" = handed over at the session's next step; "started" = resumed now. */
   /** Bring a session's terminal window forward; false = not found. */
   focusTerminal: (hwnd: number | null, pids: number[]) => call<boolean>("focus_terminal", { hwnd, pids }),
+  /** Welcome page: agents on this machine and their hook status. */
+  detectAgents: () =>
+    call<{ id: HookAgentId; name: string; present: boolean; hooksInstalled: boolean }[]>("detect_agents"),
   awPathStatus: () => call<boolean>("aw_path_status"),
   awPathSet: (on: boolean) => callOrThrow<boolean>("aw_path_set", { on }),
   /** Settings → Test on an integration: "Connected." or the reason it failed. */

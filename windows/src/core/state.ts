@@ -151,6 +151,8 @@ export interface Settings {
   providers: ChatProvider[];
   /** "" = Hermes / Claude by `model`; else a provider id. */
   chatProvider: string;
+  /** The Welcome page has been read. */
+  onboarded: boolean;
   /** Hermes chat: model + provider for the turn ("" = Hermes' default) and effort. */
   hermesModel: string;
   hermesProvider: string;
@@ -187,6 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hubHeight: 290,
   providers: [],
   chatProvider: "",
+  onboarded: false,
   hermesModel: "",
   hermesProvider: "",
   reasoningEffort: "",

@@ -45,6 +45,9 @@ pub struct Settings {
     pub hermes_provider: String,
     #[serde(default)]
     pub reasoning_effort: String,
+    /// The Welcome page (what hooks and `aw` are) has been read.
+    #[serde(default)]
+    pub onboarded: bool,
     /// Log lines kept on screen in the hub (0 = all).
     #[serde(default = "default_log_lines")]
     pub log_lines: u32,
@@ -144,6 +147,7 @@ impl Default for Settings {
             island_width: default_island_width(),
             hub_height: default_hub_height(),
             providers: Vec::new(),
+            onboarded: false,
             hermes_model: String::new(),
             hermes_provider: String::new(),
             reasoning_effort: String::new(),
