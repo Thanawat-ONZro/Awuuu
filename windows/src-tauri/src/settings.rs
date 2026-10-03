@@ -73,6 +73,10 @@ pub struct Settings {
     /// The first name Awuuu calls the user by; "" = from the Windows account.
     #[serde(default)]
     pub user_name: String,
+    /// What the island sees rides along with a chat turn: "local" (default:
+    /// Hermes and providers on this machine), "always" or "off".
+    #[serde(default)]
+    pub chat_awareness: String,
     #[serde(default = "yes")]
     pub show_time: bool,
     pub autostart: bool,
@@ -210,6 +214,7 @@ impl Default for Settings {
             show_thinking: true,
             chat_tone: String::new(),
             user_name: String::new(),
+            chat_awareness: String::new(),
             show_time: true,
             autostart: false,
             hooks_installed: false,

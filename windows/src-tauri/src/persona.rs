@@ -117,6 +117,33 @@ pub fn first_name(setting: &str, account: Option<&str>) -> String {
     account.and_then(pick).unwrap_or_default()
 }
 
+/// The awareness note, appended to a system prompt.
+pub fn awareness_block(note: &str) -> String {
+    format!(
+        "\n\nWhat Awuuu can see on the user's computer right now (from the island; use it only when it helps \
+         answer, never recite it unasked):\n{note}"
+    )
+}
+
+/// Whether the awareness note may go to this backend. `mode` is the setting
+/// ("" = "local").
+pub fn may_share(mode: &str, local: bool) -> bool {
+    match mode.trim() {
+        "off" => false,
+        "always" => true,
+        _ => local,
+    }
+}
+
+/// A provider URL on this machine (Ollama, LM Studio, a local gateway).
+pub fn is_local_url(url: &str) -> bool {
+    let rest = url.trim().split("://").nth(1).unwrap_or(url.trim());
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = if host.starts_with('[') { host.split(']').next().map(|h| &h[1..]).unwrap_or("") } else { host.split(':').next().unwrap_or("") };
+    let host = host.to_ascii_lowercase();
+    host == "localhost" || host == "::1" || host.starts_with("127.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,6 +187,25 @@ mod tests {
         let h = persona(Tone::Playful, "", false).hermes();
         assert!(h.contains("Keep your own memory"));
         assert!(!h.contains("You are Awuuu,"));
+    }
+
+    #[test]
+    fn awareness_goes_only_where_the_setting_allows() {
+        assert!(may_share("", true));
+        assert!(!may_share("", false));
+        assert!(may_share("local", true));
+        assert!(may_share("always", false));
+        assert!(!may_share("off", true));
+    }
+
+    #[test]
+    fn local_urls_are_this_machine_only() {
+        assert!(is_local_url("http://127.0.0.1:11434/v1"));
+        assert!(is_local_url("http://localhost:1234/v1"));
+        assert!(is_local_url("http://[::1]:8080"));
+        assert!(!is_local_url("https://api.openai.com/v1"));
+        assert!(!is_local_url("http://localhost.evil.com/v1"));
+        assert!(!is_local_url("http://192.168.1.5:11434"));
     }
 
     #[test]

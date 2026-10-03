@@ -216,6 +216,8 @@ export interface Settings {
   chatTone: string;
   /** First name Awuuu uses; "" = from the Windows account. */
   userName: string;
+  /** Chat awareness: "local" (default), "always" or "off". */
+  chatAwareness: string;
   autostart: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
@@ -268,6 +270,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showTime: true,
   chatTone: "",
   userName: "",
+  chatAwareness: "",
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",

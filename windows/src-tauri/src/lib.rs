@@ -385,6 +385,7 @@ async fn chat_send(
     chat: State<'_, Chat>,
     query: String,
     context: Option<ChatContext>,
+    aware: Option<String>,
 ) -> Result<ChatReply, String> {
     let (model, provider) = {
         let s = shared.settings.lock().unwrap();
@@ -395,7 +396,7 @@ async fn chat_send(
     let on_delta = move |text: &str| {
         let _ = app.emit_to(island::WINDOW_LABEL, "chat-delta", text.to_string());
     };
-    claude::send(&handle, &chat, &model, provider.as_ref(), query, context, &on_delta).await
+    claude::send(&handle, &chat, &model, provider.as_ref(), query, context, aware, &on_delta).await
 }
 
 /// Settings → "Check for updates…" (the tray item calls the same thing).

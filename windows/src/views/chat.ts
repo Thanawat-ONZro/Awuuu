@@ -3,6 +3,8 @@
 
 import { h, svg, clear } from "./dom";
 import { renderMarkdown, type RenderOptions } from "./markdown";
+import { todayRows } from "./today";
+import { awarenessNote } from "../island/awareness";
 import { ICONS } from "./icons";
 import { Bridge, IS_TAURI, onEvent, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
@@ -92,6 +94,13 @@ function usable(): SelectOption[] {
   if (b.claude) out.push({ value: "claude", label: "Claude" });
   for (const p of State.settings.providers ?? []) out.push({ value: p.id, label: p.name });
   return out;
+}
+
+/** What the island sees, for the chat (Settings → Privacy → Chat awareness). */
+function awareness(): string | null {
+  if (State.settings.chatAwareness === "off") return null;
+  const now = new Date().toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return awarenessNote(todayRows(), State.tasks, now) || null;
 }
 
 const MD: RenderOptions = {
@@ -357,7 +366,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         const files = State.droppedFiles.filter((f) => f.path).map((f) => ({ name: f.name, path: f.path }));
         if (files.length > 0) context = { kind: "files", files };
       }
-      const reply = await Bridge.chatSend(query, context);
+      const reply = await Bridge.chatSend(query, context, awareness());
       if (reply.used) usedChip.textContent = reply.used;
       if (streaming) (streaming as ChatMessage).content = reply.text;
       else State.chatHistory.push({ id: nextId++, role: "assistant", content: reply.text });

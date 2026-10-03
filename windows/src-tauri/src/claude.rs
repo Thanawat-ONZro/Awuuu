@@ -26,8 +26,9 @@ const MAX_INLINE_TEXT: u64 = 200_000;
 const MARKDOWN: bool = true;
 
 /// The two system prompts for this turn, from Settings → Chat (tone, name):
-/// the full persona, and the light one for Hermes.
-fn system_prompts(app: &tauri::AppHandle) -> (String, String) {
+/// the full persona, and the light one for Hermes. `aware` is the island's
+/// "what I can see" note, already redacted, when this backend may have it.
+fn system_prompts(app: &tauri::AppHandle, aware: Option<&str>) -> (String, String) {
     use tauri::Manager;
     let (tone, name) = app
         .try_state::<crate::Shared>()
@@ -39,7 +40,25 @@ fn system_prompts(app: &tauri::AppHandle) -> (String, String) {
     let account = std::env::var("USERNAME").ok();
     let name = crate::persona::first_name(&name, account.as_deref());
     let p = crate::persona::Persona { tone: crate::persona::Tone::parse(&tone), name: &name, markdown: MARKDOWN };
-    (p.full(), p.hermes())
+    let (mut full, mut hermes) = (p.full(), p.hermes());
+    if let Some(note) = aware.map(str::trim).filter(|n| !n.is_empty()) {
+        let block = crate::persona::awareness_block(note);
+        full.push_str(&block);
+        hermes.push_str(&block);
+    }
+    (full, hermes)
+}
+
+/// Settings → Privacy → Chat awareness: "local" (default) sends the note only
+/// to Hermes and to providers on this machine, "always" to every backend,
+/// "off" never.
+fn may_share(app: &tauri::AppHandle, local: bool) -> bool {
+    use tauri::Manager;
+    let mode = app
+        .try_state::<crate::Shared>()
+        .map(|s| s.settings.lock().unwrap().chat_awareness.clone())
+        .unwrap_or_default();
+    crate::persona::may_share(&mode, local)
 }
 
 /// Images larger than this are not sent inline (base64 grows them by a third).
@@ -280,11 +299,17 @@ pub async fn send(
     provider: Option<&crate::settings::ChatProvider>,
     query: String,
     context: Option<ChatContext>,
+    aware: Option<String>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
     let files = context_files(&context);
     check_files(&files, |path| std::fs::metadata(path).map(|m| m.len()).unwrap_or(0))?;
-    let (system, hermes_system) = system_prompts(app);
+    let local = match provider {
+        Some(p) => crate::persona::is_local_url(&p.base_url),
+        None => !model.starts_with("claude-"),
+    };
+    let aware = aware.filter(|_| may_share(app, local));
+    let (system, hermes_system) = system_prompts(app, aware.as_deref());
     if let Some(p) = provider {
         return send_openai(chat, p, &system, query, context, on_delta).await;
     }

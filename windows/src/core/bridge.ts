@@ -125,8 +125,8 @@ export const Bridge = {
 
   // ── Chat, files, secrets ──────────────────────────────────────────────────
   /** One chat turn. The API key and any file bytes never leave Rust. */
-  chatSend: (query: string, context: ChatContext | null) =>
-    callOrThrow<{ text: string; used?: string | null }>("chat_send", { query, context }),
+  chatSend: (query: string, context: ChatContext | null, aware: string | null = null) =>
+    callOrThrow<{ text: string; used?: string | null }>("chat_send", { query, context, aware }),
   /** The chat's model picker: Hermes' signed-in providers and their models. */
   hermesModelOptions: () =>
     callOrThrow<{
