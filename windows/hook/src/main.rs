@@ -38,10 +38,42 @@ const DECISION_BUDGET: Duration = Duration::from_secs(110);
 /// the one error worth retrying: the server exists and a slot will free up.
 const ERROR_PIPE_BUSY: i32 = 231;
 
-/// Fields that are pointless to forward and can be enormous (a whole file read,
-/// a full command output). The island never shows them. (`transcript_path` is
+/// Fields that can be enormous (a whole file read, a full command output) and
+/// are never forwarded whole. A command's output is kept as a short
+/// `tool_output` (see `clipped_output`) for the history. (`transcript_path` is
 /// kept: the island reads what the agent said from it.)
 const DROPPED_FIELDS: &[&str] = &["tool_response"];
+/// Characters of a command's output kept from its start and from its end.
+const OUTPUT_HEAD: usize = 1_100;
+const OUTPUT_TAIL: usize = 600;
+
+/// What a command printed, short enough to forward: a plain string result, or
+/// `stdout` + `stderr` of a shell result. Anything else (file contents, search
+/// results) is not output worth keeping and yields nothing.
+fn clipped_output(response: &serde_json::Value) -> Option<String> {
+    let text = match response {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(o) => ["stdout", "stderr", "output"]
+            .iter()
+            .filter_map(|k| o.get(*k).and_then(|v| v.as_str()))
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= OUTPUT_HEAD + OUTPUT_TAIL {
+        return Some(text.to_string());
+    }
+    let head: String = chars[..OUTPUT_HEAD].iter().collect();
+    let tail: String = chars[chars.len() - OUTPUT_TAIL..].iter().collect();
+    Some(format!("{head}\n…\n{tail}"))
+}
+
 /// Longest string forwarded for any single field; the island truncates to far
 /// less than this anyway.
 const MAX_FIELD_LEN: usize = 2_000;
@@ -468,6 +500,11 @@ fn read_event(args: &Args) -> Option<HookEvent> {
         .unwrap_or(arg_event);
     map.insert("hook_event_name".into(), serde_json::Value::String(event.clone()));
 
+    if !map.contains_key("tool_output") {
+        if let Some(out) = map.get("tool_response").and_then(clipped_output) {
+            map.insert("tool_output".into(), serde_json::Value::String(out));
+        }
+    }
     for field in DROPPED_FIELDS {
         map.remove(*field);
     }
@@ -580,6 +617,17 @@ mod tests {
 
     fn val(s: &str) -> serde_json::Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn command_output_is_kept_short_and_file_contents_are_not_kept() {
+        assert_eq!(clipped_output(&val(r#"{"stdout":"ok\n","stderr":"warn"}"#)).as_deref(), Some("ok\n\nwarn"));
+        assert_eq!(clipped_output(&val(r#"{"file":{"content":"secret"}}"#)), None);
+        assert_eq!(clipped_output(&val(r#""  ""#)), None);
+        let long = serde_json::Value::String("a".repeat(5_000) + "END");
+        let out = clipped_output(&long).unwrap();
+        assert!(out.chars().count() <= OUTPUT_HEAD + OUTPUT_TAIL + 3);
+        assert!(out.ends_with("END") && out.contains('…'));
     }
 
     #[test]
