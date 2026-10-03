@@ -132,7 +132,7 @@ impl HookAgent {
     }
 }
 
-fn codex_home() -> PathBuf {
+pub fn codex_home() -> PathBuf {
     std::env::var_os("CODEX_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
@@ -795,6 +795,168 @@ pub fn ensure_hook_exe(app: &AppHandle) {
     }
 }
 
+// ── Claude Code status line (usage limits) ────────────────────────────────────
+//
+// Claude Code hands its plan limits to the `statusLine` command and to nothing
+// else. `awuuu-hook --statusline` notes them down for the island and then runs
+// whatever status line was there before, so the terminal looks the same.
+// Same rules as the hooks: preview, dated backup, write only what was shown.
+
+/// Next to settings.json in %APPDATA%\Awuuu: `{ "previous": <statusLine|null> }`,
+/// read by the relay on every refresh and by uninstall to put things back.
+const STATUSLINE_FILE: &str = "statusline.json";
+
+fn statusline_sidecar() -> PathBuf {
+    settings::config_dir().join(STATUSLINE_FILE)
+}
+
+fn statusline_command() -> String {
+    // Git Bash runs it, like the hooks: forward slashes, quoted path.
+    let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
+    format!("\"{exe}\" --statusline")
+}
+
+fn statusline_is_ours(settings: &Value) -> bool {
+    settings
+        .get("statusLine")
+        .and_then(|s| s.get("command"))
+        .and_then(Value::as_str)
+        .is_some_and(|c| c.contains(MARKER) && c.contains("--statusline"))
+}
+
+/// The status line that was there before ours, as kept in statusline.json.
+fn statusline_saved_previous(sidecar_text: &str) -> Option<Value> {
+    serde_json::from_str::<Value>(sidecar_text.trim_start_matches('\u{feff}'))
+        .ok()?
+        .get("previous")
+        .filter(|p| p.is_object())
+        .cloned()
+}
+
+/// What to remember when installing: somebody else's status line as it is
+/// now, or — reinstalling over ours — what was remembered the first time.
+fn statusline_previous_for_install(existing: &Value, saved: Option<&Value>) -> Option<Value> {
+    if statusline_is_ours(existing) {
+        return saved.cloned();
+    }
+    existing.get("statusLine").filter(|s| !s.is_null()).cloned()
+}
+
+/// Settings with our status line; everything else is left untouched.
+fn statusline_merged(existing: &Value) -> Value {
+    let mut root = existing.as_object().cloned().unwrap_or_default();
+    let mut ours = json!({ "type": "command", "command": statusline_command() });
+    // Keep the spacing the user chose for the line we now stand in for.
+    if let Some(padding) = existing.get("statusLine").and_then(|s| s.get("padding")) {
+        ours["padding"] = padding.clone();
+    }
+    root.insert("statusLine".into(), ours);
+    Value::Object(root)
+}
+
+/// Settings with the previous status line back (or none), and nothing else
+/// changed. A status line that isn't ours is somebody's choice: left alone.
+fn statusline_removed(existing: &Value, previous: Option<&Value>) -> Value {
+    let mut root = existing.as_object().cloned().unwrap_or_default();
+    if statusline_is_ours(existing) {
+        match previous {
+            Some(p) => {
+                root.insert("statusLine".into(), p.clone());
+            }
+            None => {
+                root.shift_remove("statusLine");
+            }
+        }
+    }
+    Value::Object(root)
+}
+
+fn statusline_next(existing: &Value, sidecar: &Path, install: bool) -> Value {
+    if install {
+        return statusline_merged(existing);
+    }
+    let saved = statusline_saved_previous(&std::fs::read_to_string(sidecar).unwrap_or_default());
+    statusline_removed(existing, saved.as_ref())
+}
+
+pub fn statusline_status() -> HookStatus {
+    let path = settings_path();
+    let hook_path = settings::hook_exe_path();
+    HookStatus {
+        installed: statusline_is_ours(&read_settings_lossy_path(&path)),
+        settings_path: path.to_string_lossy().to_string(),
+        hook_ready: hook_path.exists(),
+        hook_path: hook_path.to_string_lossy().to_string(),
+    }
+}
+
+fn statusline_preview_at(path: &Path, sidecar: &Path, install: bool) -> Result<HookPreview, String> {
+    let current = read_settings_path(path)?;
+    let next = statusline_next(&current, sidecar, install);
+    Ok(HookPreview {
+        diff: unified_diff(&pretty(&current), &pretty(&next)),
+        backup: backup_path_for(path).to_string_lossy().to_string(),
+        settings_path: path.to_string_lossy().to_string(),
+        fingerprint: current_fingerprint_path(path),
+    })
+}
+
+pub fn statusline_preview(install: bool) -> Result<HookPreview, String> {
+    statusline_preview_at(&settings_path(), &statusline_sidecar(), install)
+}
+
+fn statusline_write_at(path: &Path, sidecar: &Path, install: bool, fingerprint: &str) -> Result<String, String> {
+    let current = read_settings_path(path)?;
+    if current_fingerprint_path(path) != fingerprint {
+        return Err(format!(
+            "{} changed since the preview. Nothing was written — review the new diff.",
+            path.display()
+        ));
+    }
+    let next = statusline_next(&current, sidecar, install);
+
+    let dir = path.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let backup = backup_path_for(path);
+    if path.exists() {
+        std::fs::copy(path, &backup).map_err(|e| format!("backup failed: {e}"))?;
+    }
+
+    if install {
+        // Before settings.json: the relay must find the previous command the
+        // first time Claude Code calls it.
+        let saved = statusline_saved_previous(&std::fs::read_to_string(sidecar).unwrap_or_default());
+        let previous = statusline_previous_for_install(&current, saved.as_ref());
+        if let Some(dir) = sidecar.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let mut text = pretty(&json!({ "previous": previous }));
+        text.push('\n');
+        std::fs::write(sidecar, text).map_err(|e| format!("write failed: {e}"))?;
+    }
+
+    let mut text = pretty(&next);
+    text.push('\n');
+    let temp = path.with_extension(format!("json.awuuu-{}", std::process::id()));
+    std::fs::write(&temp, text.as_bytes()).map_err(|e| format!("write failed: {e}"))?;
+    if let Err(err) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("write failed: {err}"));
+    }
+    if !install {
+        let _ = std::fs::remove_file(sidecar);
+    }
+    Ok(backup.to_string_lossy().to_string())
+}
+
+/// Sets (or takes back) Claude Code's `statusLine` after a dated backup.
+pub fn statusline_write(install: bool, fingerprint: &str) -> Result<String, String> {
+    if install {
+        stage_hook_binary_if_needed();
+    }
+    statusline_write_at(&settings_path(), &statusline_sidecar(), install, fingerprint)
+}
+
 // ── Minimal unified diff (LCS) ────────────────────────────────────────────────
 
 /// settings.json is short, so a plain O(n·m) LCS is the simplest honest diff.
@@ -1026,6 +1188,121 @@ mod tests {
         assert!(preview(true).is_err());
         assert!(write(true, "whatever").is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod statusline_tests {
+    use super::*;
+
+    fn parse(text: &str) -> Value {
+        parse_settings(text.as_bytes(), "settings.json").unwrap()
+    }
+
+    #[test]
+    fn installing_sets_only_the_status_line() {
+        let existing = parse(r#"{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"}]}]},"theme":"dark"}"#);
+        let after = statusline_merged(&existing);
+        assert!(statusline_is_ours(&after));
+        assert!(!statusline_is_ours(&existing));
+        assert_eq!(after["statusLine"]["type"], "command");
+        let cmd = after["statusLine"]["command"].as_str().unwrap();
+        assert!(cmd.starts_with('"') && cmd.ends_with("awuuu-hook.exe\" --statusline"), "got {cmd}");
+        assert!(!cmd.contains('\\'), "Git Bash needs forward slashes");
+        assert_eq!(after["model"], "opus");
+        assert_eq!(after["hooks"], existing["hooks"]);
+        assert_eq!(after["theme"], "dark");
+        assert_eq!(statusline_previous_for_install(&existing, None), None);
+        // Nothing before: uninstall removes the key and the file is as it was.
+        assert_eq!(statusline_removed(&after, None), existing);
+        assert_eq!(pretty(&statusline_removed(&after, None)), pretty(&existing));
+    }
+
+    #[test]
+    fn a_previous_status_line_is_remembered_and_put_back() {
+        let existing = parse(r#"{"statusLine":{"type":"command","command":"bash ~/.claude/line.sh","padding":0},"model":"opus"}"#);
+        let previous = statusline_previous_for_install(&existing, None).expect("their line");
+        assert_eq!(previous["command"], "bash ~/.claude/line.sh");
+        let after = statusline_merged(&existing);
+        assert!(statusline_is_ours(&after));
+        assert_eq!(after["statusLine"]["padding"], 0);
+        // The key stays where it was in the file.
+        assert_eq!(after.as_object().unwrap().keys().collect::<Vec<_>>(), ["statusLine", "model"]);
+
+        // Reinstalling over ours keeps what was remembered, not our own line.
+        assert_eq!(statusline_previous_for_install(&after, Some(&previous)), Some(previous.clone()));
+        assert_eq!(statusline_previous_for_install(&after, None), None);
+        assert_eq!(statusline_merged(&after), after);
+
+        assert_eq!(statusline_removed(&after, Some(&previous)), existing);
+        // Someone replaced our line in the meantime: uninstall leaves theirs.
+        assert_eq!(statusline_removed(&existing, Some(&json!({"type":"command","command":"old"}))), existing);
+    }
+
+    #[test]
+    fn the_sidecar_is_read_leniently() {
+        assert_eq!(
+            statusline_saved_previous(r#"{"previous":{"type":"command","command":"x"}}"#),
+            Some(json!({"type":"command","command":"x"}))
+        );
+        assert_eq!(statusline_saved_previous(r#"{"previous":null}"#), None);
+        assert_eq!(statusline_saved_previous(""), None);
+        assert_eq!(statusline_saved_previous("{ broken"), None);
+    }
+
+    /// Explicit paths in a temp folder: the real settings.json and the real
+    /// %APPDATA%\Awuuu are never involved.
+    #[test]
+    fn writing_backs_up_remembers_and_restores() {
+        let tmp = std::env::temp_dir().join(format!("awuuu-statusline-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("claude")).unwrap();
+        let path = tmp.join("claude").join("settings.json");
+        let sidecar = tmp.join("awuuu").join(STATUSLINE_FILE);
+        let original = r#"{"model":"opus","statusLine":{"type":"command","command":"my-line.cmd"}}"#;
+        std::fs::write(&path, original).unwrap();
+
+        let plan = statusline_preview_at(&path, &sidecar, true).unwrap();
+        assert!(plan.diff.contains("--statusline"), "{}", plan.diff);
+        assert!(plan.diff.contains("-     \"command\": \"my-line.cmd\""), "{}", plan.diff);
+        let backup = statusline_write_at(&path, &sidecar, true, &plan.fingerprint).unwrap();
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+        let after = parse(&std::fs::read_to_string(&path).unwrap());
+        assert!(statusline_is_ours(&after));
+        assert_eq!(after["model"], "opus");
+        let saved = statusline_saved_previous(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+        assert_eq!(saved["command"], "my-line.cmd");
+
+        // Reinstall: the remembered line survives.
+        let again = statusline_preview_at(&path, &sidecar, true).unwrap();
+        assert_eq!(again.diff, "No change.");
+        statusline_write_at(&path, &sidecar, true, &again.fingerprint).unwrap();
+        assert_eq!(statusline_saved_previous(&std::fs::read_to_string(&sidecar).unwrap()).unwrap()["command"], "my-line.cmd");
+
+        // A stale preview is refused and nothing moves.
+        let stale = statusline_preview_at(&path, &sidecar, false).unwrap();
+        let edited = std::fs::read_to_string(&path).unwrap().replace("opus", "sonnet");
+        std::fs::write(&path, &edited).unwrap();
+        let err = statusline_write_at(&path, &sidecar, false, &stale.fingerprint).unwrap_err();
+        assert!(err.contains("changed since the preview"), "got: {err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+        assert!(sidecar.exists());
+
+        // Uninstall: their line is back, the sidecar is gone.
+        let undo = statusline_preview_at(&path, &sidecar, false).unwrap();
+        assert!(undo.diff.contains("+     \"command\": \"my-line.cmd\""), "{}", undo.diff);
+        statusline_write_at(&path, &sidecar, false, &undo.fingerprint).unwrap();
+        let restored = parse(&std::fs::read_to_string(&path).unwrap());
+        assert_eq!(restored, parse(&original.replace("opus", "sonnet")));
+        assert!(!sidecar.exists());
+
+        // Unparseable settings are refused before anything is written.
+        std::fs::write(&path, b"{ broken").unwrap();
+        assert!(statusline_preview_at(&path, &sidecar, true).is_err());
+        assert!(statusline_write_at(&path, &sidecar, true, "whatever").is_err());
+        assert!(!sidecar.exists());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

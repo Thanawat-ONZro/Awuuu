@@ -136,6 +136,126 @@ function agentHooksSection(
   return section;
 }
 
+// ── Usage limits (Claude Code's status line) ──────────────────────────────────
+
+function statuslineSection(status: HookStatus): HTMLElement {
+  const title = "Usage limits (status line)";
+  const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const section = h(
+    "section",
+    { id: "agent-statusline" },
+    h("h2", {}, statusDot(status.installed), h("span", { text: title })),
+    body,
+  );
+
+  const rebuild = async () => {
+    const fresh = await Bridge.statuslineStatus();
+    if (fresh) Object.assign(status, fresh);
+    clear(body);
+    draw();
+    const head = section.querySelector("h2")!;
+    clear(head);
+    head.append(statusDot(status.installed), h("span", { text: title }));
+  };
+
+  function draw() {
+    body.append(
+      h("div", {
+        class: "hint",
+        text: status.installed
+          ? "Claude Code hands its 5-hour and weekly limits to Awuuu through its status line, and Awuuu shows how much is left. Nothing goes over the network, and the status line you had before keeps working."
+          : "Claude Code only tells its status line command how much of your 5-hour and weekly limits is used; install this and Awuuu can show it. Nothing goes over the network, and the status line you already have keeps working — Awuuu runs it and prints what it prints.",
+      }),
+      h("div", { class: "row" },
+        h("label", { text: "settings.json" }),
+        h("span", { class: "path", text: status.settingsPath }),
+      ),
+      h("div", { class: "row" },
+        h("label", { text: "Relay" }),
+        h("span", { class: "path", text: status.hookPath }),
+        statusDot(status.hookReady),
+      ),
+    );
+
+    const actions = h("div", { class: "row" });
+    const install = h("button", {
+      class: "primary",
+      text: status.installed ? "Reinstall…" : "Install…",
+      onclick: () => showPreview(true),
+    });
+    if (!status.hookReady) {
+      install.disabled = true;
+      install.title = "The relay isn't installed yet.";
+    }
+    actions.append(install);
+    if (status.installed) {
+      actions.append(h("button", {
+        class: "danger",
+        text: "Uninstall…",
+        onclick: () => showPreview(false),
+      }));
+    }
+    body.append(actions);
+  }
+
+  async function showPreview(install: boolean) {
+    let preview;
+    try {
+      preview = await Bridge.statuslinePreview(install);
+    } catch (err) {
+      clear(body);
+      body.append(
+        h("div", { class: "notice err", text: String(err).replace(/^Error:\s*/, "") }),
+        h("div", { class: "row" }, h("button", {
+          text: "Back",
+          onclick: () => { clear(body); draw(); },
+        })),
+      );
+      return;
+    }
+    if (!preview) return;
+    clear(body);
+    body.append(
+      h("div", {
+        class: "hint",
+        text: install
+          ? "This is exactly what will change in your settings.json. Only `statusLine` is set; a status line you already have is remembered and still runs."
+          : "This puts back the status line you had before (or removes the entry if there was none). Nothing else is touched.",
+      }),
+      renderDiff(preview.diff),
+      h("div", { class: "row" },
+        h("span", { class: "path", text: `Backup → ${preview.backup}` }),
+      ),
+    );
+    const confirm = h("button", {
+      class: install ? "primary" : "danger",
+      text: install ? "Back up and write" : "Back up and remove",
+    });
+    confirm.addEventListener("click", async () => {
+      confirm.disabled = true;
+      try {
+        const backup = await Bridge.statuslineApply(install, preview.fingerprint);
+        clear(body);
+        body.append(h("div", {
+          class: "notice ok",
+          text: `Done. Previous settings saved as ${backup}. Claude Code picks the status line up in a new session.`,
+        }));
+        window.setTimeout(() => void rebuild(), 2600);
+      } catch (err) {
+        confirm.disabled = false;
+        body.append(h("div", { class: "notice err", text: `Could not write: ${String(err)}` }));
+      }
+    });
+    body.append(h("div", { class: "row" }, confirm, h("button", {
+      text: "Cancel",
+      onclick: () => { clear(body); draw(); },
+    })));
+  }
+
+  draw();
+  return section;
+}
+
 // ── Always Allowed Rules section ──────────────────────────────────────────────
 
 function alwaysAllowSection(): HTMLElement {
@@ -257,6 +377,8 @@ export async function page(): Promise<HTMLElement> {
   const cards: HTMLElement[] = [];
   for (const [id, title, file, on, off] of AGENTS) {
     cards.push(agentHooksSection(id, title, file, on, off, (await Bridge.agentHooksStatus(id)) ?? { ...blank }));
+    // Claude's limits come through its status line: its card sits right after.
+    if (id === "claude") cards.push(statuslineSection((await Bridge.statuslineStatus()) ?? { ...blank }));
   }
   return pageOf("Agents", "Connect a coding agent once and Awuuu follows its sessions. Nothing is written without showing you the change first.",
     ...cards, alwaysAllowSection());

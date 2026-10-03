@@ -5,8 +5,10 @@
 
 import { Bridge, IS_TAURI, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { State, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
+import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
+import { History, type HistoryCall, type HistoryCtx } from "./history";
+import { isPlanTool, reducePlan } from "./plan";
 
 interface HookPayload {
   hook_event_name?: string;
@@ -32,6 +34,29 @@ interface HookPayload {
   last_assistant_message?: string;
   terminal_hwnd?: number;
   ancestor_pids?: number[];
+  /** A tool's result, from the agents whose events carry it. */
+  tool_response?: unknown;
+  tool_output?: unknown;
+  output?: unknown;
+}
+
+// History goes to Rust in batches, and not at all when it is turned off.
+History.sink = (entries, sessions) => void Bridge.historyAppend(entries, sessions);
+History.enabled = () => State.settings.historyEnabled !== false;
+
+/** Plan calls already applied, per session: one call can be reported twice. */
+const planSeen = new Map<string, string[]>();
+
+/** Keeps the session's plan in step with the agent's todo tool. */
+function trackPlan(session: AgentTask, tool: string, input: Record<string, unknown>, key: string) {
+  if (!isPlanTool(tool)) return;
+  const seen = planSeen.get(session.id) ?? [];
+  if (seen.includes(key)) return;
+  seen.push(key);
+  if (seen.length > 40) seen.shift();
+  planSeen.set(session.id, seen);
+  const next = reducePlan(session.plan, tool, input);
+  if (next) session.plan = next;
 }
 
 const KNOWN_SOURCES = new Set<AgentSource>(["claude", "agy", "hermes", "opencode", "codex"]);
@@ -175,6 +200,7 @@ export function plainText(md: string): string {
 const transcriptChains = new Map<string, Promise<void>>();
 function pullTranscript(
   taskId: string, source: AgentSource, path: string | undefined, fallback?: string, then?: () => void,
+  historyCtx?: () => HistoryCtx,
 ) {
   if (!path || (source !== "claude" && source !== "agy")) {
     if (fallback) State.appendStep(taskId, fallback, "say");
@@ -185,7 +211,12 @@ function pullTranscript(
   const next = prev.then(async () => {
     try {
       const steps = (await Bridge.transcriptTail(source, path)) ?? [];
-      for (const st of steps) State.appendStep(taskId, plainText(st.text), st.kind);
+      for (const st of steps) {
+        State.appendStep(taskId, plainText(st.text), st.kind);
+        const who = historyCtx?.();
+        if (who && st.kind === "say") History.say(who, plainText(st.text));
+        if (who && st.kind === "prompt") History.prompt(who, st.text);
+      }
       if (steps.length === 0 && fallback) State.appendStep(taskId, plainText(fallback), "say");
     } catch {
       if (fallback) State.appendStep(taskId, fallback, "say");
@@ -329,6 +360,10 @@ function handleHook(island: Island, payload: HookPayload) {
   const transcript = payload.transcript_path || payload.transcriptPath;
   const key = callKey(payload, tool, input);
 
+  // For the history: read when used, so a session's name is the current one.
+  const who = (): HistoryCtx => ({ session: sessionId, agent: source, cwd: session.sessionCwd || cwd, name: session.name });
+  const call = (): HistoryCall => ({ key, toolUseId: payload.tool_use_id, tool, input, title: describeTool(tool, input) });
+
   switch (name) {
     case "SessionStart":
       session.sessionCwd = cwd;
@@ -340,31 +375,35 @@ function handleHook(island: Island, payload: HookPayload) {
     case "PreInvocation":
       session.sessionCwd = cwd;
       session.state = "thinking";
-      pullTranscript(taskId, source, transcript);
+      pullTranscript(taskId, source, transcript, undefined, undefined, who);
       break;
 
     case "PostInvocation":
       // Not idle: the turn goes on until Stop.
-      pullTranscript(taskId, source, transcript);
+      pullTranscript(taskId, source, transcript, undefined, undefined, who);
       break;
 
     case "UserPromptSubmit": {
       session.sessionCwd = cwd;
       session.state = "thinking";
-      pullTranscript(taskId, source, transcript);
+      pullTranscript(taskId, source, transcript, undefined, undefined, who);
       const asked = payload.prompt ?? payload.message;
       if (asked) State.appendStep(taskId, asked.slice(0, 600), "prompt");
+      if (asked) History.prompt(who(), asked);
       break;
     }
 
     case "PreToolUse": {
       session.sessionCwd = cwd;
+      trackPlan(session, tool, input, key);
       if (payload.request_id) {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
       } else {
         session.state = "working";
         State.appendStep(taskId, describeTool(tool, input), "tool", key);
       }
+      // "waiting" only while a card is actually up (an always-rule answers at once).
+      History.toolStart(who(), call(), State.approvalQueue.some((a) => a.requestId === payload.request_id));
       break;
     }
 
@@ -372,12 +411,16 @@ function handleHook(island: Island, payload: HookPayload) {
       settleElsewhere(island, sessionId, (a) => a.callKey === key || a.callSig === callSig(tool, input), "Answered in the terminal");
       if (!State.approvalQueue.some((a) => a.sessionId === sessionId)) session.state = "working";
       if (payload.error) State.appendStep(taskId, `${toolVerb(tool)} failed · ${payload.error.slice(0, 300)}`, "error");
-      pullTranscript(taskId, source, transcript);
+      // An agent without a PreToolUse for this call still gets its plan followed.
+      trackPlan(session, tool, input, key);
+      History.toolEnd(who(), call(), !!payload.error, payload.error || (payload.tool_response ?? payload.tool_output ?? payload.output));
+      pullTranscript(taskId, source, transcript, undefined, undefined, who);
       break;
 
     case "PostToolUseFailure":
       session.state = "working";
       State.appendStep(taskId, `${toolVerb(tool)} failed`, "error");
+      History.toolEnd(who(), call(), true, payload.error || (payload.tool_response ?? payload.tool_output ?? payload.output));
       break;
 
     case "Notification": {
@@ -386,6 +429,7 @@ function handleHook(island: Island, payload: HookPayload) {
       if (lower.includes("rate limit")) {
         session.state = "ratelimit";
         State.appendStep(taskId, message, "error");
+        History.error(who(), message);
         Sound.play("rate");
         island.toast("agents", 5);
       } else if (message.endsWith("?")) {
@@ -399,9 +443,11 @@ function handleHook(island: Island, payload: HookPayload) {
     case "Stop":
       settleElsewhere(island, sessionId, () => true, "Request closed — the turn ended");
       session.state = "finished";
-      pullTranscript(taskId, source, transcript, payload.last_assistant_message ?? payload.message, () =>
-        State.appendStep(taskId, "Done", "done"),
-      );
+      pullTranscript(taskId, source, transcript, payload.last_assistant_message ?? payload.message, () => {
+        State.appendStep(taskId, "Done", "done");
+        const last = payload.last_assistant_message ?? payload.message;
+        History.done(who(), last ? plainText(last) : null);
+      }, who);
       Sound.play("finish");
       session.pillBadge = "finished";
       if (State.mode === "expanded" && State.view === "agents") {
@@ -421,6 +467,8 @@ function handleHook(island: Island, payload: HookPayload) {
     case "StopFailure":
       session.state = "error";
       State.appendStep(taskId, payload.message ? `Stopped · ${payload.message}` : "Stopped with an error", "error");
+      History.settle(who());
+      History.error(who(), payload.message ? `Stopped · ${payload.message}` : "Stopped with an error");
       Sound.play("error");
       session.pillBadge = "error";
       State.alertTaskId = taskId;
@@ -430,6 +478,8 @@ function handleHook(island: Island, payload: HookPayload) {
     case "SessionEnd":
       settleElsewhere(island, sessionId, () => true, "Request closed — the session ended");
       session.state = "idle";
+      History.settle(who());
+      planSeen.delete(taskId);
       window.setTimeout(() => {
         State.removeSession(sessionId);
       }, 3000);
@@ -466,6 +516,7 @@ function handleHook(island: Island, payload: HookPayload) {
     case "TurnInterrupted":
       session.state = "idle";
       State.appendStep(taskId, "Interrupted", "info");
+      History.settle(who());
       break;
 
     case "TurnEnd":
@@ -473,8 +524,10 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
 
     case "PermissionRequest": {
+      trackPlan(session, tool, input, key);
       if (payload.request_id) {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
+        History.toolStart(who(), call(), State.approvalQueue.some((a) => a.requestId === payload.request_id));
       }
       break;
     }
