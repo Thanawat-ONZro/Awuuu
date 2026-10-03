@@ -293,7 +293,6 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     // The saved choice is gone (key removed, provider deleted): the first that works.
     if (State.chatBackends && options.length > 0 && !options.some((o) => o.value === chosen())) {
       chooseBackend(options[0].value);
-      return;
     }
     const none = State.chatBackends != null && options.length === 0;
     const kind = kindOf(chosen());
