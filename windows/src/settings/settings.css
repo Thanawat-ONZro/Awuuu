@@ -343,3 +343,11 @@ section.welcome.folded h2::after {
   padding: 6px 8px;
   font: 12px ui-monospace, monospace;
 }
+
+/* Check my setup (About). */
+.doctor { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.doctor-row { display: flex; gap: 8px; align-items: flex-start; }
+.doctor-mark { width: 16px; flex: none; font-weight: 700; text-align: center; }
+.d-ok .doctor-mark { color: #4ade80; }
+.d-warn .doctor-mark { color: #f59e0b; }
+.d-fail .doctor-mark { color: #f4505e; }

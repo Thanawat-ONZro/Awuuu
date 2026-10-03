@@ -39,6 +39,8 @@ const DECISION_TIMEOUT: Duration = Duration::from_secs(108);
 /// see for nearly two minutes.
 const ACK_TIMEOUT: Duration = Duration::from_millis(800);
 const MAX_PAYLOAD: usize = 1 << 20;
+/// A client that connects and then sends nothing is dropped after this.
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the island can say about a permission request.
 pub enum Reply {
@@ -68,7 +70,7 @@ pub fn start(app: AppHandle) {
         let name = pipe_name();
         // first_pipe_instance also means we refuse to join a pipe somebody else
         // already owns under our name, rather than serving on top of it.
-        let mut server = match ServerOptions::new().first_pipe_instance(true).create(&name) {
+        let mut server = match ServerOptions::new().first_pipe_instance(true).reject_remote_clients(true).create(&name) {
             Ok(s) => s,
             Err(err) => {
                 log::line(format!("cannot open the relay pipe: {err}"));
@@ -81,7 +83,7 @@ pub fn start(app: AppHandle) {
                 continue;
             }
             // Hand the connected instance to a task and listen on a fresh one.
-            let next = match ServerOptions::new().create(&name) {
+            let next = match ServerOptions::new().reject_remote_clients(true).create(&name) {
                 Ok(s) => s,
                 Err(err) => {
                     log::line(format!("cannot reopen the relay pipe: {err}"));
@@ -98,17 +100,23 @@ pub fn start(app: AppHandle) {
 async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
-    loop {
-        match pipe.read(&mut chunk).await {
-            Ok(0) => break,
-            Ok(n) => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.contains(&b'\n') || buf.len() > MAX_PAYLOAD {
-                    break;
+    let read = async {
+        loop {
+            match pipe.read(&mut chunk).await {
+                Ok(0) => return true,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if buf.contains(&b'\n') || buf.len() > MAX_PAYLOAD {
+                        return true;
+                    }
                 }
+                Err(_) => return false,
             }
-            Err(_) => return,
         }
+    };
+    // A silent client must not hold a task forever.
+    if !matches!(tokio::time::timeout(READ_TIMEOUT, read).await, Ok(true)) {
+        return;
     }
     let line = match buf.iter().position(|b| *b == b'\n') {
         Some(i) => &buf[..i],

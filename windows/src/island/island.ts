@@ -297,6 +297,23 @@ export class Island {
     this.resizeGrip = h("div", { id: "resize-grip", title: "Drag to resize" });
     this.wireResize();
 
+    // Ctrl+Alt+Y / Ctrl+Alt+N answer the card; the keys are held only while one waits.
+    let keysOn = false;
+    State.subscribe(() => {
+      const want = !!State.pendingApproval;
+      if (want !== keysOn) {
+        keysOn = want;
+        void Bridge.setApprovalKeys(want);
+      }
+    });
+    void onEvent<string>("approval-key", (d) => {
+      const req = State.pendingApproval;
+      if (!req) return;
+      // A question needs its options picked; N hands it back to the terminal.
+      if (req.isQuestion && d !== "deny") return;
+      actions.decide(d === "allow" ? "allow" : "deny");
+    });
+
     this.header = buildHeader(actions);
     this.views = buildViews(actions, () => this.animateGeometry(false), (shrinking) => {
       if (State.view === "approval" && State.mode === "expanded") this.animateGeometry(shrinking);
