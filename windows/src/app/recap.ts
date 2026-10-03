@@ -7,6 +7,7 @@
 
 import type { HistoryData, HistoryEntry, HistorySession } from "../core/bridge";
 import { AGENT_INFO } from "../core/state";
+import { turnStory } from "./story";
 
 export type FileChange = "read" | "edit" | "write" | "delete";
 
@@ -416,6 +417,9 @@ function turnBody(turn: Turn, session: Pick<SessionSummary, "agent" | "cwd">): s
   const out: string[] = [];
   const title = turn.prompt ? firstLine(turn.prompt.title || turn.prompt.detail || "") : "";
   out.push(`### ${title || (turn.prompt ? "(empty request)" : "Before the first recorded request")}`, "");
+  const story = turnStory(turn);
+  out.push(`**${story.line}**`, "");
+  if (story.warnings.length) out.push(...story.warnings.map((w) => `> ⚠️ ${w}`), "");
 
   const summary = turnSummary(turn);
   if (summary) out.push(summary, "");

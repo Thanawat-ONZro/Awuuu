@@ -137,6 +137,8 @@ export const Bridge = {
   chatReset: () => call<void>("chat_reset"),
   /** Settings → "Test connection": model ids offered by the Hermes gateway. */
   hermesStatus: () => callOrThrow<string[]>("hermes_status"),
+  judgeTests: (command: string, output: string) => callOrThrow<"passed" | "failed" | "unclear">("judge_tests", { command, output }),
+  gitSnapshot: (cwd: string) => call<import("../island/ground").GitSnapshot | null>("git_snapshot", { cwd }),
   /** Check GitHub for a newer Awuuu now; Rust shows the result natively. */
   updateCheckNow: () => call<void>("update_check_now"),
   /** Copies a dropped file into the inbox. */

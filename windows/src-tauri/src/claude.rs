@@ -820,6 +820,14 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_judge_answers_in_one_word() {
+        assert_eq!(super::judge_word("PASSED"), "passed");
+        assert_eq!(super::judge_word(" failed."), "failed");
+        assert_eq!(super::judge_word("I think it passed"), "unclear");
+        assert_eq!(super::judge_word(""), "unclear");
+    }
+
     use super::*;
 
     fn file(name: &str, path: &str) -> FileRef {
@@ -898,4 +906,55 @@ mod tests {
         assert_eq!(base64(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
+}
+
+// ── Second opinion on a test run ──────────────────────────────────────────────
+
+const JUDGE_SYSTEM: &str = "You read the end of a test command's output and say whether the tests passed. \
+Answer with exactly one word: PASSED, FAILED or UNCLEAR. PASSED only if at least one test ran and none failed. \
+Zero tests, a crash before tests ran, or output that doesn't show results is UNCLEAR.";
+
+/// One word from the judge's answer; anything else is "unclear".
+pub fn judge_word(answer: &str) -> &'static str {
+    let a = answer.trim().to_ascii_uppercase();
+    if a.starts_with("PASSED") {
+        "passed"
+    } else if a.starts_with("FAILED") {
+        "failed"
+    } else {
+        "unclear"
+    }
+}
+
+/// Sessions → "Ask Hermes" on a test run the parsers couldn't read. Only
+/// when the user clicks; the output arrives already redacted (awareness.ts),
+/// and the island gives up after 8 seconds.
+pub async fn judge_tests(command: &str, output: &str) -> Result<&'static str, String> {
+    let key = get_hermes_key().ok_or_else(missing_key_message)?;
+    let tail: String = {
+        let chars: Vec<char> = output.chars().collect();
+        chars[chars.len().saturating_sub(4000)..].iter().collect()
+    };
+    let body = json!({
+        "model": "hermes-agent",
+        "stream": false,
+        "max_tokens": 5,
+        "messages": [
+            { "role": "system", "content": JUDGE_SYSTEM },
+            { "role": "user", "content": format!("Command: {command}\n\nOutput (end):\n{tail}") },
+        ],
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post(get_hermes_url())
+        .bearer_auth(key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Can't reach Hermes: {e}"))?;
+    let v: Value = res.json().await.map_err(|e| e.to_string())?;
+    Ok(judge_word(v["choices"][0]["message"]["content"].as_str().unwrap_or("")))
 }
