@@ -22,8 +22,8 @@ use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW,
+    GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_NOACTIVATE,
+    SWP_NOZORDER, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 /// Logical size of the subtle notch tab when the island is in hidden/idle state.
@@ -209,9 +209,12 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
 pub struct Layout {
     /// Island centre x in window-logical px (`h == "center"`).
     pub anchor_x: f64,
+    /// Island centre y in window-logical px (`v == "center"`): where the
+    /// side pill sits, and what the open card is centred on.
+    pub anchor_y: f64,
     /// "center" | "left" | "right"
     pub h: &'static str,
-    /// "top" (grows down) | "bottom" (grows up)
+    /// "top" (grows down) | "bottom" (grows up) | "center" (left/right edges)
     pub v: &'static str,
     /// "top" | "bottom" | "left" | "right" | "free"
     pub edge: String,
@@ -255,9 +258,6 @@ pub fn compute(
     let clamp_x = |x: f64| x.clamp(screen.x, (screen.x + screen.w - pw).max(screen.x));
     let clamp_y = |y: f64| y.clamp(work.y, (work.y + work.h - ph).max(work.y));
     let along = s.along.clamp(0.0, 1.0);
-    // Half the upright compact pill (168 px, layout.ts SIDE_COMPACT): a
-    // side-docked island centres on `along`.
-    let half_compact = 84.0 * scale;
 
     let (x, y, h, v) = {
         match edge.as_str() {
@@ -265,17 +265,16 @@ pub fn compute(
                 let ax = screen.x + along * screen.w;
                 (clamp_x(ax - pw / 2.0), work.y + work.h - ph, "center", "bottom")
             }
+            // A side: the window hugs the edge, centred on `along`. The pill
+            // stands against the edge; the open card floats beside it (the
+            // panel is 80 px wider than the island, room for the gap and the
+            // shadow) and is centred on the pill — the front end keeps both
+            // inside the window when it is held back by the work area.
             "left" | "right" => {
                 let x = if edge == "left" { work.x } else { work.x + work.w - pw };
                 let ay = work.y + along * work.h;
                 let side = if edge == "left" { "left" } else { "right" };
-                if collapsed {
-                    (x, clamp_y(ay - ph / 2.0), side, "top")
-                } else if along > 0.6 {
-                    (x, clamp_y(ay + half_compact - ph), side, "bottom")
-                } else {
-                    (x, clamp_y(ay - half_compact), side, "top")
-                }
+                (x, clamp_y(ay - ph / 2.0), side, "center")
             }
             _ => {
                 let ax = screen.x + along * screen.w;
@@ -287,8 +286,11 @@ pub fn compute(
     // when the window is held back by the screen edge).
     let target_x = screen.x + along * screen.w;
     let anchor_x = ((target_x - x) / scale).clamp(0.0, lw);
+    let target_y = work.y + along * work.h;
+    let anchor_y = ((target_y - y) / scale).clamp(0.0, lh);
     let layout = Layout {
         anchor_x,
+        anchor_y,
         h,
         v,
         edge,
@@ -334,20 +336,51 @@ pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed:
     Some(layout)
 }
 
-/// Moving the island: the window covers the display's work area (logical
-/// size returned) so the front end can draw the island anywhere under the
-/// cursor, with the liquid effect. `island_overlay_end` puts it back.
-pub fn overlay_begin(app: &AppHandle, pref: &str) -> Option<(f64, f64)> {
+/// Where a window at `pos` (physical) sits inside the work-area overlay, in
+/// logical px: what the front end adds to its window coordinates to keep the
+/// island on the same spot of the screen once the window is the overlay.
+fn overlay_origin(pos: (f64, f64), work: Rect, scale: f64) -> (f64, f64) {
+    ((pos.0 - work.x) / scale, (pos.1 - work.y) / scale)
+}
+
+/// Moving the island: the window covers the display's work area so the front
+/// end can draw the island anywhere under the cursor, with the liquid effect.
+/// Returns the overlay's logical size and where the island window's top-left
+/// is inside it (`w, h, x, y`). `apply == false` only answers, so the front
+/// end can get ready before the window changes; `island_overlay_end` puts the
+/// window back.
+pub fn overlay_begin(app: &AppHandle, pref: &str, apply: bool) -> Option<(f64, f64, f64, f64)> {
     let win = window(app)?;
     let m = target_monitor(app, pref)?;
     let (_, work) = rect_of(&m);
     let scale = m.scale_factor();
-    let size = PhysicalSize::new(work.w as u32, work.h as u32);
-    let _ = win.set_size(size);
-    let _ = win.set_position(PhysicalPosition::new(work.x as i32, work.y as i32));
-    let _ = win.set_size(size);
-    let _ = win.set_ignore_cursor_events(false);
-    Some((work.w / scale, work.h / scale))
+    let at = win.outer_position().ok()?;
+    let (ox, oy) = overlay_origin((at.x as f64, at.y as f64), work, scale);
+    if apply {
+        // One call for position and size: moved and resized in two steps, the
+        // island would be drawn in between at a place it never was.
+        if let Some(hwnd) = hwnd_of(&win) {
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    work.x as i32,
+                    work.y as i32,
+                    work.w as i32,
+                    work.h as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+        // Then through Tauri, so its own idea of the window agrees (no-ops
+        // when the call above did the job).
+        let size = PhysicalSize::new(work.w as u32, work.h as u32);
+        let _ = win.set_size(size);
+        let _ = win.set_position(PhysicalPosition::new(work.x as i32, work.y as i32));
+        let _ = win.set_size(size);
+        let _ = win.set_ignore_cursor_events(false);
+    }
+    Some((work.w / scale, work.h / scale, ox, oy))
 }
 
 pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
@@ -768,7 +801,36 @@ mod tests {
         let ((x, _, w, h), l) = compute(&s, SCREEN, WORK, 1.0, true);
         assert_eq!((x + w, w, h), (1920.0, STRIP_H, STRIP_W));
         assert!(l.vertical);
-        assert_eq!(l.h, "right");
+        assert_eq!((l.h, l.v), ("right", "center"));
+        assert_eq!(l.anchor_y, STRIP_W / 2.0);
+    }
+
+    #[test]
+    fn open_on_a_side_is_centred_on_the_pill_with_room_to_float() {
+        let s = Settings { position: "left".into(), along: 0.5, ..Settings::default() };
+        let ((x, y, w, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
+        assert_eq!((x, y, w, h), (0.0, 356.0, 720.0, 320.0));
+        assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", 160.0));
+        // The default island (640) plus its 10 px gap fits in the window.
+        assert!(s.island_width + 10.0 <= l.panel_w);
+    }
+
+    #[test]
+    fn side_window_stays_in_the_work_area_and_says_where_the_pill_is() {
+        let s = Settings { position: "left".into(), along: 1.0, ..Settings::default() };
+        let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
+        assert_eq!(y + h, 1032.0);
+        assert_eq!(l.anchor_y, 320.0); // the front end keeps the island inside
+        let top = Settings { position: "right".into(), along: 0.0, ..Settings::default() };
+        let ((_, y, _, _), l) = compute(&top, SCREEN, WORK, 1.0, false);
+        assert_eq!((y, l.anchor_y), (0.0, 0.0));
+    }
+
+    #[test]
+    fn overlay_origin_is_the_window_inside_the_work_area() {
+        let work = Rect { x: 0.0, y: 48.0, w: 2880.0, h: 1752.0 };
+        assert_eq!(overlay_origin((900.0, 48.0), work, 1.5), (600.0, 0.0));
+        assert_eq!(overlay_origin((0.0, 648.0), work, 1.5), (0.0, 400.0));
     }
 
 

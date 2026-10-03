@@ -1,9 +1,10 @@
 // Moving the island, drawn as a drop of liquid.
 //
-// Pressing the grip (or Alt + press on the island) turns the window into a
-// transparent overlay over the display's work area (Rust island_overlay_begin).
-// The island shrinks to its pill and follows the cursor. Behind it an SVG
-// "goo" layer (blur + alpha threshold) melts simple shapes into one liquid:
+// Pressing the grip (or Alt + press on the island) and pulling turns the window
+// into a transparent overlay over the display's work area (Rust
+// island_overlay_begin). The island stays on the spot it was grabbed, shrinks
+// to its pill while it slides under the cursor, then follows it. Behind it an
+// SVG "goo" layer (blur + alpha threshold) melts simple shapes into one liquid:
 //   • a neck from the spot it was pulled off, thinning with distance until it
 //     snaps and the stub sinks back into the edge;
 //   • the pill itself, stretched along the direction it is flung;
@@ -17,16 +18,23 @@ import { State } from "../core/state";
 
 export type Edge = "top" | "bottom" | "left" | "right";
 
+export interface MoveState {
+  wasExpanded: boolean;
+  view: string;
+}
+
 export interface MoveHost {
   /** Pill size for an edge (layout.ts islandSize compact). */
   pillSize(edge: Edge): { w: number; h: number };
+  /** The island as drawn right now, in window coordinates. */
+  rect(): { x: number; y: number; w: number; h: number };
   /** Draw the island centred at (x, y) with an optional transform; null = normal. */
   setMoveOverride(at: { x: number; y: number; transform: string } | null): void;
   /** Shape the pill for the edge it is about to dock to (upright on the sides). */
   previewEdge(edge: Edge): void;
   /** Shrink to the pill and keep it from auto-hiding while it moves. */
-  enterMove(): { wasExpanded: boolean; view: string };
-  leaveMove(state: { wasExpanded: boolean; view: string }): void;
+  enterMove(): MoveState;
+  leaveMove(state: MoveState): void;
 }
 
 const NS = "http://www.w3.org/2000/svg";
@@ -34,6 +42,8 @@ const BREAK = 170; // px of pull before the neck snaps
 const REACH = 130; // an edge starts reaching for the island within this distance
 const BRIDGE = 70; // …and joins it within this one
 const BEADS = 12;
+const DRAG_START = 3; // px of travel before a press becomes a move
+const GRAB_MS = 180; // the pill slides from where it was grabbed to under the cursor
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) {
   const el = document.createElementNS(NS, tag);
@@ -83,17 +93,66 @@ export class Mover {
 
     const fromEdge = (State.settings.position ?? "top") as Edge;
     const fromAlong = State.settings.along ?? 0.5;
-    // `npm run dev` in a browser: the page itself is the overlay.
-    const size = IS_TAURI ? await Bridge.islandOverlayBegin() : ([window.innerWidth, window.innerHeight] as [number, number]);
-    if (!size) {
-      void Bridge.log("move: overlay could not start");
+
+    // Listening starts with the press, so nothing the cursor does while the
+    // overlay is being set up is lost. Until the window is the overlay the
+    // cursor is tracked by its travel on screen, which does not depend on where
+    // the window is; after, client coordinates are overlay coordinates.
+    // `local` is the cursor in the coordinates of the window as it was. (In a
+    // browser the page never moves, so client coordinates do from the start.)
+    let origin = { x: 0, y: 0 };
+    let ready = false;
+    let local = { x: ev.clientX, y: ev.clientY };
+    let moved = 0;
+    let letGo = false;
+    let wake: (() => void) | null = null;
+    const onMove = (e: PointerEvent) => {
+      local = ready || !IS_TAURI
+        ? { x: e.clientX - origin.x, y: e.clientY - origin.y }
+        : { x: ev.clientX + e.screenX - ev.screenX, y: ev.clientY + e.screenY - ev.screenY };
+      moved = Math.max(moved, Math.hypot(local.x - ev.clientX, local.y - ev.clientY));
+      if (moved >= DRAG_START) wake?.();
+    };
+    const onUp = () => {
+      if (ready) return drop();
+      letGo = true;
+      wake?.();
+    };
+    const onCancel = () => {
+      if (ready) void finish(null);
+      else onUp();
+    };
+    const unlisten = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onCancel, true);
+    };
+    const abort = (why: string) => {
+      void Bridge.log(`move: ${why}`);
+      unlisten();
       this.active = false;
-      return;
-    }
-    void Bridge.log(`move: overlay ${size[0]}x${size[1]} from ${fromEdge} ${fromAlong.toFixed(2)}`);
-    const [W, H] = size;
-    const saved = this.host.enterMove();
-    this.root.classList.add("moving");
+    };
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onCancel, true);
+
+    // A press that goes nowhere is a click on the grip: the window stays as it is.
+    if (moved < DRAG_START && !letGo) await new Promise<void>((r) => (wake = r));
+    wake = null;
+    if (letGo) return abort("released before it moved");
+
+    // `npm run dev` in a browser: the page itself is the overlay.
+    const geometry = IS_TAURI
+      ? await Bridge.islandOverlayBegin(false)
+      : ([window.innerWidth, window.innerHeight, 0, 0] as [number, number, number, number]);
+    if (!geometry) return abort("overlay could not start");
+    if (letGo) return abort("released before the overlay");
+    const [W, H, ox, oy] = geometry;
+    void Bridge.log(`move: overlay ${W}x${H} from ${fromEdge} ${fromAlong.toFixed(2)}, window at ${ox},${oy}`);
+    // Where the island is now, in overlay coordinates: it starts there.
+    const r0 = this.host.rect();
+    const pos = { x: ox + r0.x + r0.w / 2, y: oy + r0.y + r0.h / 2 };
+    let saved: MoveState = { wasExpanded: false, view: "" };
 
     // ── Liquid layer ──────────────────────────────────────────────────────
     const svg = svgEl("svg", { class: "move-layer", width: W, height: H, viewBox: `0 0 ${W} ${H}` });
@@ -112,28 +171,22 @@ export class Mover {
     const bridge = Array.from({ length: 6 }, () => svgEl("circle", { r: 0 }));
     g.append(source, ...beads, ...bridge, bulge, blob);
     svg.append(defs, g);
-    this.root.append(svg);
 
     const src = edgeAnchor(fromEdge, fromAlong, W, H);
-    let pointer = { x: ev.clientX, y: ev.clientY };
-    // The pill starts where the island was grabbed; it eases toward the cursor.
-    const pos = { ...pointer };
+    // How far off the island's centre it was grabbed; eased away in GRAB_MS.
+    let grab = { x: 0, y: 0 };
+    let t0 = 0;
     let vel = { x: 0, y: 0 };
     let neck = 1; // 1 = attached … 0 = snapped
     let snapped = false;
     let stub = 1; // the leftover on the source edge, sinking after the snap
     let release: { edge: Edge; along: number; t0: number; from: { x: number; y: number }; to: { x: number; y: number } } | null = null;
-    let last = performance.now();
+    let last = 0;
     let raf = 0;
 
-    const onMove = (e: PointerEvent) => {
-      pointer = { x: e.clientX, y: e.clientY };
-    };
     const finish = async (dock: { edge: Edge; along: number } | null) => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("pointercancel", onCancel, true);
+      unlisten();
       await Bridge.islandOverlayEnd(dock?.edge ?? "", dock?.along ?? 0);
       svg.remove();
       this.root.classList.remove("moving");
@@ -141,7 +194,7 @@ export class Mover {
       this.host.leaveMove(saved);
       this.active = false;
     };
-    const onUp = () => {
+    const drop = () => {
       if (release) return;
       const near = nearestEdge(pos.x, pos.y, W, H);
       const along = near.edge === "top" || near.edge === "bottom" ? pos.x / W : pos.y / H;
@@ -153,15 +206,12 @@ export class Mover {
         : { x: W - pill.w / 2, y: pos.y };
       release = { edge: near.edge, along: Math.min(1, Math.max(0, along)), t0: performance.now(), from: { ...pos }, to };
     };
-    const onCancel = () => void finish(null);
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("pointercancel", onCancel, true);
 
-    let shape: Edge = "top";
+    let shape: Edge = fromEdge;
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      const pointer = { x: local.x + origin.x, y: local.y + origin.y };
       // Upright once it is clearly heading for a side, flat otherwise.
       const ahead = release?.edge ?? (() => {
         // The cursor decides: the pill itself is held back from the edge.
@@ -186,9 +236,14 @@ export class Mover {
           return;
         }
       } else {
+        // The spot it was grabbed by slides to the pill's centre (ease-out),
+        // so the island leaves from where it was instead of jumping.
+        const held = Math.pow(1 - Math.min(1, (now - t0) / GRAB_MS), 3);
+        const aimX = pointer.x - grab.x * held;
+        const aimY = pointer.y - grab.y * held;
         // Follow the cursor with a little lag, which is what makes it feel liquid.
-        const nx = pos.x + (pointer.x - pos.x) * Math.min(1, dt * 18);
-        const ny = pos.y + (pointer.y - pos.y) * Math.min(1, dt * 18);
+        const nx = pos.x + (aimX - pos.x) * Math.min(1, dt * 18);
+        const ny = pos.y + (aimY - pos.y) * Math.min(1, dt * 18);
         vel = { x: vel.x * 0.8 + ((nx - pos.x) / Math.max(dt, 1e-3)) * 0.2, y: vel.y * 0.8 + ((ny - pos.y) / Math.max(dt, 1e-3)) * 0.2 };
         // Most of the pill stays on screen, however hard it is pulled.
         pos.x = Math.min(W - pill.w * 0.3, Math.max(pill.w * 0.3, nx));
@@ -254,6 +309,34 @@ export class Mover {
 
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
+
+    // The window is the overlay: draw the island on the spot of the screen it
+    // was on, in that same frame, and only then let it shrink and follow.
+    const place = () => {
+      if (ready) return;
+      window.removeEventListener("resize", place);
+      origin = { x: ox, y: oy };
+      ready = true;
+      grab = { x: local.x + ox - pos.x, y: local.y + oy - pos.y };
+      this.root.classList.add("moving");
+      this.root.append(svg);
+      this.host.setMoveOverride({ x: pos.x, y: pos.y, transform: "none" });
+      saved = this.host.enterMove();
+      t0 = last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+
+    if (IS_TAURI) {
+      // The resize event runs before the first frame at the overlay's size is
+      // painted, so the island is not drawn at its old window coordinates.
+      window.addEventListener("resize", place);
+      if (!(await Bridge.islandOverlayBegin(true))) {
+        window.removeEventListener("resize", place);
+        return abort("overlay could not start");
+      }
+    }
+    place();
+    // Let go while the window was changing: put everything back.
+    if (letGo) void finish(null);
   }
 }

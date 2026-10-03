@@ -54,9 +54,12 @@ export interface ViewLayout {
 export interface IslandLayout {
   /** Island centre x in window px (h = "center"). */
   anchorX: number;
+  /** Island centre y in window px (v = "center"): where the side pill sits. */
+  anchorY: number;
   h: "center" | "left" | "right";
-  /** "top": hangs down from its anchor; "bottom": grows up. */
-  v: "top" | "bottom";
+  /** "top": hangs down from its anchor; "bottom": grows up; "center": a side
+   * edge — the pill and the open card are centred on anchorY. */
+  v: "top" | "bottom" | "center";
   edge: "top" | "bottom" | "left" | "right";
   /** Hidden tab stands upright (left/right edges). */
   vertical: boolean;
@@ -65,38 +68,30 @@ export interface IslandLayout {
 }
 
 export const DEFAULT_LAYOUT: IslandLayout = {
-  anchorX: 360, h: "center", v: "top", edge: "top", vertical: false, panelW: 720, panelH: 320,
+  anchorX: 360, anchorY: 160, h: "center", v: "top", edge: "top", vertical: false, panelW: 720, panelH: 320,
 };
 
-/** The header is 34 px: a row along the top (top edge), along the bottom
- * (bottom edge, upside down) or a rail down the docked side (left/right). */
+/** The header is a 34 px row: along the top, or along the bottom when the
+ * island is docked to the bottom edge (upside down). */
 export const HEADER_SIZE = 34;
 
-/** The island is upright on the sides: a tall pill, a rail for the header. */
+/** Docked to a side: the hidden tab and the compact pill stand upright
+ * against the edge. Open, the island is the same card as on the top edge. */
 export function onSide(): boolean {
   return geo.layout.edge === "left" || geo.layout.edge === "right";
 }
 
-/**
- * How the open island differs from the top-edge layout every view was drawn
- * for: where the card sits (dx, dy) and how the island grows (dw, dh) so the
- * card keeps exactly the same size whichever edge it hangs from.
- */
-export function edgeShift(): { dx: number; dy: number; dw: number; dh: number } {
-  switch (geo.layout.edge) {
-    case "bottom":
-      return { dx: 0, dy: -HEADER_SIZE, dw: 0, dh: 0 };
-    case "left":
-      return { dx: HEADER_SIZE, dy: -HEADER_SIZE, dw: HEADER_SIZE, dh: -HEADER_SIZE };
-    case "right":
-      return { dx: 0, dy: -HEADER_SIZE, dw: HEADER_SIZE, dh: -HEADER_SIZE };
-    default:
-      return { dx: 0, dy: 0, dw: 0, dh: 0 };
-  }
+/** Docked to the bottom the header sits under the card, so everything drawn
+ * for the top-edge layout moves up by the header. */
+function edgeShiftY(): number {
+  return geo.layout.edge === "bottom" ? -HEADER_SIZE : 0;
 }
 
 /** Compact pill on a side: upright. */
 export const SIDE_COMPACT = { w: 32, h: 168 };
+
+/** Open on a side, the card floats this far from the screen edge. */
+export const SIDE_GAP = 10;
 
 /** Current layout and user sizes; island.ts keeps these up to date. */
 export const geo = {
@@ -197,8 +192,7 @@ export function islandSize(
           : view === "agents" || view === "overview"
           ? geo.hubH
           : VIEW_LAYOUTS[view].height;
-      const s = edgeShift();
-      return { w: geo.expandedW + s.dw, h: h + s.dh };
+      return { w: geo.expandedW, h };
     }
   }
 }
@@ -224,8 +218,7 @@ export function botPosition(
       return onSide() ? { cx: 16, cy: 26, diameter: 20, opacity: 1 } : { cx: 40, cy: 16, diameter: 20, opacity: 1 };
     case "expanded": {
       const p = expandedBot(view, islandH, uploadProgress);
-      const s = edgeShift();
-      return { ...p, cx: p.cx + s.dx, cy: p.cy + s.dy };
+      return { ...p, cy: p.cy + edgeShiftY() };
     }
   }
 }
@@ -244,11 +237,9 @@ function expandedBot(view: IslandViewName, islandH: number, uploadProgress: numb
     return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
   }
   // Centre of the fixed 84 pt card (8 pt top inset + 34 pt header → content at y = 42).
-  // islandH here is the top-edge height: undo the side layout's shrink.
   const headerBottom = HEADER_BOTTOM;
   const cardH = 84;
-  const h = islandH - edgeShift().dh;
-  const cy = headerBottom + (h - headerBottom - cardH) / 2 + cardH / 2;
+  const cy = headerBottom + (islandH - headerBottom - cardH) / 2 + cardH / 2;
   return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: 1 };
 }
 

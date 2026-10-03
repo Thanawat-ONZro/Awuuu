@@ -333,30 +333,7 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
-#root.dragging #resize-grip {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  z-index: 20;
-  display: none;
-  opacity: 0.35;
-  transition: opacity 0.15s;
-  background:
-    linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.7) 50%, rgba(255, 255, 255, 0.7) 58%, transparent 58%,
-      transparent 70%, rgba(255, 255, 255, 0.7) 70%, rgba(255, 255, 255, 0.7) 78%, transparent 78%);
-}
-
-#resize-grip:hover,
-#root.resizing #resize-grip {
-  opacity: 0.9;
-}
-
-#resize-grip[data-v="top"][data-h="right"] { right: 2px; bottom: 2px; cursor: nwse-resize; }
-#resize-grip[data-v="top"][data-h="left"] { left: 2px; bottom: 2px; cursor: nesw-resize; transform: scaleX(-1); }
-#resize-grip[data-v="bottom"][data-h="right"] { right: 2px; top: 2px; cursor: nesw-resize; transform: scaleY(-1); }
-#resize-grip[data-v="bottom"][data-h="left"] { left: 2px; top: 2px; cursor: nwse-resize; transform: scale(-1, -1); }
-
-.grip {
+#root.moving .grip {
   cursor: grabbing;
   opacity: 1;
 }
@@ -388,66 +365,25 @@ body {
   padding: 10px 10px 8px;
 }
 
-/* ── Docked to a side: the header is a rail down the docked edge. ───────── */
+/* ── Docked to a side: an upright tab/pill against the edge; open, the same
+   card as on the top edge, floating beside it (island.ts islandRect). ────── */
 
-#root[data-edge="left"] #content,
-#root[data-edge="right"] #content {
-  flex-direction: row;
-  padding: 10px 10px 10px 0;
-}
-
-#root[data-edge="right"] #content {
-  flex-direction: row-reverse;
-  padding: 10px 0 10px 10px;
-}
-
-#root[data-edge="left"] #header,
-#root[data-edge="right"] #header {
-  flex-direction: column;
-  width: 34px;
-  height: auto;
-  flex: 0 0 34px;
-  margin: -10px 0;
-  padding: 12px 0;
-}
-
-#root[data-edge="left"] .tabs,
-#root[data-edge="right"] .tabs {
-  flex-direction: column;
-  padding: 0;
-  gap: 6px;
-}
-
-#root[data-edge="left"] .header-actions,
-#root[data-edge="right"] .header-actions {
-  flex-direction: column;
-  margin: auto 0 0;
-  padding: 0;
-  gap: 12px;
-}
-
-#root[data-edge="left"] .grip,
-#root[data-edge="right"] .grip {
-  transform: translate(-50%, -50%) rotate(90deg);
-}
-
-#root[data-edge="left"] #countdown,
-#root[data-edge="right"] #countdown {
-  display: none;
-}
-
-/* Docked to a side: borders on the sides that face the screen. */
 #root[data-edge="left"] #island,
 #root[data-edge="right"] #island {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-#root[data-edge="left"] #island {
-  border-left: none;
+/* Against the edge there is no line on that side; it comes with the float. */
+#root[data-edge="left"]:not(.floating):not(.moving) #island {
+  border-left-color: transparent;
 }
 
-#root[data-edge="right"] #island {
-  border-right: none;
+#root[data-edge="right"]:not(.floating):not(.moving) #island {
+  border-right-color: transparent;
+}
+
+#root.floating #island {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 #root[data-edge="left"] #notch-nub,
@@ -462,23 +398,33 @@ body {
 .header-actions {
   margin-left: auto;
   display: flex;
-  gap: 14px;
-  padding-right: 16px;
+  align-items: center;
+  gap: 2px;
+  padding-right: 10px;
 }
 
 .header-actions button {
+  width: 26px;
+  height: 24px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--dim-2);
   display: grid;
   place-items: center;
   cursor: default;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
-.header-actions button:hover,
-.header-actions button.on {
+.header-actions button:hover {
   color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Settings is the way into the Awuuu window: a little bigger and brighter. */
+.header-actions .gear-btn {
+  width: 28px;
+  color: #c2b2a0;
 }
 
 #views {
@@ -618,21 +564,6 @@ body {
 
 /* ── Overview ───────────────────────────────────────────────────────────── */
 
-.overview {
-  display: flex;
-  gap: 10px;
-  height: 100%;
-}
-
-.overview > .left {
-  flex: 0 0 322px;
-  width: 322px;
-}
-
-.overview > .right {
-  flex: 1 1 auto;
-}
-
 .card-body {
   position: relative;
   z-index: 1;
@@ -751,8 +682,8 @@ body {
 
 .pill-badge {
   position: absolute;
-  top: -3px;
-  right: 3px;
+  top: -4px;
+  left: 22px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -1668,22 +1599,27 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 10px 14px 12px 116px;
 }
 
+/* One row of pills that scrolls sideways (wheel: views.ts). The padding keeps
+   a pill's badge, glow and hover scale from being clipped by the scroller. */
 .hub-pills {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
-  max-height: 72px;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
-  padding: 2px;
-  flex: 0 0 auto;
+  padding: 6px;
+  margin: -6px 0 -6px -6px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hub-pills .pill {
-  min-width: 120px;
-  max-width: 200px;
+  flex: 0 0 auto;
+  max-width: 210px;
   height: 30px;
-  padding-right: 6px;
+  padding-right: 7px;
   gap: 6px;
 }
 
@@ -1692,8 +1628,56 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
-  padding: 0;
+  padding: 0 3px 0 0;
   font-size: 11px;
+}
+
+/* Tag and × share one grid cell: the × takes over on hover, nothing moves. */
+.pill-end {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.pill-end > * {
+  grid-area: 1 / 1;
+  transition: opacity 0.12s;
+}
+
+.pill-tag {
+  font: 600 9.5px var(--font);
+  padding: 1px 4px;
+  border-radius: 4px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.pill-x {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  background: #3a322b;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  cursor: default;
+}
+
+.pill:hover .pill-end.removable .pill-tag {
+  opacity: 0;
+}
+
+.pill:hover .pill-x {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pill-x:hover {
+  background: #f4505e;
 }
 
 .hub-head {
@@ -1830,58 +1814,31 @@ input[type="range"]::-webkit-slider-thumb {
 
 .hub-pill-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-}
-
-.hub-pill-row .hub-pills {
-  flex: 1 1 auto;
   min-width: 0;
 }
 
+/* "Clear finished": a fixed square at the end of the row, never under a pill. */
 .hub-clear {
-  flex: 0 0 auto;
-  margin-top: 4px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 9px;
   border: 1px solid var(--hairline);
   background: rgba(255, 255, 255, 0.05);
   color: var(--dim-2);
-  font: 600 11px var(--font);
+  display: grid;
+  place-items: center;
   cursor: default;
 }
 
 .hub-clear:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--ink);
-}
-
-.pill-x {
-  position: absolute;
-  top: -5px;
-  right: -4px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  border: 0;
-  background: #3a322b;
-  color: var(--ink);
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  transition: opacity 0.15s;
-  cursor: default;
-  z-index: 2;
-}
-
-.pill:hover .pill-x {
-  opacity: 1;
-}
-
-.pill-x:hover {
-  background: #f4505e;
+  background: rgba(244, 80, 94, 0.18);
+  border-color: rgba(244, 80, 94, 0.4);
+  color: #ff8d97;
 }
 
 .hub-waiting {
@@ -1925,7 +1882,6 @@ input[type="range"]::-webkit-slider-thumb {
 
 .today-pill {
   flex: 0 0 auto;
-  margin-top: 2px;
   height: 30px;
   padding: 0 14px;
   border-radius: 999px;
@@ -1943,9 +1899,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .today-weather-slot {
-  margin-left: auto;
   flex: 0 0 auto;
-  align-self: center;
 }
 
 .today-weather {
@@ -1959,6 +1913,12 @@ input[type="range"]::-webkit-slider-thumb {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+
+.today-body > * {
+  flex: 1 0 auto;
 }
 
 .today {
@@ -2028,11 +1988,29 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: default;
 }
 
+/* Nothing to show: centred in the room the list would take. */
 .today-empty {
-  padding: 18px 4px;
+  margin: auto;
+  max-width: 400px;
+  padding: 8px 4px 14px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 6px;
+  text-align: center;
+}
+
+.today-empty .link-btn {
+  margin-top: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.today-empty .link-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .today-weather-big {
@@ -2045,4 +2023,61 @@ input[type="range"]::-webkit-slider-thumb {
 .today-weather-big .big {
   font: 700 28px var(--font);
   color: var(--ink);
+}
+
+/* ── Glow: a ring around the island (island.ts syncGlow) ─────────────────── */
+
+#island::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 1.5px var(--glow, transparent), 0 0 16px 2px var(--glow, transparent),
+    inset 0 0 12px -2px var(--glow, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A request is waiting for an answer: amber, pulsing for as long as it waits. */
+  #root.glow-wait.mode-compact:not(.moving) #island::after,
+  #root.glow-wait.mode-expanded:not(.moving) #island::after {
+    --glow: rgba(245, 165, 36, 0.85);
+    animation: glow-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* A session finished: one green flash. It failed: a red one, and a shake. */
+  #root.glow-done #island::after {
+    --glow: rgba(52, 211, 153, 0.9);
+    animation: glow-flash 0.9s ease-out 1;
+  }
+
+  #root.glow-error #island::after {
+    --glow: rgba(244, 80, 94, 0.95);
+    animation: glow-flash 0.6s ease-out 1;
+  }
+
+  #root.glow-error:not(.moving) #island {
+    animation: glow-shake 0.4s ease-in-out 1;
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+@keyframes glow-flash {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* `translate`, not `transform`: island.ts owns the island's transform. */
+@keyframes glow-shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -5px 0; }
+  40% { translate: 5px 0; }
+  60% { translate: -3px 0; }
+  80% { translate: 3px 0; }
 }

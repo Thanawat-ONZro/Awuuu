@@ -52,8 +52,13 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
-  /** Moving: the window becomes a work-area overlay; its logical [w, h]. */
-  islandOverlayBegin: () => call<[number, number]>("island_overlay_begin"),
+  /**
+   * Moving: the window becomes a work-area overlay. Returns its logical
+   * [w, h] and where the island window's top-left is inside it [x, y].
+   * `apply: false` only measures, leaving the window as it is.
+   */
+  islandOverlayBegin: (apply = true) =>
+    call<[number, number, number, number]>("island_overlay_begin", { apply }),
   /** Dock on `edge` at `along` ("" = put it back) and end the overlay. */
   islandOverlayEnd: (edge: string, along: number) => call<void>("island_overlay_end", { edge, along }),
   resetPosition: () => call<void>("reset_position"),
