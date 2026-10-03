@@ -5,6 +5,7 @@
 // only when it is opened (a request's steps, a step's output), and long lists
 // are capped behind "Show more", so 5000 entries stay quick.
 
+import { testLine, testStatus } from "../testcheck";
 import "../dashboard.css";
 import { Bridge, type HistoryData, type HistoryEntry } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
@@ -428,6 +429,9 @@ export function page(): HTMLElement {
       if (t.end?.kind === "error") {
         bodyEl.append(h("div", { class: "notice err" }, highlight(`Ended with an error: ${t.end.detail?.trim() || t.end.title}`, query)));
       }
+      const ts = testStatus(t);
+      const tests = testLine(ts);
+      if (tests) bodyEl.append(h("div", { class: ts.last?.verdict === "failed" ? "notice err" : ts.last?.verdict === "passed" && ts.changedAfter === 0 ? "notice ok" : "notice warn", text: tests }));
       if (t.facts.changed.length > 0) {
         bodyEl.append(h("div", { class: "label", text: `Changed files (${t.facts.changed.length})` }), fileList(t.facts.changed, s.cwd, `f:${key}`));
       }

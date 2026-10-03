@@ -7,6 +7,7 @@
 
 import type { HistoryData, HistoryEntry, HistorySession } from "../core/bridge";
 import { AGENT_INFO } from "../core/state";
+import { testLine, testStatus } from "./testcheck";
 
 export type FileChange = "read" | "edit" | "write" | "delete";
 
@@ -425,6 +426,9 @@ function turnBody(turn: Turn, session: Pick<SessionSummary, "agent" | "cwd">): s
   } else if (!turn.end && turn.prompt) {
     out.push("_No end of this request was recorded — it may still be running or was interrupted._", "");
   }
+
+  const tests = testLine(testStatus(turn));
+  if (tests) out.push(`**${tests}**`, "");
 
   if (turn.facts.changed.length > 0) {
     out.push("**Changed files**", "");
