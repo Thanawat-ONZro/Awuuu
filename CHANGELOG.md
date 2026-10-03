@@ -7,6 +7,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## [Unreleased]
 
 ### Added
+- Two agents, one file: when an agent is about to change a file another agent session changed in the last 3 minutes, the island says so (it never blocks the agent).
 - Each request in Sessions and in copied recaps starts with one line of what really happened, such as "Changed 3 files (+42 −7) · tests failed 2× then passed · committed", with warnings like "Files changed after the last test run" or "Code changed, no tests were run".
 - Test results are read from the output (cargo, vitest, jest, pytest, mocha, unittest, go, dotnet). A run with zero tests never counts as passed.
 - Git confirms what a request changed: Awuuu compares `git status` from the start and end of each request, so edits made by `sed -i`, formatters or generators count too.

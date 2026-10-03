@@ -7,9 +7,23 @@ import { Bridge, IS_TAURI, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
-import { History, type HistoryCall, type HistoryCtx } from "./history";
+import { History, toolFiles, type HistoryCall, type HistoryCtx } from "./history";
+import { noteEdit, overlapMessage } from "./overlap";
 import { isPlanTool, reducePlan } from "./plan";
 import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
+
+// ── Two agents, one file ────────────────────────────────────────────────────
+
+/** Another agent changed this file minutes ago: say so, in the log and the island. */
+function warnOverlap(island: Island, session: AgentTask, taskId: string, tool: string, input: Record<string, unknown>) {
+  for (const f of toolFiles(tool, input)) {
+    if (f.change === "read") continue;
+    const prev = noteEdit(session.id, session.name, f.path);
+    if (!prev) continue;
+    State.appendStep(taskId, overlapMessage(f.path, prev), "info");
+    island.toast("agents", 6);
+  }
+}
 
 // ── Git as ground truth ─────────────────────────────────────────────────────
 // A snapshot when a request starts and one when it ends; what changed in
@@ -428,6 +442,7 @@ function handleHook(island: Island, payload: HookPayload) {
         session.state = "working";
         State.appendStep(taskId, describeTool(tool, input), "tool", key);
       }
+      warnOverlap(island, session, taskId, tool, input);
       // "waiting" only while a card is actually up (an always-rule answers at once).
       History.toolStart(who(), call(), State.approvalQueue.some((a) => a.requestId === payload.request_id));
       break;
