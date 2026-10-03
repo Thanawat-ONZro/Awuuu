@@ -7,8 +7,9 @@ import { Bridge, IS_TAURI, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
-import { History, type HistoryCall, type HistoryCtx } from "./history";
+import { History, toolFiles, type HistoryCall, type HistoryCtx } from "./history";
 import { Ground } from "./ground";
+import { noteEdit, overlapMessage } from "./overlap";
 import { isPlanTool, reducePlan } from "./plan";
 
 interface HookPayload {
@@ -47,6 +48,17 @@ History.enabled = () => State.settings.historyEnabled !== false;
 
 /** Plan calls already applied, per session: one call can be reported twice. */
 const planSeen = new Map<string, string[]>();
+
+/** Another agent changed this file minutes ago: say so, in the log and the island. */
+function warnOverlap(island: Island, session: AgentTask, taskId: string, tool: string, input: Record<string, unknown>) {
+  for (const f of toolFiles(tool, input)) {
+    if (f.change === "read") continue;
+    const prev = noteEdit(session.id, session.name, f.path);
+    if (!prev) continue;
+    State.appendStep(taskId, overlapMessage(f.path, prev), "info");
+    island.toast("agents", 6);
+  }
+}
 
 /** Keeps the session's plan in step with the agent's todo tool. */
 function trackPlan(session: AgentTask, tool: string, input: Record<string, unknown>, key: string) {
@@ -398,6 +410,7 @@ function handleHook(island: Island, payload: HookPayload) {
     case "PreToolUse": {
       session.sessionCwd = cwd;
       trackPlan(session, tool, input, key);
+      warnOverlap(island, session, taskId, tool, input);
       if (payload.request_id) {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
       } else {
