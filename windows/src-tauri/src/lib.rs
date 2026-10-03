@@ -20,6 +20,7 @@ mod oauth;
 mod win_user;
 mod usage;
 mod history;
+mod ground;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -812,6 +813,8 @@ pub fn run() {
             statusline_preview,
             statusline_apply,
             history_append,
+            ground::git_snapshot,
+            ground::git_changed_between,
             history_query,
             history_clear,
             history_info,

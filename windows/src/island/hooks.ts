@@ -8,6 +8,7 @@ import { Sound } from "../core/sound";
 import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
 import type { Island } from "./island";
 import { History, type HistoryCall, type HistoryCtx } from "./history";
+import { Ground } from "./ground";
 import { isPlanTool, reducePlan } from "./plan";
 
 interface HookPayload {
@@ -390,6 +391,7 @@ function handleHook(island: Island, payload: HookPayload) {
       const asked = payload.prompt ?? payload.message;
       if (asked) State.appendStep(taskId, asked.slice(0, 600), "prompt");
       if (asked) History.prompt(who(), asked);
+      if (asked) Ground.start(sessionId, who().cwd);
       break;
     }
 
@@ -446,7 +448,7 @@ function handleHook(island: Island, payload: HookPayload) {
       pullTranscript(taskId, source, transcript, payload.last_assistant_message ?? payload.message, () => {
         State.appendStep(taskId, "Done", "done");
         const last = payload.last_assistant_message ?? payload.message;
-        History.done(who(), last ? plainText(last) : null);
+        void Ground.finish(who()).finally(() => History.done(who(), last ? plainText(last) : null));
       }, who);
       Sound.play("finish");
       session.pillBadge = "finished";

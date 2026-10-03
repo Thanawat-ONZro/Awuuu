@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node dev/test-island.mjs && node dev/test-markdown.mjs && node dev/test-testcheck.mjs",
+    "test": "node dev/test-island.mjs && node dev/test-markdown.mjs && node dev/test-testcheck.mjs && node dev/test-snapshot.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "tauri": "tauri",
     "predev": "cargo build --release -p awuuu-hook",

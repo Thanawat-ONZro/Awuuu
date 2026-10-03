@@ -95,7 +95,7 @@ export interface TestStatus {
   /** Every test run in the request, oldest first. */
   runs: TestRun[];
   last: TestRun | null;
-  /** Files edited or written after the last test run. */
+  /** Files edited or written after the last test run (git-found changes carry no time to tell, so they don't count). */
   changedAfter: number;
   /** How many times in a row the last run's command was tried. */
   tries: number;
@@ -113,7 +113,7 @@ export function testStatus(turn: Turn): TestStatus {
 
   const changed = new Set<string>();
   for (const e of turn.steps) {
-    if (e.at <= last.entry.at || e.status === "failed" || (e.kind !== "edit" && e.kind !== "write")) continue;
+    if (e.at <= last.entry.at || e.status === "failed" || (e.kind !== "edit" && e.kind !== "write") || e.tool === "git") continue;
     for (const f of e.files?.length ? e.files : [{ path: e.title }]) changed.add(f.path.replace(/\\/g, "/").toLowerCase());
   }
   let tries = 0;

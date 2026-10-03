@@ -170,6 +170,11 @@ export const Bridge = {
   /** Upserts activity entries by id (the island reports what the agents do). */
   historyAppend: (entries: HistoryEntry[], sessions: Record<string, HistorySession>) =>
     call<void>("history_append", { entries, sessions }),
+  /** HEAD and the changed files of the repository `cwd` is in (null: not in one). */
+  gitSnapshot: (cwd: string) => call<GitSnapshot | null>("git_snapshot", { cwd }),
+  /** The files that differ between two commits. */
+  gitChangedBetween: (cwd: string, from: string, to: string) =>
+    call<GitFileInfo[] | null>("git_changed_between", { cwd, from, to }),
   /** Everything kept, oldest first (`sinceMs` = only entries at or after it). */
   historyQuery: (sinceMs?: number) => call<HistoryData>("history_query", { sinceMs: sinceMs ?? null }),
   /** Forgets everything and deletes history.json. */
@@ -260,6 +265,18 @@ export interface HistoryEntry {
   status: HistoryStatus;
   /** How long it took. */
   ms?: number;
+}
+
+export interface GitFileInfo {
+  path: string;
+  code: string;
+  size: number;
+  mtime: number;
+}
+
+export interface GitSnapshot {
+  head: string;
+  files: GitFileInfo[];
 }
 
 export interface HistorySession {

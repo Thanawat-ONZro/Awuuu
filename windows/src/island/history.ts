@@ -73,6 +73,9 @@ function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+/** One spelling of a path: forward slashes, lower case. */
+const pathKey = (p: string) => p.replace(/\\/g, "/").toLowerCase();
+
 function clip(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
@@ -150,6 +153,14 @@ class HistoryFeed {
     return this.sink != null && this.enabled();
   }
 
+  /** Whether entries are being kept (the history is on and has somewhere to go). */
+  active(): boolean {
+    return this.on();
+  }
+
+  /** Files each session's tool calls named this request, so git only adds the others. */
+  private named = new Map<string, Set<string>>();
+
   private nextId(session: string): string {
     return `${session}:${++this.seq}`;
   }
@@ -193,6 +204,7 @@ class HistoryFeed {
     if (!this.on() || !asked) return;
     if (this.lastPrompt.get(ctx.session) === asked) return;
     this.lastPrompt.set(ctx.session, asked);
+    this.named.delete(ctx.session);
     this.plain(ctx, "prompt", "info", asked, asked.length > TITLE_MAX ? asked : undefined);
   }
 
@@ -279,8 +291,29 @@ class HistoryFeed {
       status,
     };
     const files = toolFiles(call.tool, call.input, kind);
-    if (files.length) entry.files = files;
+    if (files.length) {
+      entry.files = files;
+      if (kind === "edit" || kind === "write") {
+        const named = this.named.get(ctx.session) ?? new Set<string>();
+        for (const f of files) named.add(pathKey(f.path));
+        this.named.set(ctx.session, named);
+      }
+    }
     return entry;
+  }
+
+  /** Files git says changed that no tool call of this request named (a script, `sed -i`, a commit). */
+  gitChanges(ctx: HistoryCtx, changes: { path: string; change: "edit" | "write" | "delete" }[]) {
+    if (!this.on()) return;
+    const named = this.named.get(ctx.session);
+    for (const c of changes) {
+      if (named?.has(pathKey(c.path))) continue;
+      this.push(ctx, {
+        id: this.nextId(ctx.session), session: ctx.session, agent: ctx.agent, at: Date.now(),
+        kind: c.change === "write" ? "write" : "edit", tool: "git", title: c.path, status: "ok",
+        files: [c], detail: "Changed outside the agent's file tools (found by git)",
+      });
+    }
   }
 }
 
