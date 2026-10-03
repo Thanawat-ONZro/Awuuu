@@ -17,6 +17,8 @@ mod hermes;
 mod cli;
 mod extras;
 mod win_user;
+mod usage;
+mod history;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -40,6 +42,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub struct Shared {
     pub settings: Mutex<Settings>,
     pub gate: Arc<PollGate>,
+    /// What the agents did (history.json), in memory.
+    pub history: history::Store,
 }
 
 #[derive(Serialize)]
@@ -649,6 +653,83 @@ fn open_settings_window(app: AppHandle, page: Option<String>) {
     open_settings_at(&app, page.as_deref().unwrap_or(""));
 }
 
+// ── Usage limits, history ─────────────────────────────────────────────────────
+
+/// Plan limits of the connected agents, from files on this PC (usage.rs).
+#[tauri::command]
+async fn usage_read() -> Vec<usage::AgentUsage> {
+    tauri::async_runtime::spawn_blocking(usage::read).await.unwrap_or_default()
+}
+
+#[tauri::command]
+fn statusline_status() -> HookStatus {
+    hooks::statusline_status()
+}
+
+#[tauri::command]
+fn statusline_preview(install: bool) -> Result<HookPreview, String> {
+    hooks::statusline_preview(install)
+}
+
+/// Writes Claude Code's `statusLine` — after a click, and only when the file
+/// still matches the preview. Returns the backup path.
+#[tauri::command]
+fn statusline_apply(install: bool, fingerprint: String) -> Result<String, String> {
+    let backup = hooks::statusline_write(install, &fingerprint)?;
+    usage::forget_cache();
+    Ok(backup)
+}
+
+/// The island reports what the agents do; entries are upserted by id.
+#[tauri::command]
+fn history_append(
+    shared: State<Shared>,
+    entries: Vec<history::Entry>,
+    sessions: std::collections::HashMap<String, history::SessionInfo>,
+) {
+    let (enabled, days) = {
+        let s = shared.settings.lock().unwrap();
+        (s.history_enabled, s.history_days)
+    };
+    if !enabled {
+        return;
+    }
+    shared.history.append(entries, sessions, days, history::now_ms());
+    shared.history.schedule_write();
+}
+
+#[tauri::command]
+fn history_query(shared: State<Shared>, since_ms: Option<f64>) -> history::HistoryData {
+    shared.history.query(since_ms.map(|ms| ms as i64))
+}
+
+#[tauri::command]
+fn history_clear(shared: State<Shared>) -> Result<(), String> {
+    shared.history.clear()
+}
+
+#[tauri::command]
+fn history_info(shared: State<Shared>) -> history::Info {
+    shared.history.info()
+}
+
+/// Saves `<name>.md` and `<name>.json` in Downloads, never over another file.
+#[tauri::command]
+fn export_files(app: AppHandle, name: String, markdown: String, json: String) -> Result<Vec<String>, String> {
+    let dir = app.path().download_dir().map_err(|e| format!("No Downloads folder: {e}"))?;
+    history::export_to(&dir, &name, &markdown, &json)
+}
+
+/// Shows a file in Explorer, selected.
+#[tauri::command]
+fn reveal_file(path: String) {
+    // `"` cannot be part of a Windows path; refusing it keeps the quoting honest.
+    if path.contains('"') || !std::path::Path::new(&path).exists() {
+        return;
+    }
+    let _ = Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.replace('/', "\\"))).spawn();
+}
+
 pub fn run() {
     // Release builds abort on panic with no console: leave the reason in awuuu.log.
     std::panic::set_hook(Box::new(|info| log::line(format!("PANIC: {info}"))));
@@ -672,6 +753,7 @@ pub fn run() {
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
+            history: history::Store::new(settings::config_dir().join("history.json")),
         })
         .manage(Pending::default())
         .manage(Chat::default())
@@ -719,6 +801,16 @@ pub fn run() {
             detect_agents,
             aw_path_set,
             set_paused,
+            usage_read,
+            statusline_status,
+            statusline_preview,
+            statusline_apply,
+            history_append,
+            history_query,
+            history_clear,
+            history_info,
+            export_files,
+            reveal_file,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -764,10 +856,18 @@ pub fn run() {
             updater::start(handle.clone());
             Ok(())
         })
-        .run(context)
+        .build(context)
         .map_err(|err| {
             log::line(format!("tauri run error: {err}"));
             err
         })
-        .expect("error while running Awuuu");
+        .expect("error while running Awuuu")
+        .run(|app, event| {
+            // Whatever history is still waiting for its write goes out now.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(shared) = app.try_state::<Shared>() {
+                    shared.history.flush();
+                }
+            }
+        });
 }

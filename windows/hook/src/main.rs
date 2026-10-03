@@ -16,6 +16,9 @@
 //! Usage: `awuuu-hook [--agent <claude|agy|hermes|opencode|codex>] <EventName>`
 //! (the event name is also read from the JSON). Without `--agent` the caller is
 //! Claude Code, which is what installs older than the flag wrote.
+//!
+//! `awuuu-hook --statusline` is Claude Code's status line command instead: see
+//! `statusline.rs`.
 
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,6 +46,7 @@ const DROPPED_FIELDS: &[&str] = &["tool_response"];
 /// less than this anyway.
 const MAX_FIELD_LEN: usize = 2_000;
 
+mod statusline;
 mod win;
 
 /// Set once the island has the event: from then on "no answer" means nobody
@@ -194,6 +198,10 @@ fn parse_answer(line: &str) -> Option<Answer> {
 }
 
 fn main() {
+    // Claude Code's status line: its own mode, no pipe involved.
+    if std::env::args().skip(1).any(|a| a == "--statusline") {
+        statusline::run();
+    }
     let args = parse_args(std::env::args().skip(1));
     let Some(ev) = read_event(&args) else { std::process::exit(0) };
 

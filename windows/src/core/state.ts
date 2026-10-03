@@ -2,6 +2,7 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
+import type { AgentUsage } from "./bridge";
 
 export type AgentSource = "claude" | "agy" | "hermes" | "opencode" | "codex" | "integration";
 
@@ -31,6 +32,27 @@ export interface LogEntry {
 }
 const LOG_MAX = 80;
 
+/** One step of an agent's plan (its todo list). */
+export interface PlanItem {
+  text: string;
+  /** The step as the agent says it while doing it ("Fixing the parser"). */
+  active?: string;
+  status: "pending" | "in_progress" | "completed";
+  /** Claude's task id, for TaskUpdate. */
+  id?: string;
+}
+
+/** The plan an agent is working through, kept up to date by island/plan.ts. */
+export interface Plan {
+  items: PlanItem[];
+  done: number;
+  total: number;
+  /** What it is doing now: the step in progress, else the next one. */
+  current: string | null;
+  /** Tasks created so far (the next TaskCreate gets `created + 1` as its id). */
+  created?: number;
+}
+
 export interface AgentTask {
   id: string;
   name: string;
@@ -49,6 +71,8 @@ export interface AgentTask {
   ancestorPids?: number[];
   /** Agent sessions: what happened, newest last. */
   log?: LogEntry[];
+  /** Agent sessions: the todo list the agent keeps, when it keeps one. */
+  plan?: Plan;
 }
 
 export interface QuestionOption {
@@ -304,6 +328,9 @@ class AppState {
     }
     return null;
   }
+
+  /** Plan limits of the connected agents (island/usage.ts refreshUsage()). */
+  usage: AgentUsage[] = [];
 
   integrations: Record<string, IntegrationInfo> = {};
   /** The overview shows Today (true) or the focused integration's card. */
