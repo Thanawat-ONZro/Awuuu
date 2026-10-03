@@ -36,7 +36,7 @@ bash scripts/check-cloud.sh
 | ตรวจ | วิธี |
 |---|---|
 | Type check | `tsc --noEmit` |
-| TS unit test | `npm test` (vitest, เมื่อ PR 4.1 เพิ่มแล้ว) |
+| TS unit test | `npm test` (vitest, ไฟล์ใน `windows/test/`) |
 | Rust compile | `cargo check --target x86_64-pc-windows-gnu` (cross-compile) |
 | Rust test | build เป็น .exe ของ Windows แล้วรันด้วย wine (app 75 ตัว, hook 15 ตัว) |
 
@@ -85,5 +85,6 @@ npm run pack                                                 # installer
 ## 9. Claude บน cloud ทำงานอย่างไร
 - อ่าน `CLAUDE.md`, ROADMAP และไฟล์นี้ก่อนเริ่มทุกงาน
 - ทำทีละ PR ตามลำดับใน roadmap: branch → โค้ด + test → `check-cloud.sh` จนผ่าน → push → draft PR → แจ้ง Owen
+- เมื่อ Owen สั่งให้ทำต่อเนื่องโดยไม่รอ merge: หนึ่ง branch และหนึ่ง PR ต่อเวอร์ชัน (`claude/v0.4`, `claude/v0.5`, ...) แต่ละข้อใน roadmap เป็นหนึ่ง commit เวอร์ชันถัดไปแตก branch จากเวอร์ชันก่อนหน้า Owen merge ตามลำดับเลขเวอร์ชัน
 - ไม่ merge เอง, ไม่แก้เลขเวอร์ชัน, ไม่สร้าง release
 - รายงานงบที่ใช้โดยประมาณเมื่อจบแต่ละเวอร์ชัน

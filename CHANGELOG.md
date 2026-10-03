@@ -1,0 +1,14 @@
+# Changelog
+
+What changed in each Awuuu version, in words a user can follow.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
+Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## [Unreleased]
+
+### Added
+- Frontend unit tests (vitest) for the live plan and the island's open/close logic; `npm test` runs them.
+
+## [0.3.0] - 2026-10-03
+
+- Agents hub with live plan and plan-limit chips, dashboard, settings, integrations sign-in, dog looks. See the git history for details.
