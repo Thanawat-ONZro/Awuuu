@@ -10,7 +10,9 @@ import {
   type IslandMode, type IslandViewName, SIDE_COMPACT, COMPACT_W, NOTCH_H,} from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { BotEngine, hexToRGB } from "../mochi/engine";
+import { BotEngine } from "../mochi/engine";
+import { setOwnerLook } from "../mochi/dog";
+import { CLASSIC, lookForAgent, normalizeLook, type DogLook } from "../mochi/looks";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -67,6 +69,8 @@ export class Island {
   private botSize = new Spring(10);
 
   private engine = new BotEngine();
+  /** The owner's own dog (settings.dog); agents and integrations wear theirs. */
+  private ownLook: DogLook = CLASSIC;
   private greeting = new Greeting();
 
   private running = false;
@@ -1103,14 +1107,14 @@ export class Island {
     if (!ctx) return;
 
     const focus = State.focusTask;
-    // Awuuu keeps its own cream-and-caramel coat, except where a pill is
-    // picked: the overview wears the focused integration's colour, the
-    // Agents hub the colour of the session you tapped.
+    // Awuuu wears the owner's own look, except where a pill is picked: the
+    // overview becomes the focused integration's dog, the Agents hub the dog
+    // of the session you tapped.
     const tapped = State.view === "agents" && State.mode === "expanded" ? State.focusedAgentSession : null;
-    const tint = State.mode === "expanded" && State.view === "overview" && !State.overviewToday && focus?.isIntegration
-      ? focus.color
-      : tapped?.color ?? null;
-    this.engine.bodyColor = tint ? hexToRGB(tint) : null;
+    const worn = State.mode === "expanded" && State.view === "overview" && !State.overviewToday && focus?.isIntegration
+      ? focus
+      : tapped;
+    this.engine.setLook(worn ? lookForAgent(worn.source, worn.color) : this.ownLook);
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();
@@ -1222,6 +1226,9 @@ export class Island {
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
     geo.expandedW = State.settings.islandWidth ?? 640;
     geo.hubH = State.settings.hubHeight ?? 290;
+    // The Appearance page edits the dog live; the frame loop picks it up.
+    this.ownLook = normalizeLook(State.settings.dog);
+    setOwnerLook(this.ownLook);
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     this.animateGeometry(false);

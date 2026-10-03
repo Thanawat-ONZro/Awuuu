@@ -2,7 +2,10 @@
 // Everything is laid out in the same 640×150 reference space as on macOS.
 
 import { Sound } from "../core/sound";
-import { drawBrows, drawEars, drawMuzzle, drawTail, earTwitch, type FacePose } from "./dog";
+import {
+  drawBrows, drawCollarTag, drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat,
+  type EarPose, type FacePose, type Palette,
+} from "./dog";
 import { COMPACT_W, NOTCH_H, NOTCH_W } from "../core/layout";
 
 // ── Timing (mirrors greeting-v2.html `T`) ─────────────────────────────────────
@@ -266,20 +269,21 @@ function mochiPath(hw: number, hh: number): Path2D {
   return p;
 }
 
-function whiteFill(
+function furFill(
   x: CanvasRenderingContext2D, path: Path2D,
   x0: number, y0: number, x1: number, y1: number,
+  top: string, bottom: string,
 ) {
   const g = x.createLinearGradient(x0, y0, x1, y1);
-  g.addColorStop(0, "rgb(255,248,238)");
-  g.addColorStop(1, "rgb(236,217,194)");
+  g.addColorStop(0, top);
+  g.addColorStop(1, bottom);
   x.save();
   x.fillStyle = g;
   x.fill(path);
   x.restore();
 }
 
-function drawHandL(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose) {
+function drawHandL(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose, pal: Palette) {
   const k = p.handL;
   if (k <= 0.01) return;
   const hb = hh * 2;
@@ -291,14 +295,14 @@ function drawHandL(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose)
   x.translate(rx, ry);
   const circ = new Path2D();
   circ.ellipse(0, 0, r, r, 0, 0, Math.PI * 2);
-  whiteFill(x, circ, r, -r, -r, r);
+  furFill(x, circ, r, -r, -r, r, pal.pawTop, pal.pawBottom);
   x.strokeStyle = "rgba(0,0,0,0.08)";
   x.lineWidth = 0.8;
   x.stroke(circ);
   x.restore();
 }
 
-function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose) {
+function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose, pal: Palette) {
   const k = p.handR;
   if (k <= 0.01) return;
   const hb = hh * 2;
@@ -317,8 +321,8 @@ function drawHandR(x: CanvasRenderingContext2D, hw: number, hh: number, p: Pose)
   x.translate(rx, ry);
   x.rotate(ang);
   const g = x.createLinearGradient(L / 2, -T2 / 2, -L / 2, T2 / 2);
-  g.addColorStop(0, "rgb(255,248,238)");
-  g.addColorStop(1, "rgb(236,217,194)");
+  g.addColorStop(0, pal.pawTop);
+  g.addColorStop(1, pal.pawBottom);
   rr(x, -L / 2, -T2 / 2, L, T2, T2 / 2);
   x.fillStyle = g;
   x.fill();
@@ -332,6 +336,8 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
   const hh = p.hb / 2;
   const hw = hh * ASP;
   if (hh <= 0.4) return;
+  // The owner's own dog, whatever look it wears.
+  const pal = ownerPalette();
 
   // Halo: golden → blue, two passes for a soft aura
   if (p.halo > 0) {
@@ -358,20 +364,35 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
   // Awuuu's tail and ears sit behind the body; the tail wags hard while waving.
   const t = performance.now() / 1000;
   const excited = p.wave >= 0 || p.eye === "happy";
-  if (hh > 6) drawTail(x, hw, hh, excited ? Math.sin(t * 15) * 0.32 : Math.sin(t * 4.2) * 0.16, null);
-  drawEars(x, hw, hh, {
+  if (hh > 6) drawTail(x, hw, hh, excited ? Math.sin(t * 15) * 0.32 : Math.sin(t * 4.2) * 0.16, pal);
+  const ears: EarPose = {
     shift: p.lookX * hw * 0.12,
     perk: p.wave >= 0 ? 0.8 : 0,
     twitch: [earTwitch(t, 0.2), earTwitch(t, 0.9)],
-    solid: null,
     alpha: 1,
-  });
+  };
+  drawEars(x, hw, hh, ears, pal);
 
-  drawHandL(x, hw, hh, p);
-  drawHandR(x, hw, hh, p);
+  drawHandL(x, hw, hh, p, pal);
+  drawHandR(x, hw, hh, p, pal);
 
   const body = mochiPath(hw, hh);
-  whiteFill(x, body, hw * 0.6, -hh, -hw * 0.6, hh);
+  furFill(x, body, hw * 0.6, -hh, -hw * 0.6, hh, pal.bodyTop, pal.bodyBottom);
+
+  const lx0 = p.lookX * hw * 0.42;
+  if (pal.hasCoat) {
+    x.save();
+    x.clip(body);
+    paintCoat(x, hw, hh, {
+      faceX: lx0, faceY: p.lookY * hh * 0.28 + hh * 0.12, squash: 1, faceAlpha: 1, alpha: 1, small: hh <= 12,
+    }, pal);
+    x.restore();
+  }
+  if (pal.rim) {
+    x.strokeStyle = pal.rim;
+    x.lineWidth = 1;
+    x.stroke(body);
+  }
 
   if (p.tint > 0) {
     const g = x.createLinearGradient(0, hh, 0, -hh * 0.1);
@@ -386,7 +407,7 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
 
   // Muzzle, nose, mouth and brows. Body height is 2·ry = 1.76·R in the engine.
   const R = hh / 0.88;
-  const lx0 = p.lookX * hw * 0.42;
+  const ink = pal.eyeInk ?? "#16171A";
   const face: FacePose = {
     shiftX: lx0,
     shiftY: p.lookY * hh * 0.2,
@@ -400,15 +421,15 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
   x.save();
   x.clip(body);
   const browY = hh * 0.12 + p.lookY * hh * 0.28 - p.hb * 0.15;
-  drawBrows(x, R, [[-p.hb * 0.19 + lx0, browY, -1], [p.hb * 0.19 + lx0, browY, 1]], face);
-  drawMuzzle(x, R, hw, hh * 0.6, face);
+  drawBrows(x, R, [[-p.hb * 0.19 + lx0, browY, -1], [p.hb * 0.19 + lx0, browY, 1]], face, pal);
+  drawMuzzle(x, R, hw, hh * 0.6, face, pal);
   x.restore();
 
   // Eyes
   x.save();
   x.clip(body);
-  x.fillStyle = "#16171A";
-  x.strokeStyle = "#16171A";
+  x.fillStyle = ink;
+  x.strokeStyle = ink;
   const er = p.hb * 0.06;
   const sp = p.hb * 0.19;
   const lx = p.lookX * hw * 0.42;
@@ -433,10 +454,32 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
       x.beginPath();
       x.arc(0, 0, er, 0, Math.PI * 2);
       x.fill();
+      if (pal.iris && er > 2) {
+        x.fillStyle = pal.iris;
+        x.beginPath();
+        x.arc(0, 0, er * 0.74, 0, Math.PI * 2);
+        x.fill();
+        x.fillStyle = "#16171A";
+        x.beginPath();
+        x.arc(0, 0, er * 0.4, 0, Math.PI * 2);
+        x.fill();
+        x.fillStyle = ink;
+      }
+      if (pal.look.eyes === "sparkle" && er > 2) {
+        x.fillStyle = "rgba(255,255,255,0.95)";
+        x.beginPath();
+        x.arc(er * 0.3, -er * 0.34, er * 0.3, 0, Math.PI * 2);
+        x.fill();
+        x.fillStyle = ink;
+      }
     }
     x.restore();
   }
   x.restore();
+
+  // Floppy ears and the collar tag sit over the body.
+  drawEarsFront(x, hw, hh, ears, pal);
+  if (hh > 8) drawCollarTag(x, hw, hh, 1, pal);
 
   // Activity badge
   if (p.badge > 0.01) {

@@ -6,7 +6,7 @@
 // exactly as on macOS, because this canvas draws its own.
 
 import { State } from "../core/state";
-import { drawEars, drawMuzzle, drawTail, earTwitch } from "../mochi/dog";
+import { drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat, type EarPose } from "../mochi/dog";
 import {
   USC, eIn, eInOut, eOut, lerp, progressAt,
   type UploadEyeShape, type UploadFrame,
@@ -303,30 +303,43 @@ export class UploadCanvas {
     // Awuuu's tail and ears fade out as the body turns into the box.
     const dogA = Math.max(0, 1 - mc * 2.2);
     const t = performance.now() / 1000;
+    // The owner's own dog (mochi/looks.ts), as on the island.
+    const pal = ownerPalette();
+    const ears: EarPose = {
+      shift: f.lookX * R * 0.12,
+      perk: 0.6,
+      twitch: [earTwitch(t, 0.2), earTwitch(t, 0.9)],
+      alpha: dogA,
+    };
+    const erx = R * (1.04 - 0.04 * mc);
+    const ery = R * (0.97 - 0.03 * mc);
     if (dogA > 0.01) {
-      const erx = R * (1.04 - 0.04 * mc);
-      const ery = R * (0.97 - 0.03 * mc);
       ctx.save();
       ctx.globalAlpha *= dogA;
-      drawTail(ctx, erx, ery, Math.sin(t * 6) * 0.2, null);
+      drawTail(ctx, erx, ery, Math.sin(t * 6) * 0.2, pal);
       ctx.restore();
-      drawEars(ctx, erx, ery, {
-        shift: f.lookX * erx * 0.12,
-        perk: 0.6,
-        twitch: [earTwitch(t, 0.2), earTwitch(t, 0.9)],
-        solid: null,
-        alpha: dogA,
-      });
+      drawEars(ctx, erx, ery, ears, pal);
     }
 
     const { rx, ry } = bodyPath(ctx, f.morph, R);
 
     // Body.
     const bg = ctx.createLinearGradient(rx * 0.7, -ry * 0.9, -rx * 0.8, ry * 0.9);
-    bg.addColorStop(0, "#FFF8EE");
-    bg.addColorStop(1, "#ECD9C2");
+    bg.addColorStop(0, pal.bodyTop);
+    bg.addColorStop(1, pal.bodyBottom);
     ctx.fillStyle = bg;
     ctx.fill();
+
+    // Coat markings.
+    if (pal.hasCoat && dogA > 0.01) {
+      ctx.save();
+      ctx.clip();
+      paintCoat(ctx, rx, ry, {
+        faceX: f.lookX * R * 0.3, faceY: f.lookY * R * 0.1, squash: 1, faceAlpha: 1, alpha: dogA, small: false,
+      }, pal);
+      ctx.restore();
+      bodyPath(ctx, f.morph, R);
+    }
 
     // Edge shadow.
     const sg = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.3);
@@ -388,7 +401,7 @@ export class UploadCanvas {
         ink: "#16171A",
         markings: true,
         alpha: dogA,
-      });
+      }, pal);
     }
 
     // Eyes.
@@ -406,6 +419,7 @@ export class UploadCanvas {
     }
 
     ctx.restore(); // body clip
+    if (dogA > 0.01) drawEarsFront(ctx, erx, ery, ears, pal);
     ctx.restore(); // transform
   }
 
