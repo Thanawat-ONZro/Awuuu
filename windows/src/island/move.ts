@@ -98,7 +98,8 @@ export class Mover {
     // overlay is being set up is lost. Until the window is the overlay the
     // cursor is tracked by its travel on screen, which does not depend on where
     // the window is; after, client coordinates are overlay coordinates.
-    // `local` is the cursor in the coordinates of the window as it was.
+    // `local` is the cursor in the coordinates of the window as it was. (In a
+    // browser the page never moves, so client coordinates do from the start.)
     let origin = { x: 0, y: 0 };
     let ready = false;
     let local = { x: ev.clientX, y: ev.clientY };
@@ -106,7 +107,7 @@ export class Mover {
     let letGo = false;
     let wake: (() => void) | null = null;
     const onMove = (e: PointerEvent) => {
-      local = ready
+      local = ready || !IS_TAURI
         ? { x: e.clientX - origin.x, y: e.clientY - origin.y }
         : { x: ev.clientX + e.screenX - ev.screenX, y: ev.clientY + e.screenY - ev.screenY };
       moved = Math.max(moved, Math.hypot(local.x - ev.clientX, local.y - ev.clientY));
