@@ -318,6 +318,8 @@ class AppState {
   dropError: string | null = null;
   /** Which chat backends can answer; null = not checked yet (views/chat.ts). */
   chatBackends: { hermes: boolean; claude: boolean } | null = null;
+  /** Whether Hermes answers, checked only while the chat is open (island/hermes-watch.ts). */
+  hermesHealth: "unknown" | "online" | "offline" | "nokey" = "unknown";
   noteMessage: string | null = null;
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];

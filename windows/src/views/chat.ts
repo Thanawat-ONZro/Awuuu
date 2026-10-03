@@ -5,6 +5,7 @@ import { h, svg, clear } from "./dom";
 import { renderMarkdown, type RenderOptions } from "./markdown";
 import { todayRows } from "./today";
 import { awarenessNote } from "../island/awareness";
+import { HermesWatch } from "../island/hermes-watch";
 import { ICONS } from "./icons";
 import { Bridge, IS_TAURI, onEvent, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
@@ -58,7 +59,31 @@ async function probeBackends() {
 
 void onEvent<null>("secrets-changed", () => {
   if (State.mode === "expanded" && State.view === "prompt") void probeBackends();
+  hermesWatch.poke();
 });
+
+const hermesWatch = new HermesWatch({
+  probe: async () => {
+    if (!IS_TAURI) return "online";
+    try {
+      await Bridge.hermesStatus();
+      return "online";
+    } catch (err) {
+      return /key missing/i.test(String(err)) ? "nokey" : "offline";
+    }
+  },
+  onChange: (health) => {
+    State.hermesHealth = health;
+    State.notify();
+  },
+});
+
+const HEALTH_TITLE: Record<string, string> = {
+  online: "Hermes is answering",
+  offline: "Hermes isn't answering. Awuuu keeps checking while the chat is open.",
+  nokey: "Hermes needs its API key (Settings → Chat)",
+  unknown: "Checking Hermes…",
+};
 
 const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
 const EFFORTS: SelectOption[] = [
@@ -293,10 +318,14 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     onclick: () => void Bridge.openSettingsWindow("chat"),
   });
   connect.addEventListener("mousedown", (e) => e.stopPropagation());
-  const head = h("div", { class: "chat-head" }, ...picks, connect, usedChip);
+  const hermesDot = h("span", { class: "hermes-dot unknown", title: HEALTH_TITLE.unknown });
+  const head = h("div", { class: "chat-head" }, ...picks, hermesDot, connect, usedChip);
 
   // A list left open must not outlive the chat it belongs to.
+  // Hermes is only checked while the chat is on screen (0% CPU when hidden).
   State.subscribe(() => {
+    if (State.mode === "expanded" && State.view === "prompt" && kindOf(chosen()) === "hermes") hermesWatch.start();
+    else hermesWatch.stop();
     if (menus > 0 && (State.mode !== "expanded" || State.view !== "prompt")) {
       for (const p of picks) p.close();
     }
@@ -313,12 +342,15 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     const kind = kindOf(chosen());
     const key = [none, kind, s.chatProvider, s.model, s.hermesModel, s.hermesProvider, s.reasoningEffort,
       options.map((o) => o.value + o.label).join(","),
-      (s.providers ?? []).map((p) => p.id + p.model).join(","), hermesOptions ? "1" : "0"].join("|");
+      (s.providers ?? []).map((p) => p.id + p.model).join(","), hermesOptions ? "1" : "0", State.hermesHealth].join("|");
     if (key === headKey) return;
     headKey = key;
 
     for (const p of picks) p.style.display = none ? "none" : "";
     connect.style.display = none ? "" : "none";
+    hermesDot.style.display = !none && kind === "hermes" ? "" : "none";
+    hermesDot.className = `hermes-dot ${State.hermesHealth}`;
+    hermesDot.title = HEALTH_TITLE[State.hermesHealth];
     // Effort: Hermes only (Claude and OpenAI-compatible servers take the defaults).
     if (kind !== "hermes") effortPick.style.display = "none";
     for (const p of picks) p.refresh();
@@ -376,6 +408,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       // The reason shows in the chat itself. A reply cut off mid-stream stays;
       // a turn that never started goes back into the field, files and all.
       State.stateOverride = null;
+      hermesWatch.poke();
       notice = String(err).replace(/^Error:\s*/, "");
       if (!streaming) {
         State.chatHistory = State.chatHistory.filter((m) => m !== mine);
@@ -410,13 +443,15 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       const thinking = State.stateOverride === "thinking";
       // The last bubble grows while a reply streams, so its length is part of the key.
       const last = State.chatHistory[State.chatHistory.length - 1];
-      const key = `${State.chatHistory.length}|${thinking}|${last?.content.length ?? 0}|${notice ?? ""}`;
+      const down = State.hermesHealth === "offline" && kindOf(chosen()) === "hermes" && !notice;
+      const key = `${State.chatHistory.length}|${thinking}|${last?.content.length ?? 0}|${notice ?? ""}|${down}`;
       if (key !== renderedKey) {
         renderedKey = key;
         clear(log);
         for (const m of State.chatHistory) log.append(bubble(m));
         if (thinking) log.append(typingDots());
         if (notice) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: notice })));
+        if (down) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: "Hermes isn't answering right now. Start Hermes Agent (its gateway listens on :8642) and the dot turns green on its own." })));
         log.scrollTop = log.scrollHeight;
       }
 
