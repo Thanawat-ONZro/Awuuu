@@ -50,11 +50,11 @@
 ## v0.6.0 — "นิ่งและลื่น" (เสถียรภาพ + UX)
 | PR | งาน |
 |---|---|
-| 6.1 | **Guard สอง agent แก้ไฟล์เดียวกัน** (เตือนก่อนผ่าน PreToolUse ของ Claude, เตือนทีหลังสำหรับ agent อื่น) |
+| 6.1 | **Guard สอง agent แก้ไฟล์เดียวกัน**: เตือนบน island ตอน PreToolUse (ไม่บล็อก agent) |
 | 6.2 | **Hotkey**: Ctrl+Alt+Y/N อนุมัติเฉพาะตอนมีการ์ด, ฮอตคีย์ global เปิดแชทโดยไม่แย่ง focus |
-| 6.3 | **Fallback จาก transcript** (`~/.claude/projects`, `~/.codex/sessions`) เมื่อไม่มี hook |
-| 6.4 | **`aw doctor`**: ตรวจ pipe, hook ติดตั้งไหม, Hermes ตอบไหม, key ครบไหม แล้วบอกวิธีแก้ |
-| 6.5 | ตรวจความปลอดภัยตาม coucou (ลิงก์, ขนาด/เวลา pipe, log ไม่เก็บคำสั่งเต็ม) + แตก `island.ts`/`engine.ts` เป็นโมดูลย่อยพร้อม test |
+| 6.3 | ~~Fallback จาก transcript~~ เลื่อนไปหลัง 1.0 (งานใหญ่, `aw doctor` ช่วยให้ติดตั้ง hook ถูกแทน) |
+| 6.4 | **Check my setup + `aw doctor`**: ตรวจ pipe, hook ติดตั้งไหม, Hermes ตอบไหม, key ครบไหม แล้วบอกวิธีแก้ |
+| 6.5 | ตรวจความปลอดภัยตาม coucou: ลิงก์และขนาด payload/log มีอยู่แล้ว, เพิ่ม read timeout ของ pipe และ reject remote clients (การแตก `island.ts`/`engine.ts` เลื่อนไปหลัง 1.0) |
 
 ## v0.7.0 — "ต่อได้ทุก tool" (Integration)
 | PR | งาน |
