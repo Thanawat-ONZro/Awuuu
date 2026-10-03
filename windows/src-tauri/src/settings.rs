@@ -143,6 +143,8 @@ fn default_log_lines() -> u32 {
 
 pub const ISLAND_WIDTH: (f64, f64, f64) = (520.0, 640.0, 1100.0); // min, default, max
 pub const HUB_HEIGHT: (f64, f64, f64) = (220.0, 290.0, 640.0);
+/// The chat's own height once the user has dragged it (0 = it grows by itself, up to 300).
+pub const CHAT_HEIGHT: (f64, f64) = (220.0, 640.0); // min, max
 
 fn default_island_width() -> f64 {
     ISLAND_WIDTH.1
@@ -157,7 +159,10 @@ impl Settings {
     /// plus room for its shadow, never smaller than the classic 720×320.
     pub fn panel_size(&self) -> (f64, f64) {
         let w = self.island_width.clamp(ISLAND_WIDTH.0, ISLAND_WIDTH.2);
-        let h = self.hub_height.clamp(HUB_HEIGHT.0, HUB_HEIGHT.2);
+        let hub = self.hub_height.clamp(HUB_HEIGHT.0, HUB_HEIGHT.2);
+        // The chat may have been made taller than the hub: the window holds both.
+        let chat = if self.chat_height > 0.0 { self.chat_height.clamp(CHAT_HEIGHT.0, CHAT_HEIGHT.1) } else { 0.0 };
+        let h = hub.max(chat);
         ((w + 80.0).max(720.0), (h + 30.0).max(320.0))
     }
 }

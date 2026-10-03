@@ -9,7 +9,7 @@ import {
   islandSize,
   type IslandMode, type IslandViewName, SIDE_COMPACT, COMPACT_W, NOTCH_H,} from "../core/layout";
 import { Sound } from "../core/sound";
-import { State } from "../core/state";
+import { State, type PendingFile } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -24,8 +24,24 @@ const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
 const HIT_MARGIN = 14;
 
-/** The three views the drop sequence owns; leaving them stops the engine. */
-const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading", "choose"]);
+/** The views the drop sequence draws; leaving them stops the engine. */
+const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading"]);
+/** The drop flow: the island stays open until the files are asked about or let go. */
+const DROP_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading", "choose"]);
+
+/** Seconds after the bar completes before the files card takes over (the bar has faded). */
+const HANDOVER = 0.45;
+
+/** What a drop brings: one entry per file, with the way to copy it into the inbox. */
+interface DropItem {
+  name: string;
+  /** Bytes when known up front (a File), else 0. */
+  size: number;
+  key: string;
+  ingest: () => Promise<DroppedFile>;
+}
+
+let nextFileId = 1;
 
 /** Seconds between the drop and the moment the progress bar starts filling. */
 const PRE_PROGRESS = USC.T_PROG_START - USC.T_DROP;
@@ -49,10 +65,12 @@ export class Island {
   private mover!: Mover;
   /** The drop page was opened by a drag coming near (notch-drag-near). */
   private dropWoke = false;
+  /** The drop flow pinned the island open (released when the flow is left). */
+  private dropPinned = false;
   /** Set while the island is being moved (move.ts). */
   private moveAt: { x: number; y: number; transform: string } | null = null;
   private resizeGrip!: HTMLElement;
-  private resizing: { sx: number; sy: number; w: number; h: number } | null = null;
+  private resizing: { sx: number; sy: number; w: number; h: number; chat: boolean } | null = null;
   private notchNub!: HTMLElement;
 
   private header!: ViewHost;
@@ -276,16 +294,10 @@ export class Island {
     this.contentEl = h("div", { id: "content" }, this.header.el, this.viewsEl);
 
     // The drop sequence draws the card, the bar and its own Mochi. It sits under
-    // the header, which stays visible on top of it exactly as on macOS.
-    this.uploadCanvas = new UploadCanvas({
-      ask: () => {
-        State.promptContext = State.droppedFile
-          ? { kind: "file", name: State.droppedFile.name, path: State.droppedFile.path }
-          : null;
-        this.setView("prompt");
-      },
-      cancel: () => this.setView(State.defaultView()),
-    });
+    // the header, which stays visible on top of it exactly as on macOS. Asking
+    // and cancelling are the files card's buttons (views/upload.ts): painted
+    // buttons here sat under the invisible views, which took their clicks.
+    this.uploadCanvas = new UploadCanvas();
 
     this.clipEl = h(
       "div",
@@ -481,13 +493,29 @@ export class Island {
     window.addEventListener("drop", (e) => {
       e.preventDefault();
       depth = 0;
-      const file = e.dataTransfer?.files?.[0];
-      this.onDragDrop({ type: "drop", file: file ?? undefined });
+      this.onDragDrop({ type: "drop", files: Array.from(e.dataTransfer?.files ?? []) });
+    });
+    // Asking about the files, cancelling, or any other way out of the drop flow
+    // lets the island close by itself again.
+    State.subscribe(() => {
+      if (!this.dropPinned || DROP_VIEWS.has(State.view)) return;
+      this.dropPinned = false;
+      this.fsm.pinned = State.isPinned;
     });
   }
 
-  private onDragDrop(e: { type: string; paths?: string[]; file?: File }) {
-    if (e.type !== "over") void Bridge.log(`drag ${e.type} ${e.paths?.length ?? 0} file(s)`);
+  /** Opens the drop page and keeps the island open for as long as the drop flow lasts. */
+  private openForDrop() {
+    // Through the state machine: a closed island opens on its default view on
+    // the way, which would end a sequence already running — so this comes first.
+    if (State.mode !== "expanded" || State.view !== "upload") this.alert("upload", true);
+    this.dropPinned = true;
+    this.fsm.pinned = true;
+    this.fsm.cancelTimers();
+  }
+
+  private onDragDrop(e: { type: string; paths?: string[]; files?: File[] }) {
+    if (e.type !== "over") void Bridge.log(`drag ${e.type} ${(e.paths?.length ?? 0) + (e.files?.length ?? 0)} file(s)`);
     if (State.paused) return;
     switch (e.type) {
       case "enter":
@@ -495,10 +523,12 @@ export class Island {
         if (State.fileDragOver) return;
         State.fileDragOver = true;
         this.engine.animateMorph(1);
-        // enterZone must run before the island expands, so the sequence is
-        // already active by the time the view becomes `upload`.
+        this.openForDrop();
+        // The sequence is active before the next frame is drawn, so the drop
+        // page never shows without it.
+        this.uploadCanvas.fit(this.viewsEl);
         UploadSeq.enterZone(State.mouseInIsland.x, State.mouseInIsland.y);
-        this.alert("upload");
+        this.ensureRunning();
         break;
       }
       case "leave": {
@@ -512,34 +542,83 @@ export class Island {
       }
       case "drop": {
         State.fileDragOver = false;
-        const path = e.paths?.[0];
-        if (e.file) {
-          this.swallow(e.file.name, () => Bridge.ingestBytes(e.file!));
-          break;
-        }
-        if (!path) {
+        const items: DropItem[] = [
+          ...(e.files ?? []).map((file) => ({
+            name: file.name,
+            size: file.size,
+            key: `${file.name}|${file.size}`,
+            ingest: () => Bridge.ingestBytes(file),
+          })),
+          ...(e.paths ?? []).map((path) => ({
+            name: path.split(/[\\/]/).pop() || "file",
+            size: 0,
+            key: path.toLowerCase(),
+            ingest: () => Bridge.ingestFile(path),
+          })),
+        ];
+        if (items.length === 0) {
           this.engine.animateMorph(0);
-          this.setView(State.defaultView());
+          this.setView(State.droppedFiles.length > 0 ? "choose" : State.defaultView());
           return;
         }
-        this.swallow(path.split(/[\\/]/).pop() || "file", () => Bridge.ingestFile(path));
+        this.swallow(items);
         break;
       }
     }
   }
 
   /**
-   * Mochi eats the file. Nothing here waits on the file system: the copy into
-   * the inbox runs in the background and swaps the path in when it lands, so a
+   * Mochi eats the files. Nothing here waits on the file system: the copies into
+   * the inbox run in the background and fill the paths in when they land, so a
    * slow disk can never stall the animation — same as FileDropHandler on macOS.
+   * Files dropped while others wait to be asked about join them.
    */
-  private swallow(name: string, ingest: () => Promise<DroppedFile>) {
-    const path = "";
-    State.droppedFile = { name, path };
-    State.promptContext = { kind: "file", name, path };
-    State.chatHistory = [];
-    void Bridge.chatReset();
+  private swallow(items: DropItem[]) {
+    // A conversation under way is about its own files: a new drop starts over.
+    if (State.chatHistory.length > 0) {
+      State.droppedFiles = [];
+      State.chatHistory = [];
+      void Bridge.chatReset();
+    }
+    State.dropError = null;
+    State.promptContext = null;
 
+    const same = (f: PendingFile, it: { key: string; name: string; size: number }) =>
+      f.key === it.key || (it.size > 0 && f.name === it.name && f.size === it.size);
+    const fresh: PendingFile[] = [];
+    for (const it of items) {
+      if (State.droppedFiles.some((f) => same(f, it)) || fresh.some((f) => same(f, it))) continue;
+      const entry: PendingFile = { id: nextFileId++, name: it.name, path: "", size: it.size, key: it.key };
+      entry.ready = it.ingest().then(
+        (file) => {
+          entry.path = file.path;
+          entry.size = file.size;
+          // The same file dropped once by path and once as bytes: keep the first.
+          const twin = State.droppedFiles.find((f) => f !== entry && f.path && same(f, entry));
+          if (twin) State.droppedFiles = State.droppedFiles.filter((f) => f !== entry);
+          State.notify();
+        },
+        (err) => this.dropFailed(entry, err),
+      );
+      fresh.push(entry);
+    }
+    if (fresh.length === 0) {
+      // Nothing new: straight back to the files that are already there.
+      State.dropError = items.length > 1 ? "Those files are already here." : "That file is already here.";
+      this.engine.animateMorph(0);
+      this.setView("choose");
+      return;
+    }
+    State.droppedFiles = [...State.droppedFiles, ...fresh];
+    State.uploadCount = fresh.length;
+
+    // A drop with no drag-over before it (or onto a closed island) still gets
+    // the whole sequence.
+    this.openForDrop();
+    if (!UploadSeq.isActive) {
+      this.uploadCanvas.fit(this.viewsEl);
+      UploadSeq.enterZone(State.mouseInIsland.x, State.mouseInIsland.y);
+    }
     UploadSeq.performDrop(State.uploadDuration);
     this.uploadTens = 0;
     this.uploadDone = false;
@@ -552,32 +631,46 @@ export class Island {
     State.uploadProgress = 0;
     this.setView("uploading");
     this.ensureRunning();
+  }
 
-    void ingest()
-      .then((file) => {
-        State.droppedFile = { name: file.name, path: file.path };
-        State.promptContext = { kind: "file", name: file.name, path: file.path };
-        State.notify();
-      })
-      .catch((err) => {
-        UploadSeq.deactivate();
-        State.noteMessage = String(err).replace(/^Error:\s*/, "");
-        this.engine.animateMorph(0);
-        this.setView("note");
-        Sound.play("error");
-        window.setTimeout(() => this.setView(State.defaultView()), 2400);
-      });
+  /** A copy into the inbox failed: the file leaves the list, and the island says why. */
+  private dropFailed(entry: PendingFile, err: unknown) {
+    const why = String(err).replace(/^Error:\s*/, "");
+    State.droppedFiles = State.droppedFiles.filter((f) => f !== entry);
+    Sound.play("error");
+    if (State.droppedFiles.length > 0) {
+      // The others are fine: say it on their card.
+      State.dropError = `${entry.name}: ${why}`;
+      State.notify();
+      return;
+    }
+    if (!DROP_VIEWS.has(State.view)) {
+      State.notify();
+      return;
+    }
+    UploadSeq.deactivate();
+    State.noteMessage = why;
+    this.engine.animateMorph(0);
+    this.setView("note");
+    // Only if the note is still up: the user may have moved on meanwhile.
+    window.setTimeout(() => {
+      if (State.view === "note" && State.noteMessage === why) this.setView(State.defaultView());
+    }, 2400);
   }
 
   /**
    * Sounds and view changes hung off the canvas timeline: a `tick` every 10 %,
-   * the ✓ chime when the bar completes, then `choose` once Mochi has grown back.
+   * the ✓ chime when the bar completes, then `choose` — the files card, where
+   * the island's own Awuuu grows back.
    */
   private stepSequence() {
     const since = UploadSeq.sinceDrop();
     if (since == null) return;
     const dur = State.uploadDuration;
     const p = Math.max(0, Math.min(1, (since - PRE_PROGRESS) / dur));
+
+    // The island's own Awuuu waits where the canvas one is: at the end of the bar.
+    State.uploadProgress = p;
 
     const tens = Math.floor(p * 10);
     if (tens > this.uploadTens && tens < 10) {
@@ -590,8 +683,7 @@ export class Island {
       Sound.play("approve");
       this.engine.triggerEmote("happy");
     }
-    // The extra second is the grow-back, after which the choose card is up.
-    if (since >= PRE_PROGRESS + dur + 1 && State.view === "uploading") {
+    if (since >= PRE_PROGRESS + dur + HANDOVER && State.view === "uploading") {
       this.setView("choose");
     }
   }
@@ -637,7 +729,7 @@ export class Island {
     this.islandEl.style.transform = this.moveAt?.transform ?? "none";
     // The resize grip sits on the corner away from the docked edge.
     const L0 = geo.layout;
-    const showGrip = State.mode === "expanded" && State.view === "agents";
+    const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt");
     this.resizeGrip.style.display = showGrip ? "block" : "none";
     this.resizeGrip.dataset.v = L0.v;
     this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
@@ -668,7 +760,6 @@ export class Island {
       this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
     }
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
-    this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
     const rect = this.islandRect();
     const p = this.pushedRect;
@@ -704,9 +795,11 @@ export class Island {
   }
 
   /**
-   * The corner grip (Agents hub): drag to set the island's width and the hub's
-   * height. Rust gives the window its largest size meanwhile; the new size is
-   * saved on release, which fits the window to it again.
+   * The corner grip (Agents hub, chat): drag to set the island's width and the
+   * height of the hub or of the chat. Rust gives the window its largest size
+   * meanwhile; the new size is saved on release, which fits the window to it
+   * again. A double click on the chat's grip lets it grow with the
+   * conversation again.
    */
   private wireResize() {
     const g = this.resizeGrip;
@@ -715,7 +808,9 @@ export class Island {
       e.preventDefault();
       e.stopPropagation();
       g.setPointerCapture(e.pointerId);
-      this.resizing = { sx: e.screenX, sy: e.screenY, w: geo.expandedW, h: geo.hubH };
+      const chat = State.view === "prompt";
+      const h = chat ? geo.chatH || chatPromptHeight(State.chatHistory.length) : geo.hubH;
+      this.resizing = { sx: e.screenX, sy: e.screenY, w: geo.expandedW, h, chat };
       State.isPinned = true;
       this.fsm.pinned = true;
       this.root.classList.add("resizing");
@@ -730,7 +825,11 @@ export class Island {
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
       const dh = L.v === "bottom" ? -dy : dy;
       geo.expandedW = Math.round(Math.min(1100, Math.max(520, r.w + dw)));
-      geo.hubH = Math.round(Math.min(640, Math.max(220, r.h + dh)));
+      // A click on the grip is not a resize: the chat keeps growing by itself.
+      if (r.chat && geo.chatH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
+      const height = Math.round(Math.min(640, Math.max(220, r.h + dh)));
+      if (r.chat) geo.chatH = height;
+      else geo.hubH = height;
       this.animateGeometry(false);
     });
     const end = (e: PointerEvent) => {
@@ -742,10 +841,18 @@ export class Island {
       this.fsm.pinned = State.isPinned;
       State.settings.islandWidth = geo.expandedW;
       State.settings.hubHeight = geo.hubH;
+      State.settings.chatHeight = geo.chatH;
       void Bridge.saveSettings(State.settings);
     };
     g.addEventListener("pointerup", end);
     g.addEventListener("pointercancel", end);
+    g.addEventListener("dblclick", () => {
+      if (State.view !== "prompt" || geo.chatH === 0) return;
+      geo.chatH = 0;
+      State.settings.chatHeight = 0;
+      void Bridge.saveSettings(State.settings);
+      this.animateGeometry(true);
+    });
   }
 
   /** The island grows up from its anchor (bottom edge, or low on the screen). */
@@ -1022,7 +1129,7 @@ export class Island {
     }
 
     const uploadActive = this.uploadActive;
-    if (uploadActive) this.uploadCanvas.draw(UploadSeq.frame(), nowMs / 1000);
+    if (uploadActive) this.uploadCanvas.draw(this.viewsEl, nowMs / 1000);
     this.uploadCanvas.el.classList.toggle("on", uploadActive);
     this.viewsEl.classList.toggle("hidden-by-upload", uploadActive);
 
@@ -1222,6 +1329,7 @@ export class Island {
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
     geo.expandedW = State.settings.islandWidth ?? 640;
     geo.hubH = State.settings.hubHeight ?? 290;
+    geo.chatH = State.settings.chatHeight ?? 0;
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     this.animateGeometry(false);

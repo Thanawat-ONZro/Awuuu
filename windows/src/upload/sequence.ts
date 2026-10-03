@@ -3,31 +3,50 @@
 //
 // The engine is pure arithmetic: it owns no DOM and draws nothing. It takes the
 // cursor and a drop time, and hands `frame()` back everything the canvas needs
-// for one frame. All coordinates are island points (the island is 640 × 176),
-// so every constant below is the macOS constant unchanged.
+// for one frame. All coordinates are sequence points: the macOS island, 640 × 176
+// with its card at (10, 42). On Windows the island has the width the user gave
+// it and the card sits where the docked edge puts it, so `box` says how wide
+// the sequence is and where its origin lies in the real island; at 640 wide on
+// the top edge every constant below is the macOS constant unchanged.
 
-/** Constants — exact mirror of USC in UploadSequenceEngine.swift. */
+/** Where the sequence is drawn: its width, the card's height, its origin in the island. */
+const box = { w: 640, cardH: 124, x: 0, y: 0 };
+
+/**
+ * Fits the sequence to the island's card (its rect in island px). The card is
+ * (10, 42) in sequence points, whichever edge the island hangs from.
+ */
+export function setUploadBox(card: { x: number; y: number; w: number; h: number }) {
+  box.w = Math.max(320, card.w + 20);
+  box.cardH = Math.max(100, card.h);
+  box.x = card.x - 10;
+  box.y = card.y - 42;
+}
+
+/** Origin of the sequence in island px (the canvas draws from there). */
+export function uploadOrigin(): { x: number; y: number } {
+  return { x: box.x, y: box.y };
+}
+
+/** Constants — mirror of USC in UploadSequenceEngine.swift, widths following the island. */
 export const USC = {
-  W: 640,
-  ISL_H: 176,
+  get W() { return box.w; },
+  get ISL_H() { return 42 + box.cardH + 10; },
   CARD_X: 10,
   CARD_Y: 42,
-  CARD_W: 620,
-  CARD_H: 124,
+  get CARD_W() { return box.w - 20; },
+  get CARD_H() { return box.cardH; },
   CARD_R: 20,
   REST_X: 140,
   REST_Y: 104,
   D_BOX: 62,
   FOLLOW_MIN: 60, // CARD_X + 50
-  FOLLOW_MAX: 580, // CARD_X + CARD_W - 50
+  get FOLLOW_MAX() { return box.w - 60; }, // CARD_X + CARD_W - 50
   TEXT_X: 196,
   TEXT_Y: 94,
   BAR_X0: 46,
-  BAR_X1: 520,
+  get BAR_X1() { return box.w - 120; },
   BAR_Y: 118,
-  CHOOSE_X: 60,
-  CHOOSE_Y: 101,
-  CHOOSE_D: 62,
   LOCK_IN: 60,
   LOCK_OUT: 90,
   MOUTH_AJAR: 0.2,
@@ -46,7 +65,7 @@ export const USC = {
   DT: 1 / 240,
   /** Entry offset: gives 0.40 s of following before the drop. */
   ENTRY_T_REF: 1.95 - 0.4,
-} as const;
+};
 
 // ── Easing ──────────────────────────────────────────────────────────────────
 
@@ -150,7 +169,6 @@ export interface UploadFrame {
   flash: number;
   check: number;
   greenWash: number;
-  chooseAlpha: number;
   progEnd: number;
   growStart: number;
   growEnd: number;
@@ -185,7 +203,6 @@ function restFrame(): UploadFrame {
     flash: 0,
     check: 0,
     greenWash: 0,
-    chooseAlpha: 0,
     progEnd: USC.T_PROG_START + 2.4,
     growStart: USC.T_PROG_START + 2.4 + 0.25,
     growEnd: USC.T_PROG_START + 2.4 + 0.7,
@@ -200,6 +217,7 @@ class UploadSequence {
   get progEnd() {
     return USC.T_PROG_START + this.uploadDuration;
   }
+  /** The bar fades out here, and the island's own views take over (the choose card). */
   get growStart() {
     return this.progEnd + 0.25;
   }
@@ -238,6 +256,8 @@ class UploadSequence {
   /** A file entered the island. Coordinates are island points. */
   enterZone(x: number, y: number) {
     const now = this.now();
+    x -= box.x;
+    y -= box.y;
     this.cursorX = x;
     this.cursorY = y;
     this.prevX = x;
@@ -261,6 +281,8 @@ class UploadSequence {
 
   updateCursor(x: number, y: number) {
     const now = this.now();
+    x -= box.x;
+    y -= box.y;
     const dt = now - this.prevT;
     if (dt > 0.001) {
       this.speed = Math.hypot(x - this.prevX, y - this.prevY) / dt;
@@ -385,11 +407,11 @@ class UploadSequence {
     // long hover never trips the post-drop visuals.
     const pt = isDragging ? Math.min(t, USC.T_DROP - USC.DT) : t;
 
-    // Morph: 0→1 on entry, 1→0 shrinking to a ball, 0→1 growing back at choose.
-    let morph: number;
-    if (pt < USC.T_CHEW_END) morph = eBack(seg(pt, entered, entered + 0.38));
-    else if (pt < growStart) morph = 1 - eOut(seg(pt, USC.T_CHEW_END, USC.T_SHRINK_END));
-    else morph = eBack(seg(pt, growStart, growEnd));
+    // Morph: 0→1 on entry, 1→0 shrinking to a ball. The grow-back at choose is
+    // the island's own Awuuu, once the sequence has handed over.
+    const morph = pt < USC.T_CHEW_END
+      ? eBack(seg(pt, entered, entered + 0.38))
+      : 1 - eOut(seg(pt, USC.T_CHEW_END, USC.T_SHRINK_END));
     f.morph = Math.max(0, Math.min(morph, 1.08));
 
     // Position and diameter.
@@ -411,12 +433,6 @@ class UploadSequence {
     if (pt >= progEnd) {
       x = USC.BAR_X1;
       y = USC.BAR_Y - 8 * Math.sin(Math.PI * seg(pt, progEnd, progEnd + 0.2));
-    }
-    if (pt >= growStart) {
-      const k = eInOut(seg(pt, growStart, growEnd));
-      x = lerp(USC.BAR_X1, USC.CHOOSE_X, k);
-      y = lerp(USC.BAR_Y, USC.CHOOSE_Y, k);
-      d = lerp(14, USC.CHOOSE_D, eBack(seg(pt, growStart, growEnd)));
     }
     f.x = x;
     f.y = y;
@@ -456,9 +472,6 @@ class UploadSequence {
       const st = Math.max(0, Math.min(1, v * 0.18));
       sx = 1 + 0.25 * st;
       sy = 1 - 0.15 * st;
-    }
-    if (pt >= growStart && pt < growEnd) {
-      sy = 1 + 0.06 * Math.sin(Math.PI * seg(pt, growStart, growEnd));
     }
     f.sx = sx;
     f.sy = sy;
@@ -506,7 +519,6 @@ class UploadSequence {
       uploadGreen = (baseGreen + flashExtra) * fadeOut;
     }
     f.greenWash = Math.max(hoverGreen, uploadGreen);
-    f.chooseAlpha = seg(pt, growStart + 0.15, growEnd);
 
     // Mouth rect in island coordinates — the file is clipped against it.
     const R = f.d / 2 / 1.04;

@@ -3,10 +3,13 @@
 
 import { h, svg, clear } from "./dom";
 import { ICONS } from "./icons";
-import { Bridge, onEvent, type ChatContext } from "../core/bridge";
+import { Bridge, IS_TAURI, onEvent, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State, type ChatMessage } from "../core/state";
+import { dropdown, type SelectOption } from "../ui/select";
+import { clearOfDog, syncFileChips } from "./upload";
 import type { ViewHost } from "./views";
+import "./drop-chat.css";
 
 let nextId = 1;
 
@@ -23,6 +26,72 @@ void onEvent<string>("chat-delta", (text) => {
   streaming.content = text;
   State.notify();
 });
+
+// ── Who can answer ──────────────────────────────────────────────────────────
+// Only what is connected is offered: Hermes when its gateway answers or its key
+// is set, Claude when an Anthropic key is saved, and the providers added in
+// Settings. Asked when the chat opens and when a key changes — never on a timer.
+
+let probing = false;
+
+async function probeBackends() {
+  if (!IS_TAURI) {
+    // Nothing to ask in a plain browser: offer both, so the pickers can be looked at.
+    State.chatBackends ??= { hermes: true, claude: true };
+    State.notify();
+    return;
+  }
+  if (probing) return;
+  probing = true;
+  const [claude, hermes] = await Promise.all([
+    Bridge.secretPresent("anthropic-api-key").then((v) => v === true),
+    // A gateway that is down but has its key is still Hermes: sending says it can't be reached.
+    Bridge.hermesStatus().then(() => true, (err) => !/key missing/i.test(String(err))),
+  ]);
+  probing = false;
+  State.chatBackends = { hermes, claude };
+  State.notify();
+}
+
+void onEvent<null>("secrets-changed", () => {
+  if (State.mode === "expanded" && State.view === "prompt") void probeBackends();
+});
+
+const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
+const EFFORTS: SelectOption[] = [
+  { value: "", label: "Effort: auto" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+type BackendKind = "hermes" | "claude" | "custom";
+
+/** The saved choice: "hermes", "claude" or a provider id. */
+function chosen(): string {
+  const s = State.settings;
+  return s.chatProvider ? s.chatProvider : s.model?.startsWith("claude-") ? "claude" : "hermes";
+}
+
+function kindOf(id: string): BackendKind {
+  return id === "hermes" || id === "claude" ? id : "custom";
+}
+
+/** What can answer right now, in the order it is offered. */
+function usable(): SelectOption[] {
+  const b = State.chatBackends;
+  // Not asked yet: only the saved choice, rather than a list that may be wrong.
+  if (!b) {
+    const id = chosen();
+    const p = State.settings.providers?.find((x) => x.id === id);
+    return [{ value: id, label: id === "hermes" ? "Hermes" : id === "claude" ? "Claude" : p?.name ?? "Provider" }];
+  }
+  const out: SelectOption[] = [];
+  if (b.hermes) out.push({ value: "hermes", label: "Hermes" });
+  if (b.claude) out.push({ value: "claude", label: "Claude" });
+  for (const p of State.settings.providers ?? []) out.push({ value: p.id, label: p.name });
+  return out;
+}
 
 function bubble(message: ChatMessage): HTMLElement {
   if (message.role === "user") {
@@ -43,15 +112,8 @@ function typingDots(): HTMLElement {
   );
 }
 
-/** The coloured chip showing what the question is about (a dropped file). */
-function contextChip(label: string): HTMLElement {
-  const chip = h("div", { class: "chip" }, h("i", { class: "chip-dot" }), h("span", { text: label }));
-  requestAnimationFrame(() => chip.classList.add("settled"));
-  return chip;
-}
-
 export function buildPrompt(onHeightChange: () => void): ViewHost {
-  const chipRow = h("div", { class: "chip-row" });
+  const chipRow = h("div", { class: "file-chips chat-files" });
   const log = h("div", { class: "chat-log" });
   const input = h("input", {
     type: "text",
@@ -60,25 +122,11 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     spellcheck: "false",
   }) as HTMLInputElement;
   const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  // ── Who answers ─────────────────────────────────────────────────────────
-  // Provider (Hermes, Claude, or one added in Settings) · model · effort, and
-  // what really answered the last turn — the server's word, fallbacks included.
-  const stop = (e: Event) => e.stopPropagation();
-  const providerSel = h("select", { class: "chat-pick", title: "Who answers" }) as HTMLSelectElement;
-  const modelSel = h("select", { class: "chat-pick wide", title: "Model" }) as HTMLSelectElement;
-  const effortSel = h("select", { class: "chat-pick", title: "Reasoning effort" }) as HTMLSelectElement;
-  for (const [v, t] of [["", "Effort: auto"], ["low", "Low"], ["medium", "Medium"], ["high", "High"]]) {
-    effortSel.append(h("option", { value: v, text: t }));
-  }
-  const usedChip = h("span", { class: "chat-used", title: "What answered the last message" });
-  for (const sel of [providerSel, modelSel, effortSel]) sel.addEventListener("mousedown", stop);
-  const head = h("div", { class: "chat-head" }, providerSel, modelSel, effortSel, usedChip);
+
   let hermesOptions: Awaited<ReturnType<typeof Bridge.hermesModelOptions>> | null = null;
   let headKey = "";
-
-  const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
-  const which = () =>
-    State.settings.chatProvider ? "custom" : State.settings.model?.startsWith("claude-") ? "claude" : "hermes";
+  /** Something the chat has to say itself: a failed turn, nothing connected. */
+  let notice: string | null = null;
 
   function save() {
     void Bridge.saveSettings(State.settings);
@@ -89,106 +137,187 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     void Bridge.chatReset();
     State.chatHistory = [];
   }
-  providerSel.addEventListener("change", () => {
-    const v = providerSel.value;
-    if (v === "hermes") {
-      State.settings.chatProvider = "";
-      State.settings.model = "hermes-agent";
-    } else if (v === "claude") {
-      State.settings.chatProvider = "";
-      if (!State.settings.model?.startsWith("claude-")) State.settings.model = CLAUDE_MODELS[1];
+
+  function chooseBackend(id: string) {
+    const s = State.settings;
+    if (id === "hermes") {
+      s.chatProvider = "";
+      s.model = "hermes-agent";
+    } else if (id === "claude") {
+      s.chatProvider = "";
+      if (!s.model?.startsWith("claude-")) s.model = CLAUDE_MODELS[1];
     } else {
-      State.settings.chatProvider = v;
+      s.chatProvider = id;
     }
     usedChip.textContent = "";
+    notice = null;
     resetChat();
     save();
-  });
-  modelSel.addEventListener("change", () => {
-    const v = modelSel.value;
-    const kind = which();
+  }
+
+  function modelOptions(): SelectOption[] {
+    const s = State.settings;
+    const kind = kindOf(chosen());
+    if (kind === "hermes") {
+      const out: SelectOption[] = [
+        { value: "", label: hermesOptions ? `Default · ${hermesOptions.model}` : "Default model" },
+      ];
+      for (const p of hermesOptions?.providers ?? []) {
+        for (const m of p.models) out.push({ value: `${p.slug}|${m}`, label: m, group: p.name });
+      }
+      // The saved pick shows before the list has been fetched.
+      if (s.hermesModel && !hermesOptions) {
+        out.push({ value: `${s.hermesProvider}|${s.hermesModel}`, label: s.hermesModel });
+      }
+      return out;
+    }
+    if (kind === "claude") {
+      const out = CLAUDE_MODELS.map((m) => ({ value: m, label: m }));
+      if (!CLAUDE_MODELS.includes(s.model)) out.push({ value: s.model, label: s.model });
+      return out;
+    }
+    const p = (s.providers ?? []).find((x) => x.id === s.chatProvider);
+    return p ? [{ value: p.model, label: p.model || "model" }] : [];
+  }
+
+  function modelValue(): string {
+    const s = State.settings;
+    const kind = kindOf(chosen());
+    if (kind === "hermes") return s.hermesModel ? `${s.hermesProvider}|${s.hermesModel}` : "";
+    if (kind === "claude") return s.model;
+    return (s.providers ?? []).find((x) => x.id === s.chatProvider)?.model ?? "";
+  }
+
+  function chooseModel(v: string) {
+    const s = State.settings;
+    const kind = kindOf(chosen());
     if (kind === "hermes") {
       const [provider, model] = v ? v.split("|") : ["", ""];
-      State.settings.hermesProvider = provider;
-      State.settings.hermesModel = model;
+      s.hermesProvider = provider;
+      s.hermesModel = model;
     } else if (kind === "claude") {
-      State.settings.model = v;
+      s.model = v;
     } else {
-      const p = State.settings.providers.find((x) => x.id === State.settings.chatProvider);
+      const p = s.providers.find((x) => x.id === s.chatProvider);
       if (p) p.model = v;
     }
     save();
+  }
+
+  // ── Who answers ─────────────────────────────────────────────────────────
+  // Provider (Hermes, Claude, or one added in Settings) · model · effort, and
+  // what really answered the last turn — the server's word, fallbacks included.
+  // The lists open inside the island, the only part of the window that takes
+  // clicks, and hold the island open while they are up.
+  const host = () => document.getElementById("island");
+  let menus = 0;
+  const menuOpened = () => {
+    if (menus++ > 0) return;
+    State.isPinned = true;
+    State.notify();
+  };
+  const menuClosed = () => {
+    if (--menus > 0) return;
+    menus = 0;
+    State.isPinned = State.approvalQueue.length > 0;
+    State.notify();
+  };
+  const providerPick = dropdown({
+    class: "chat-pick",
+    title: "Who answers",
+    host,
+    options: usable,
+    get: chosen,
+    set: chooseBackend,
+    onOpen: menuOpened,
+    onClose: menuClosed,
   });
-  effortSel.addEventListener("change", () => {
-    State.settings.reasoningEffort = effortSel.value;
-    save();
-  });
-  // The Hermes list is fetched when the picker is first used, not before.
-  modelSel.addEventListener("focus", () => {
-    if (which() === "hermes" && !hermesOptions) {
+  const modelPick = dropdown({
+    class: "chat-pick wide",
+    title: "Model",
+    host,
+    options: modelOptions,
+    get: modelValue,
+    set: chooseModel,
+    onClose: menuClosed,
+    // The Hermes list is fetched when the picker is first opened, not before.
+    onOpen: () => {
+      menuOpened();
+      if (kindOf(chosen()) !== "hermes" || hermesOptions) return;
       void Bridge.hermesModelOptions()
         .then((o) => {
           hermesOptions = o;
           headKey = "";
+          modelPick.refresh();
           State.notify();
         })
         .catch((err) => {
           usedChip.textContent = String(err).replace(/^Error:\s*/, "");
         });
+    },
+  });
+  const effortPick = dropdown({
+    class: "chat-pick",
+    title: "Reasoning effort",
+    host,
+    options: () => EFFORTS,
+    get: () => State.settings.reasoningEffort ?? "",
+    set: (v) => {
+      State.settings.reasoningEffort = v;
+      save();
+    },
+    onOpen: menuOpened,
+    onClose: menuClosed,
+  });
+  const picks = [providerPick, modelPick, effortPick];
+  const usedChip = h("span", { class: "chat-used", title: "What answered the last message" });
+  const connect = h("button", {
+    class: "btn secondary chat-connect",
+    text: "Connect a model…",
+    title: "Nothing can answer yet: connect Hermes, Claude or another provider",
+    onclick: () => void Bridge.openSettingsWindow("chat"),
+  });
+  connect.addEventListener("mousedown", (e) => e.stopPropagation());
+  const head = h("div", { class: "chat-head" }, ...picks, connect, usedChip);
+
+  // A list left open must not outlive the chat it belongs to.
+  State.subscribe(() => {
+    if (menus > 0 && (State.mode !== "expanded" || State.view !== "prompt")) {
+      for (const p of picks) p.close();
     }
   });
 
   function syncHead() {
     const s = State.settings;
-    const kind = which();
-    const key = [kind, s.chatProvider, s.model, s.hermesModel, s.hermesProvider, s.reasoningEffort,
+    const options = usable();
+    // The saved choice is gone (key removed, provider deleted): the first that works.
+    if (State.chatBackends && options.length > 0 && !options.some((o) => o.value === chosen())) {
+      chooseBackend(options[0].value);
+      return;
+    }
+    const none = State.chatBackends != null && options.length === 0;
+    const kind = kindOf(chosen());
+    const key = [none, kind, s.chatProvider, s.model, s.hermesModel, s.hermesProvider, s.reasoningEffort,
+      options.map((o) => o.value + o.label).join(","),
       (s.providers ?? []).map((p) => p.id + p.model).join(","), hermesOptions ? "1" : "0"].join("|");
     if (key === headKey) return;
     headKey = key;
-    clear(providerSel);
-    providerSel.append(h("option", { value: "hermes", text: "Hermes" }), h("option", { value: "claude", text: "Claude" }));
-    for (const p of s.providers ?? []) providerSel.append(h("option", { value: p.id, text: p.name }));
-    providerSel.value = kind === "custom" ? s.chatProvider : kind;
 
-    clear(modelSel);
-    if (kind === "hermes") {
-      const def = hermesOptions ? `Default · ${hermesOptions.model}` : "Default model";
-      modelSel.append(h("option", { value: "", text: def }));
-      for (const p of hermesOptions?.providers ?? []) {
-        const group = h("optgroup", { label: p.name }) as HTMLOptGroupElement;
-        for (const m of p.models) group.append(h("option", { value: `${p.slug}|${m}`, text: m }));
-        modelSel.append(group);
-      }
-      if (s.hermesModel && !hermesOptions) {
-        modelSel.append(h("option", { value: `${s.hermesProvider}|${s.hermesModel}`, text: s.hermesModel }));
-      }
-      modelSel.value = s.hermesModel ? `${s.hermesProvider}|${s.hermesModel}` : "";
-    } else if (kind === "claude") {
-      for (const m of CLAUDE_MODELS) modelSel.append(h("option", { value: m, text: m }));
-      if (!CLAUDE_MODELS.includes(s.model)) modelSel.append(h("option", { value: s.model, text: s.model }));
-      modelSel.value = s.model;
-    } else {
-      const p = (s.providers ?? []).find((x) => x.id === s.chatProvider);
-      if (p) {
-        modelSel.append(h("option", { value: p.model, text: p.model || "model" }));
-        modelSel.value = p.model;
-      }
-    }
+    for (const p of picks) p.style.display = none ? "none" : "";
+    connect.style.display = none ? "" : "none";
     // Effort: Hermes only (Claude and OpenAI-compatible servers take the defaults).
-    effortSel.style.display = kind === "hermes" ? "" : "none";
-    effortSel.value = s.reasoningEffort ?? "";
+    if (kind !== "hermes") effortPick.style.display = "none";
+    for (const p of picks) p.refresh();
 
     // The card's glow follows who answers: Hermes violet, Claude coral, others neutral.
-    const glow = kind === "hermes" ? "rgba(139,92,246,0.5)" : kind === "claude" ? "rgba(240,101,67,0.45)" : "rgba(148,163,184,0.35)";
+    const glow = none ? "rgba(148,163,184,0.2)" : kind === "hermes" ? "rgba(139,92,246,0.5)" : kind === "claude" ? "rgba(240,101,67,0.45)" : "rgba(148,163,184,0.35)";
     (el.querySelector(".card") as HTMLElement).style.setProperty("--wash", glow);
   }
   const bar = h("div", { class: "chat-bar" }, input, send);
+  const body = h("div", { class: "chat-body" }, head, log, chipRow, bar);
+  body.style.paddingLeft = `${clearOfDog("prompt", 20)}px`;
 
-  const el = h(
-    "div",
-    { class: "view" },
-    h("div", { class: "card wash chat-card" }, h("div", { class: "chat-body" }, head, chipRow, log, bar)),
-  );
+  const el = h("div", { class: "view" }, h("div", { class: "card wash chat-card" }, body));
 
   let sending = false;
   let renderedKey = "";
@@ -196,21 +325,33 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   async function submit() {
     const query = input.value.trim();
     if (!query || sending) return;
+    if (State.chatBackends && usable().length === 0) {
+      notice = "Nothing is connected to answer yet. Use “Connect a model…” above to add Hermes, a Claude API key or another provider, then ask again.";
+      Sound.play("error");
+      State.notify();
+      return;
+    }
     input.value = "";
     sending = true;
+    notice = null;
     Sound.play("send");
 
-    State.chatHistory.push({ id: nextId++, role: "user", content: query });
+    const first = State.chatHistory.length === 0;
+    const mine: ChatMessage = { id: nextId++, role: "user", content: query };
+    State.chatHistory.push(mine);
     State.stateOverride = "thinking";
     State.notify();
     onHeightChange();
 
-    const file = State.droppedFile;
-    const context: ChatContext | null =
-      State.chatHistory.length === 1 && file ? { kind: "file", name: file.name, path: file.path } : null;
-
     streaming = null;
     try {
+      // The files ride with the first message, once their copies have landed.
+      let context: ChatContext | null = null;
+      if (first && State.droppedFiles.length > 0) {
+        await Promise.allSettled(State.droppedFiles.map((f) => f.ready));
+        const files = State.droppedFiles.filter((f) => f.path).map((f) => ({ name: f.name, path: f.path }));
+        if (files.length > 0) context = { kind: "files", files };
+      }
       const reply = await Bridge.chatSend(query, context);
       if (reply.used) usedChip.textContent = reply.used;
       if (streaming) (streaming as ChatMessage).content = reply.text;
@@ -218,10 +359,14 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
       State.stateOverride = null;
       Sound.play("finish");
     } catch (err) {
-      // A reply cut off mid-stream stays in the log; the note says why.
+      // The reason shows in the chat itself. A reply cut off mid-stream stays;
+      // a turn that never started goes back into the field, files and all.
       State.stateOverride = null;
-      State.noteMessage = String(err).replace(/^Error:\s*/, "");
-      State.view = "note";
+      notice = String(err).replace(/^Error:\s*/, "");
+      if (!streaming) {
+        State.chatHistory = State.chatHistory.filter((m) => m !== mine);
+        if (!input.value) input.value = query;
+      }
       Sound.play("error");
     } finally {
       streaming = null;
@@ -244,34 +389,35 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   return {
     el,
     sync() {
-      const file = State.droppedFile;
-      const wantChip = file?.name ?? "";
-      if (chipRow.dataset.label !== wantChip) {
-        chipRow.dataset.label = wantChip;
-        clear(chipRow);
-        if (wantChip) chipRow.append(contextChip(wantChip));
-      }
+      // Files can be taken out until the first message has carried them off.
+      const asked = State.chatHistory.length > 0 || sending;
+      syncFileChips(chipRow, !asked);
 
       const thinking = State.stateOverride === "thinking";
       // The last bubble grows while a reply streams, so its length is part of the key.
       const last = State.chatHistory[State.chatHistory.length - 1];
-      const key = `${State.chatHistory.length}|${thinking}|${last?.content.length ?? 0}`;
+      const key = `${State.chatHistory.length}|${thinking}|${last?.content.length ?? 0}|${notice ?? ""}`;
       if (key !== renderedKey) {
         renderedKey = key;
         clear(log);
         for (const m of State.chatHistory) log.append(bubble(m));
         if (thinking) log.append(typingDots());
+        if (notice) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: notice })));
         log.scrollTop = log.scrollHeight;
       }
 
       syncHead();
 
-      input.placeholder = State.chatHistory.length === 0 ? "Ask Awuuu anything…" : "Continue…";
+      const files = State.droppedFiles.length;
+      input.placeholder = State.chatHistory.length > 0
+        ? "Continue…"
+        : files === 1 ? "Ask about this file…" : files > 1 ? "Ask about these files…" : "Ask Awuuu anything…";
       input.disabled = sending;
     },
     focus() {
       input.focus();
       input.select();
+      void probeBackends();
     },
   };
 }

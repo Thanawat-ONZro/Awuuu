@@ -169,7 +169,10 @@ export class IslandStateMachine {
     if (this.pinned) return;
     this.homeCollapse = window.setTimeout(() => {
       this.homeCollapse = null;
-      if (this.state === "home") this.transition("petit");
+      if (this.state !== "home") return;
+      // Something is holding the island open (a menu, a resize): look again later.
+      if (this.pinned || this.keepVisible?.()) this.scheduleHomeCollapse();
+      else this.transition("petit");
     }, this.homeToPetitDelay * 1000);
   }
 
