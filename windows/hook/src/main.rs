@@ -13,7 +13,9 @@
 //!   island is the whole point. No answer means empty stdout, and Claude Code
 //!   asks in the terminal exactly as if Awuuu were not installed.
 //!
-//! Usage: `awuuu-hook [--agent <claude|agy|hermes|opencode|codex>] <EventName>`
+//! Usage: `awuuu-hook [--agent <claude|agy|hermes|opencode|codex|any-name>] <EventName>`
+//! (any other name, such as `gemini` or `cursor`, shows as its own agent and
+//! must send Claude Code-shaped hook JSON)
 //! (the event name is also read from the JSON). Without `--agent` the caller is
 //! Claude Code, which is what installs older than the flag wrote.
 //!
@@ -172,23 +174,38 @@ enum Wait {
 /// `--agent <id>` and the event name, in any order.
 struct Args {
     agent: Option<Agent>,
+    /// `--agent <name>` that isn't one of ours (Gemini CLI, Cursor, a script…):
+    /// it shows as its own agent and is treated like Claude Code's hooks.
+    custom: Option<String>,
     event: String,
+}
+
+/// A custom agent name the island may show: 2–24 of a-z, 0-9 and -.
+fn custom_name(s: &str) -> Option<String> {
+    let n = s.trim().to_ascii_lowercase();
+    let ok = (2..=24).contains(&n.len()) && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    ok.then_some(n)
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Args {
     let mut agent = None;
+    let mut custom = None;
     let mut event = String::new();
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
-        if a == "--agent" {
-            agent = it.next().as_deref().and_then(Agent::parse);
-        } else if let Some(v) = a.strip_prefix("--agent=") {
-            agent = Agent::parse(v);
+        let name = if a == "--agent" {
+            it.next()
+        } else {
+            a.strip_prefix("--agent=").map(str::to_string)
+        };
+        if let Some(name) = name {
+            agent = Agent::parse(&name);
+            custom = if agent.is_none() { custom_name(&name) } else { None };
         } else if event.is_empty() && !a.starts_with("--") {
             event = a;
         }
     }
-    Args { agent, event }
+    Args { agent, custom, event }
 }
 
 struct HookEvent {
@@ -448,6 +465,9 @@ fn read_event(args: &Args) -> Option<HookEvent> {
         }
     });
     map.insert("agent_source".into(), serde_json::Value::String(agent.id().into()));
+    if let Some(name) = &args.custom {
+        map.insert("awuuu_agent".into(), serde_json::Value::String(name.clone()));
+    }
     if agent == Agent::Agy {
         if let Some(cid) = map.get("conversationId").and_then(|v| v.as_str()) {
             if !map.contains_key("session_id") {
@@ -721,6 +741,10 @@ mod tests {
         assert_eq!((a.agent, a.event.as_str()), (Some(Agent::Hermes), "Stop"));
         let a = parse_args(["SessionStart".into()]);
         assert_eq!((a.agent, a.event.as_str()), (None, "SessionStart"));
+        let a = parse_args(["--agent".to_string(), "gemini".to_string(), "PreToolUse".to_string()]);
+        assert_eq!((a.agent, a.custom.as_deref()), (None, Some("gemini")));
+        let a = parse_args(["--agent=Bad Name!".to_string()]);
+        assert_eq!(a.custom, None);
     }
 
     #[test]

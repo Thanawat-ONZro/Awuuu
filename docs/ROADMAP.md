@@ -60,9 +60,9 @@
 | PR | งาน |
 |---|---|
 | 7.1 | **Adapter registry**: agent ใหม่ = 1 ไฟล์ (id, detect, install, describeTool) แทนกระจายใน `hooks.rs`/`hooks.ts` |
-| 7.2 | เพิ่ม **Cursor, Gemini CLI, GitHub Copilot CLI** + payload ทั่วไป (`awuuu_agent`) ให้ agent ใดๆ ส่งเข้ามาได้ |
-| 7.3 | หน้า Agents: Connect / Disconnect / Send test event / event ล่าสุดเมื่อไร (backup + diff + ยืนยันตามกฎ settings.json) |
-| 7.4 | **Context กลับเข้า agent**: ตอน SessionStart ฉีดสรุปสั้น ("เมื่อกี้ Codex แก้ billing.ts") |
+| 7.2 | (ทำแบบเบา: `--agent <ชื่อใดก็ได้>` + `awuuu_agent`) เพิ่ม **Cursor, Gemini CLI, GitHub Copilot CLI** + payload ทั่วไป (`awuuu_agent`) ให้ agent ใดๆ ส่งเข้ามาได้ |
+| 7.3 | ~~หน้า Agents~~ เลื่อนไปหลัง 1.0 (ใช้ `aw doctor` แทนก่อน) — หน้า Agents: Connect / Disconnect / Send test event / event ล่าสุดเมื่อไร (backup + diff + ยืนยันตามกฎ settings.json) |
+| 7.4 | ~~Context กลับเข้า agent~~ เลื่อนไปหลัง 1.0 (ต้องเปลี่ยน protocol ของ pipe) — **Context กลับเข้า agent**: ตอน SessionStart ฉีดสรุปสั้น ("เมื่อกี้ Codex แก้ billing.ts") |
 | 7.5 | **Handoff**: "ทำต่อใน ▾" เขียนโน้ตส่งต่อแล้วเปิด agent อื่นผ่าน `aw` |
 
 ## v0.8.0 — "ช่วยชีวิตประจำวัน" (ฟีเจอร์เสริม)

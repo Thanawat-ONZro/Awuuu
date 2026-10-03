@@ -10,6 +10,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- Any agent can talk to the island: point its hooks at `awuuu-hook --agent <name> <Event>` (for example `gemini` or `cursor`) with Claude Code-shaped JSON, and it shows under its own name in Sessions and history.
 - Copy handoff (Sessions): a note another agent can continue from, with what was asked, what the previous agent claimed, what the history shows changed, how the tests stand and what failed.
 - Check my setup (Settings → About, or `aw doctor`): which agents are connected, whether the hook relay is in place, whether Hermes answers, git and the aw command, each with what to do about it.
 - Answer an approval card from the keyboard: Ctrl+Alt+Y allows, Ctrl+Alt+N denies (or hands a question back to the terminal). The keys are only taken while a card is waiting.

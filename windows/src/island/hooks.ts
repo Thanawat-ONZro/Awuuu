@@ -57,6 +57,8 @@ interface HookPayload {
   cwd?: string;
   workspacePaths?: string[]; // AGY
   message?: string;
+  /** A custom agent's name, from `awuuu-hook --agent <name>`. */
+  awuuu_agent?: string;
   /** UserPromptSubmit carries `prompt`; `message` belongs to Notification/Stop. */
   prompt?: string;
   tool_name?: string;
@@ -378,7 +380,9 @@ function handleHook(island: Island, payload: HookPayload) {
 
   // awuuu-hook always says who is calling (`--agent`, or Claude Code for
   // installs that predate the flag).
-  const source: AgentSource = KNOWN_SOURCES.has(payload.agent_source as AgentSource)
+  // Any other agent (`awuuu-hook --agent gemini`) gets its own pill and history name.
+  const custom = typeof payload.awuuu_agent === "string" && /^[a-z0-9-]{2,24}$/.test(payload.awuuu_agent) ? payload.awuuu_agent : null;
+  const source: AgentSource = custom ? "custom" : KNOWN_SOURCES.has(payload.agent_source as AgentSource)
     ? (payload.agent_source as AgentSource)
     : "claude";
 
@@ -400,7 +404,7 @@ function handleHook(island: Island, payload: HookPayload) {
   const key = callKey(payload, tool, input);
 
   // For the history: read when used, so a session's name is the current one.
-  const who = (): HistoryCtx => ({ session: sessionId, agent: source, cwd: session.sessionCwd || cwd, name: session.name });
+  const who = (): HistoryCtx => ({ session: sessionId, agent: custom ?? source, cwd: session.sessionCwd || cwd, name: session.name });
   const call = (): HistoryCall => ({ key, toolUseId: payload.tool_use_id, tool, input, title: describeTool(tool, input) });
 
   switch (name) {
