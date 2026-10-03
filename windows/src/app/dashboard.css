@@ -819,3 +819,9 @@
     gap: 2px;
   }
 }
+
+/* A request in one line (app/story.ts). */
+.story { margin: 6px 0; font-weight: 600; font-size: 12.5px; }
+.story.t-passed .story-line::before { content: "✓ "; color: #4ade80; }
+.story.t-failed .story-line::before { content: "✕ "; color: #f4505e; }
+.story.t-no-tests .story-line::before, .story.t-unclear .story-line::before { content: "? "; color: #f59e0b; }

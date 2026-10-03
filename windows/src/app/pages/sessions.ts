@@ -11,6 +11,7 @@ import { h, clear } from "../../views/dom";
 import { dropdown } from "../../ui/select";
 import { navigate, onLeave } from "../shell";
 import { pageOf, settings } from "../ui";
+import { turnStory } from "../story";
 import { exportFiles, loadHistory, onHistoryChanged } from "../history-data";
 import { agentDot, clickable, clock, copyText, highlight, plural, rangeLabel, relTime } from "../dash-ui";
 import {
@@ -419,6 +420,9 @@ export function page(): HTMLElement {
       bodyEl = h("div", { class: "turn-body" });
       if (promptText) bodyEl.append(h("pre", { class: "prompt" }, highlight(promptText, query)));
       bodyEl.append(factChips(t.facts));
+      const story = turnStory(t);
+      bodyEl.append(h("div", { class: `story t-${story.tests ?? "none"}` }, h("span", { class: "story-line", text: story.line })));
+      for (const w of story.warnings) bodyEl.append(h("div", { class: "notice warn", text: `⚠ ${w}` }));
       const summary = turnSummary(t);
       if (summary) {
         bodyEl.append(h("div", { class: "summary" },
