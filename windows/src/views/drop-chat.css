@@ -1,0 +1,190 @@
+/* File drop and chat (views/upload.ts, views/chat.ts, upload/canvas.ts). Loaded
+   after style.css and ui/select.css; where a rule here replaces one of theirs it
+   is written with a more specific selector. Nothing has a fixed width: every
+   card follows the island. */
+
+/* ── Drop sequence layer ────────────────────────────────────────────────── */
+
+/* The canvas covers the island and draws the card where the island's own is. */
+#island-clip > #upload-layer {
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+
+#upload-layer > #upload-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* A view stays clickable under a transparent parent: while the sequence owns
+   the body, nothing in the views may take a click. */
+#views.hidden-by-upload .view,
+#views.hidden-by-upload .view * {
+  pointer-events: none;
+}
+
+/* ── Drop zone ──────────────────────────────────────────────────────────── */
+
+.drop-card .drop-body {
+  align-items: flex-start;
+  padding-right: 18px;
+}
+
+.drop-back {
+  padding: 4px 11px;
+  font-size: 11.5px;
+}
+
+/* ── Uploading (shown only when the sequence is not running) ────────────── */
+
+.up-card .up-row,
+.up-card .up-track {
+  left: 36px;
+  right: 110px;
+  width: auto;
+}
+
+.up-card .up-fill {
+  max-width: 100%;
+}
+
+/* ── Waiting files ──────────────────────────────────────────────────────── */
+
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  /* Two rows, then it scrolls. */
+  max-height: 56px;
+  overflow-y: auto;
+  flex: 0 0 auto;
+  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.file-chips:empty {
+  display: none;
+}
+
+.file-chip {
+  min-width: 0;
+  max-width: 220px;
+  padding: 3px 9px;
+}
+
+.file-chip .chip-dot {
+  flex: 0 0 7px;
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-x {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim);
+  display: grid;
+  place-items: center;
+  cursor: default;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chip-x:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--ink);
+}
+
+/* ── Files card (choose) ────────────────────────────────────────────────── */
+
+.choose-stack {
+  gap: 6px;
+  padding-right: 18px;
+}
+
+.choose-stack .title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.choose-sub {
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.choose-error {
+  font-weight: 400;
+  color: #f4a0a8;
+}
+
+.choose-stack .actions {
+  flex-wrap: nowrap;
+}
+
+.choose-stack .actions .btn {
+  white-space: nowrap;
+}
+
+/* ── Chat ───────────────────────────────────────────────────────────────── */
+
+.chat-card .chat-body {
+  padding-right: 16px;
+}
+
+.chat-files {
+  padding: 1px 0;
+}
+
+.chat-note {
+  font: 400 12px var(--font);
+  color: #f4a0a8;
+  white-space: pre-wrap;
+  padding-right: 8px;
+  user-select: text;
+}
+
+/* The pickers: Awuuu's own dropdown, sized for the chat header. */
+.chat-head .aw-select.chat-pick {
+  flex: 0 1 auto;
+  max-width: 130px;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.chat-head .aw-select.chat-pick.wide {
+  max-width: 210px;
+}
+
+.chat-head .aw-select-btn {
+  height: 22px;
+  padding: 0 6px 0 9px;
+  border-radius: 999px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
+  font: 600 11px var(--font);
+}
+
+.chat-head .aw-select-btn:hover,
+.chat-head .aw-select.open .aw-select-btn {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.chat-connect {
+  padding: 4px 12px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: var(--accent);
+}

@@ -142,10 +142,13 @@ export const Bridge = {
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
   /** A dropped File (no path in the page): its bytes go straight to the inbox. */
-  ingestBytes: async (file: File) =>
-    callOrThrowRaw<DroppedFile>("ingest_bytes", new Uint8Array(await file.arrayBuffer()), {
+  ingestBytes: async (file: File): Promise<DroppedFile> => {
+    // No inbox in a plain browser: pretend, so the drop flow can be looked at.
+    if (!IS_TAURI) return { name: file.name, path: `dev:${file.name}`, size: file.size };
+    return callOrThrowRaw<DroppedFile>("ingest_bytes", new Uint8Array(await file.arrayBuffer()), {
       "x-file-name": encodeURIComponent(file.name),
-    }),
+    });
+  },
   /** Only ever tells you whether a key exists — never its value. */
   secretPresent: (key: string) => call<boolean>("secret_present", { key }),
   secretSet: (key: string, value: string) => callOrThrow<void>("secret_set", { key, value }),
@@ -279,6 +282,8 @@ export interface IntegrationUpdate {
 
 export type ChatContext =
   | { kind: "file"; name: string; path: string }
+  /** The dropped files the first message is about. */
+  | { kind: "files"; files: { name: string; path: string }[] }
   | { kind: "window"; appName: string; title: string; url?: string };
 
 export interface DroppedFile {

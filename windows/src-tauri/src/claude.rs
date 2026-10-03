@@ -34,6 +34,10 @@ Respond in the user's language.";
 /// Images larger than this are not sent inline (base64 grows them by a third).
 const MAX_INLINE_IMAGE: u64 = 5_000_000;
 
+/// How much one question may carry: files, and their bytes all together.
+pub const MAX_FILES: usize = 10;
+pub const MAX_FILES_BYTES: u64 = 20 * 1024 * 1024;
+
 #[derive(Default)]
 pub struct Chat {
     /// Full multi-turn history.
@@ -80,11 +84,75 @@ impl Chat {
     }
 }
 
+/// A dropped file, as the island knows it: its name and its copy in the inbox.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileRef {
+    pub name: String,
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ChatContext {
     File { name: String, path: String },
-    Window { app_name: String, title: String, url: Option<String> },
+    /// Several dropped files, in drop order.
+    Files { files: Vec<FileRef> },
+    /// `appName` is what the island sends; the old spelling still reads.
+    #[serde(rename_all = "camelCase")]
+    Window {
+        #[serde(alias = "app_name")]
+        app_name: String,
+        title: String,
+        url: Option<String>,
+    },
+}
+
+/// The files a context carries (none for a window).
+fn context_files(context: &Option<ChatContext>) -> Vec<FileRef> {
+    match context {
+        Some(ChatContext::File { name, path }) => vec![FileRef { name: name.clone(), path: path.clone() }],
+        Some(ChatContext::Files { files }) => files.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// Refuses a question that carries more than a model can reasonably take,
+/// with what to do about it. `size_of` is the file's size on disk.
+fn check_files(files: &[FileRef], size_of: impl Fn(&str) -> u64) -> Result<(), String> {
+    if files.len() > MAX_FILES {
+        return Err(format!(
+            "Too many files: {} at once, and Awuuu takes {MAX_FILES}. Remove some and ask again.",
+            files.len()
+        ));
+    }
+    let total: u64 = files.iter().map(|f| size_of(&f.path)).sum();
+    if total > MAX_FILES_BYTES {
+        return Err(format!(
+            "These files are {:.1} MB together, and Awuuu takes {} MB. Remove the biggest and ask again.",
+            total as f64 / 1_048_576.0,
+            MAX_FILES_BYTES / 1_048_576
+        ));
+    }
+    Ok(())
+}
+
+fn window_line(app_name: &str, title: &str, url: &Option<String>) -> String {
+    let mut text = format!("Context — App: {app_name}, Window: {title}");
+    if let Some(u) = url {
+        text.push_str(&format!(", URL: {u}"));
+    }
+    text
+}
+
+/// A file as prompt text: its name and where it is, then its contents when it
+/// is text of a reasonable size.
+fn push_file_text(prompt: &mut String, f: &FileRef) {
+    prompt.push_str(&format!("File: {} ({})\n", f.name, f.path));
+    if std::fs::metadata(&f.path).map(|m| m.len() <= MAX_INLINE_TEXT).unwrap_or(false) {
+        if let Ok(text) = std::fs::read_to_string(&f.path) {
+            prompt.push_str(&format!("File contents:\n{text}\n\n"));
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -203,6 +271,8 @@ pub async fn send(
     context: Option<ChatContext>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
 ) -> Result<ChatReply, String> {
+    let files = context_files(&context);
+    check_files(&files, |path| std::fs::metadata(path).map(|m| m.len()).unwrap_or(0))?;
     if let Some(p) = provider {
         return send_openai(chat, p, query, context, on_delta).await;
     }
@@ -212,7 +282,7 @@ pub async fn send(
     // A real Hermes session through the Runs API (tools, approvals and steps
     // show in the island). Images still go through chat completions, which
     // takes them inline; so does an older Hermes without /v1/runs.
-    let has_image = matches!(&context, Some(ChatContext::File { path, .. }) if image_part(path).is_some());
+    let has_image = files.iter().any(|f| is_inline_image(&f.path));
     if !has_image {
         let input = with_context(chat.is_empty() && chat.hermes_session.lock().unwrap().is_none(), &context, &query);
         let session = chat.hermes_session();
@@ -238,45 +308,45 @@ pub async fn send(
     send_hermes(chat, model, query, context, on_delta).await
 }
 
-/// The first message of a chat carries the dropped file or the window it was
+/// The first message of a chat carries the dropped files or the window it was
 /// opened from.
 fn with_context(first: bool, context: &Option<ChatContext>, query: &str) -> String {
     let mut prompt = String::new();
     if first {
-        match context {
-            Some(ChatContext::File { name, path }) => {
-                prompt.push_str(&format!("File: {name} ({path})\n"));
-                if std::fs::metadata(path).map(|m| m.len() <= MAX_INLINE_TEXT).unwrap_or(false) {
-                    if let Ok(text) = std::fs::read_to_string(path) {
-                        prompt.push_str(&format!("File contents:\n{text}\n\n"));
-                    }
-                }
-            }
-            Some(ChatContext::Window { app_name, title, url }) => {
-                prompt.push_str(&format!("Context — App: {app_name}, Window: {title}"));
-                if let Some(u) = url {
-                    prompt.push_str(&format!(", URL: {u}"));
-                }
-                prompt.push_str("\n\n");
-            }
-            None => {}
+        if let Some(ChatContext::Window { app_name, title, url }) = context {
+            prompt.push_str(&window_line(app_name, title, url));
+            prompt.push_str("\n\n");
+        }
+        for f in context_files(context) {
+            push_file_text(&mut prompt, &f);
         }
     }
     prompt.push_str(query);
     prompt
 }
 
+/// The media type of an image that can be sent inline, by its extension.
+fn image_media(path: &str) -> Option<&'static str> {
+    let ext = std::path::Path::new(path).extension()?.to_str()?.to_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+/// Whether the file would go as an image part — without reading it.
+fn is_inline_image(path: &str) -> bool {
+    image_media(path).is_some()
+        && std::fs::metadata(path).map(|m| m.len() <= MAX_INLINE_IMAGE).unwrap_or(false)
+}
+
 /// An image as an OpenAI `image_url` part (data URL), when the file is one.
 fn image_part(path: &str) -> Option<Value> {
-    let ext = std::path::Path::new(path).extension()?.to_str()?.to_lowercase();
-    let media = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        _ => return None,
-    };
-    if std::fs::metadata(path).ok()?.len() > MAX_INLINE_IMAGE {
+    let media = image_media(path)?;
+    if !is_inline_image(path) {
         return None;
     }
     let bytes = std::fs::read(path).ok()?;
@@ -419,38 +489,33 @@ async fn send_hermes(
     let key = get_hermes_key().ok_or_else(missing_key_message)?;
     let url = get_hermes_url();
 
-    // File / window context rides along with the first message only.
+    // File / window context rides along with the first message only: images
+    // as image parts, everything else as text (its contents, or where it is).
     let mut prompt = String::new();
-    let mut image: Option<Value> = None;
+    let mut images: Vec<Value> = Vec::new();
     if chat.is_empty() {
-        match &context {
-            Some(ChatContext::File { name, path }) => {
-                prompt.push_str(&format!("File: {name}\n"));
-                if let Some(part) = image_part(path) {
-                    image = Some(part);
-                } else if std::fs::metadata(path).map(|m| m.len() <= MAX_INLINE_TEXT).unwrap_or(false) {
-                    if let Ok(text) = std::fs::read_to_string(path) {
-                        prompt.push_str(&format!("File contents:\n{text}\n\n"));
-                    } else {
-                        prompt.push_str(&format!("(Binary file saved at {path})\n\n"));
-                    }
+        if let Some(ChatContext::Window { app_name, title, url }) = &context {
+            prompt.push_str(&window_line(app_name, title, url));
+            prompt.push_str("\n\n");
+        }
+        for f in context_files(&context) {
+            match image_part(&f.path) {
+                Some(part) => {
+                    prompt.push_str(&format!("File: {} (image attached)\n", f.name));
+                    images.push(part);
                 }
+                None => push_file_text(&mut prompt, &f),
             }
-            Some(ChatContext::Window { app_name, title, url }) => {
-                prompt.push_str(&format!("Context — App: {app_name}, Window: {title}"));
-                if let Some(u) = url {
-                    prompt.push_str(&format!(", URL: {u}"));
-                }
-                prompt.push_str("\n\n");
-            }
-            None => {}
         }
     }
     prompt.push_str(&query);
 
-    let content = match image {
-        Some(part) => json!([{ "type": "text", "text": prompt }, part]),
-        None => json!(prompt),
+    let content = if images.is_empty() {
+        json!(prompt)
+    } else {
+        let mut parts = vec![json!({ "type": "text", "text": prompt })];
+        parts.extend(images);
+        json!(parts)
     };
     chat.push(json!({ "role": "user", "content": content }));
 
@@ -565,21 +630,15 @@ async fn send_claude(
     let mut content: Vec<Value> = Vec::new();
 
     if chat.is_empty() {
-        match &context {
-            Some(ChatContext::File { name, path }) => {
-                if let Some(block) = file_block(path) {
-                    content.push(block);
-                }
-                content.push(json!({ "type": "text", "text": format!("File: {name}") }));
+        if let Some(ChatContext::Window { app_name, title, url }) = &context {
+            content.push(json!({ "type": "text", "text": window_line(app_name, title, url) }));
+        }
+        // Each file: its block (document, image or text), then its name.
+        for f in context_files(&context) {
+            if let Some(block) = file_block(&f.path) {
+                content.push(block);
             }
-            Some(ChatContext::Window { app_name, title, url }) => {
-                let mut text = format!("Context — App: {app_name}, Window: {title}");
-                if let Some(url) = url {
-                    text.push_str(&format!(", URL: {url}"));
-                }
-                content.push(json!({ "type": "text", "text": text }));
-            }
-            None => {}
+            content.push(json!({ "type": "text", "text": format!("File: {}", f.name) }));
         }
     }
     content.push(json!({ "type": "text", "text": query }));
@@ -721,7 +780,73 @@ fn base64(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::base64;
+    use super::*;
+
+    fn file(name: &str, path: &str) -> FileRef {
+        FileRef { name: name.into(), path: path.into() }
+    }
+
+    #[test]
+    fn context_takes_one_file_many_files_or_a_window() {
+        let one: ChatContext = serde_json::from_str(r#"{"kind":"file","name":"a.txt","path":"C:/a.txt"}"#).unwrap();
+        assert_eq!(context_files(&Some(one)).len(), 1);
+
+        let many: ChatContext = serde_json::from_str(
+            r#"{"kind":"files","files":[{"name":"a.txt","path":"C:/a.txt"},{"name":"b.png","path":"C:/b.png"}]}"#,
+        )
+        .unwrap();
+        let files = context_files(&Some(many));
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[1].name, "b.png");
+
+        let window: ChatContext =
+            serde_json::from_str(r#"{"kind":"window","appName":"Edge","title":"Docs","url":"https://x"}"#).unwrap();
+        assert!(context_files(&Some(window.clone())).is_empty());
+        assert_eq!(
+            with_context(true, &Some(window), "hi"),
+            "Context — App: Edge, Window: Docs, URL: https://x\n\nhi"
+        );
+        assert!(context_files(&None).is_empty());
+    }
+
+    #[test]
+    fn too_many_or_too_big_is_refused_with_a_reason() {
+        let ten: Vec<FileRef> = (0..MAX_FILES).map(|i| file(&format!("{i}.txt"), "x")).collect();
+        assert!(check_files(&ten, |_| 10).is_ok());
+        assert!(check_files(&[], |_| 0).is_ok());
+
+        let mut eleven = ten.clone();
+        eleven.push(file("more.txt", "x"));
+        let err = check_files(&eleven, |_| 10).unwrap_err();
+        assert!(err.contains("Too many files: 11"), "{err}");
+
+        let err = check_files(&ten[..2], |_| MAX_FILES_BYTES / 2 + 1).unwrap_err();
+        assert!(err.contains("MB together"), "{err}");
+        assert!(check_files(&ten[..2], |_| MAX_FILES_BYTES / 2).is_ok());
+    }
+
+    #[test]
+    fn every_file_goes_into_the_first_message_only() {
+        let dir = std::env::temp_dir().join(format!("awuuu-chat-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.txt");
+        let b = dir.join("b.md");
+        std::fs::write(&a, "alpha").unwrap();
+        std::fs::write(&b, "beta").unwrap();
+        let context = Some(ChatContext::Files {
+            files: vec![file("a.txt", a.to_str().unwrap()), file("b.md", b.to_str().unwrap())],
+        });
+
+        let first = with_context(true, &context, "compare them");
+        assert!(first.contains("File: a.txt") && first.contains("File contents:\nalpha"), "{first}");
+        assert!(first.contains("File: b.md") && first.contains("File contents:\nbeta"), "{first}");
+        assert!(first.find("alpha").unwrap() < first.find("beta").unwrap());
+        assert!(first.ends_with("compare them"));
+
+        assert_eq!(with_context(false, &context, "and now?"), "and now?");
+        assert!(!is_inline_image(a.to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn base64_matches_rfc4648_vectors() {

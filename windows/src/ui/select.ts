@@ -30,6 +30,8 @@ export interface DropdownOptions {
   host?: () => HTMLElement | null;
   /** Called when the list opens — fetch options lazily, then call refresh(). */
   onOpen?: () => void;
+  /** Called when the list closes, however it was closed. */
+  onClose?: () => void;
 }
 
 export interface Dropdown extends HTMLDivElement {
@@ -68,7 +70,23 @@ export function dropdown(opts: DropdownOptions): Dropdown {
   function refresh() {
     const cur = current();
     label.textContent = cur?.label ?? opts.placeholder ?? opts.get() ?? "";
-    if (pop) renderList(pop.querySelector<HTMLInputElement>(".aw-select-search")?.value ?? "");
+    if (!pop) return;
+    // Options fetched after the list opened may make it long enough to filter.
+    ensureSearch();
+    renderList(pop.querySelector<HTMLInputElement>(".aw-select-search")?.value ?? "");
+  }
+
+  /** The filter box, once the list is long enough to want one. */
+  function ensureSearch() {
+    if (!pop || pop.querySelector(".aw-select-search") || opts.options().length < SEARCH_FROM) return;
+    const search = document.createElement("input");
+    search.className = "aw-select-search";
+    search.type = "text";
+    search.placeholder = "Filter…";
+    search.spellcheck = false;
+    search.addEventListener("input", () => renderList(search.value));
+    search.addEventListener("keydown", onKey);
+    pop.prepend(search);
   }
 
   function close() {
@@ -79,6 +97,7 @@ export function dropdown(opts: DropdownOptions): Dropdown {
     document.removeEventListener("pointerdown", onOutside, true);
     window.removeEventListener("blur", close);
     if (openOne === el) openOne = null;
+    opts.onClose?.();
   }
 
   function onOutside(e: Event) {
@@ -179,29 +198,19 @@ export function dropdown(opts: DropdownOptions): Dropdown {
     opts.onOpen?.();
     pop = document.createElement("div");
     pop.className = "aw-select-pop";
-    const many = opts.options().length >= SEARCH_FROM;
-    if (many) {
-      const search = document.createElement("input");
-      search.className = "aw-select-search";
-      search.type = "text";
-      search.placeholder = "Filter…";
-      search.spellcheck = false;
-      search.addEventListener("input", () => renderList(search.value));
-      search.addEventListener("keydown", onKey);
-      pop.append(search);
-    }
     const list = document.createElement("div");
     list.className = "aw-select-list";
     pop.append(list);
     // Clicks in the popup never reach whatever is under it (island drag, tabs).
     for (const name of ["mousedown", "click", "wheel"]) pop.addEventListener(name, (e) => e.stopPropagation());
+    ensureSearch();
     document.body.append(pop);
     el.classList.add("open");
     renderList("");
     place();
     document.addEventListener("pointerdown", onOutside, true);
     window.addEventListener("blur", close);
-    if (many) pop.querySelector<HTMLInputElement>(".aw-select-search")?.focus();
+    pop.querySelector<HTMLInputElement>(".aw-select-search")?.focus();
   }
 
   function onKey(e: KeyboardEvent) {

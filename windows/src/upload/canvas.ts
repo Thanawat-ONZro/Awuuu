@@ -1,14 +1,17 @@
 // The upload canvas — port of UploadCanvasView.swift.
 //
 // While the sequence engine is active this canvas draws the whole island body:
-// card, dashed drop frame, drop text, progress bar, the choose card, Mochi and
-// the file being sucked in. The island's own Mochi is hidden for the duration,
-// exactly as on macOS, because this canvas draws its own.
+// card, dashed drop frame, drop text, progress bar, Mochi and the file being
+// sucked in. The island's own Mochi is hidden for the duration, exactly as on
+// macOS, because this canvas draws its own. The canvas covers the island and
+// draws the card where the island's own card is, so it follows the island's
+// width and the edge it is docked to. What comes after the bar — the files and
+// what to do with them — is an ordinary view (views/upload.ts).
 
 import { State } from "../core/state";
 import { drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat, type EarPose } from "../mochi/dog";
 import {
-  USC, eIn, eInOut, eOut, lerp, progressAt,
+  USC, UploadSeq, eIn, eInOut, eOut, lerp, progressAt, setUploadBox, uploadOrigin,
   type UploadEyeShape, type UploadFrame,
 } from "./sequence";
 
@@ -58,77 +61,62 @@ function text(
   ctx.fillText(s, x, y);
 }
 
-export interface UploadCanvasActions {
-  /** Primary button — hand the file to the chat. */
-  ask(): void;
-  /** Secondary button. */
-  cancel(): void;
-}
-
 export class UploadCanvas {
-  /** Wrapper holding the canvas and the two invisible choose buttons. */
+  /** Wrapper holding the canvas; it covers the island. */
   readonly el: HTMLElement;
 
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D | null;
-  private overlay: HTMLElement;
-  private sizedFor = 0;
+  private sized = "";
 
-  constructor(actions: UploadCanvasActions) {
+  constructor() {
     this.canvas = document.createElement("canvas");
     this.canvas.id = "upload-canvas";
 
-    // Invisible hit areas at the reference button positions. The labels are
-    // painted on the canvas; these only catch the click.
-    const mk = (x: number, w: number, onclick: () => void) => {
-      const b = document.createElement("button");
-      b.className = "upload-hit";
-      b.style.left = `${x}px`;
-      b.style.top = "113px";
-      b.style.width = `${w}px`;
-      b.style.height = "26px";
-      b.addEventListener("click", onclick);
-      return b;
-    };
-    this.overlay = document.createElement("div");
-    this.overlay.id = "upload-overlay";
-    this.overlay.append(mk(114, 168, actions.ask), mk(290, 120, actions.cancel));
-
     this.el = document.createElement("div");
     this.el.id = "upload-layer";
-    this.el.append(this.canvas, this.overlay);
+    this.el.append(this.canvas);
 
     this.ctx = this.canvas.getContext("2d");
   }
 
+  /**
+   * Lines the sequence up with the island's card: `card` is the element the
+   * views' cards fill, inside the island. Called before every frame, and when a
+   * drag comes in, so the cursor is read in the right place from the start.
+   */
+  fit(card: HTMLElement) {
+    setUploadBox({ x: card.offsetLeft, y: card.offsetTop, w: card.offsetWidth, h: card.offsetHeight });
+  }
+
   /** `wallTime` in seconds drives the marching dashes, like the macOS timeline. */
-  draw(f: UploadFrame, wallTime: number) {
+  draw(card: HTMLElement, wallTime: number) {
+    this.fit(card);
+    const f = UploadSeq.frame();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (this.sizedFor !== dpr) {
-      this.sizedFor = dpr;
-      this.canvas.width = Math.round(USC.W * dpr);
-      this.canvas.height = Math.round(USC.ISL_H * dpr);
-      this.canvas.style.width = `${USC.W}px`;
-      this.canvas.style.height = `${USC.ISL_H}px`;
+    const w = Math.max(1, this.el.clientWidth);
+    const h = Math.max(1, this.el.clientHeight);
+    const key = `${w}x${h}@${dpr}`;
+    if (this.sized !== key) {
+      this.sized = key;
+      this.canvas.width = Math.round(w * dpr);
+      this.canvas.height = Math.round(h * dpr);
     }
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, USC.W, USC.ISL_H);
+    // Island background.
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, w, h);
 
+    const o = uploadOrigin();
+    ctx.translate(o.x, o.y);
     this.drawScene(ctx, f, wallTime);
-
-    // The buttons only exist once the choose card has faded in.
-    this.overlay.style.display = f.chooseAlpha > 0.5 ? "block" : "none";
   }
 
   // ── Scene ─────────────────────────────────────────────────────────────────
 
   private drawScene(ctx: CanvasRenderingContext2D, f: UploadFrame, wallTime: number) {
-    // Island background.
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, USC.W, USC.ISL_H);
-
     // Card.
     ctx.save();
     rr(ctx, USC.CARD_X, USC.CARD_Y, USC.CARD_W, USC.CARD_H, USC.CARD_R);
@@ -164,7 +152,6 @@ export class UploadCanvas {
 
     if (f.zoneAlpha > 0 && f.textAlpha > 0) this.drawDropText(ctx, f);
     if (f.barAlpha > 0 || f.barReveal > 0) this.drawProgressBar(ctx, f);
-    if (f.chooseAlpha > 0) this.drawChoose(ctx, f);
 
     this.drawMochi(ctx, f);
     if (f.fileVisible) this.drawFile(ctx, f);
@@ -175,7 +162,7 @@ export class UploadCanvas {
   private drawDropText(ctx: CanvasRenderingContext2D, f: UploadFrame) {
     ctx.save();
     ctx.globalAlpha = f.textAlpha;
-    text(ctx, "Toss a file to Awuuu", USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#E3D4C2");
+    text(ctx, dropTitle(), USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#E3D4C2");
 
     let cx = USC.TEXT_X;
     for (const chip of ["PDF", "Images", "Code", "Docs"]) {
@@ -201,8 +188,9 @@ export class UploadCanvas {
     const by = USC.BAR_Y;
     const barLen = (x1 - x0) * f.barReveal;
 
-    const name = State.droppedFile?.name ?? "file";
-    text(ctx, `Uploading ${name}`, x0, by - 30, `500 12.5px ${FONT}`, "#BBAB99");
+    // The label stops short of the percentage on the right.
+    const label = fitText(ctx, uploadLabel(), x1 - x0 - 56, `500 12.5px ${FONT}`);
+    text(ctx, label, x0, by - 30, `500 12.5px ${FONT}`, "#BBAB99");
 
     if (f.check > 0) {
       ctx.save();
@@ -263,29 +251,6 @@ export class UploadCanvas {
       ctx.fill();
       ctx.restore();
     }
-    ctx.restore();
-  }
-
-  // ── Choose card ───────────────────────────────────────────────────────────
-
-  private drawChoose(ctx: CanvasRenderingContext2D, f: UploadFrame) {
-    ctx.save();
-    ctx.globalAlpha = f.chooseAlpha;
-    ctx.translate(0, (1 - f.chooseAlpha) * 4);
-
-    const name = State.droppedFile?.name ?? "file";
-    text(ctx, `${name} is ready.`, 114, 80, `600 14px ${FONT}`, "#FFF4E6");
-    text(ctx, "What do you want to do with it?", 114, 100, `400 12.5px ${FONT}`, "#A89A8A");
-
-    ctx.fillStyle = "#E4A871";
-    rr(ctx, 114, 113, 168, 26, 13);
-    ctx.fill();
-    text(ctx, "Ask a question about it", 198, 126, `500 12.5px ${FONT}`, "#2B1E14", "center");
-
-    ctx.fillStyle = "rgba(255,255,255,0.09)";
-    rr(ctx, 290, 113, 120, 26, 13);
-    ctx.fill();
-    text(ctx, "Cancel", 350, 126, `500 12.5px ${FONT}`, "#FBEFDF", "center");
     ctx.restore();
   }
 
@@ -455,7 +420,7 @@ export class UploadCanvas {
     // is clipped away — that is what makes it look swallowed.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, USC.W, clipY);
+    ctx.rect(-USC.W, -USC.ISL_H, USC.W * 3, clipY + USC.ISL_H);
     ctx.clip();
 
     for (let i = 0; i < 28; i++) {
@@ -495,6 +460,29 @@ export class UploadCanvas {
       ctx.fill();
     }
   }
+}
+
+// ── Labels ──────────────────────────────────────────────────────────────────
+
+/** The drop zone's line: more files are welcome while some already wait. */
+export function dropTitle(): string {
+  return State.droppedFiles.length > 0 ? "Toss more files to Awuuu" : "Toss files to Awuuu";
+}
+
+/** "Uploading notes.txt" / "Uploading 3 files": what the drop being swallowed brought. */
+export function uploadLabel(): string {
+  if (State.uploadCount > 1) return `Uploading ${State.uploadCount} files`;
+  const last = State.droppedFiles[State.droppedFiles.length - 1];
+  return `Uploading ${last?.name ?? "file"}`;
+}
+
+/** `s` cut with an ellipsis so it fits in `max` px. */
+function fitText(ctx: CanvasRenderingContext2D, s: string, max: number, font: string): string {
+  ctx.font = font;
+  if (ctx.measureText(s).width <= max) return s;
+  let cut = s.length;
+  while (cut > 4 && ctx.measureText(`${s.slice(0, cut)}…`).width > max) cut--;
+  return `${s.slice(0, cut)}…`;
 }
 
 // ── Eye shapes ──────────────────────────────────────────────────────────────

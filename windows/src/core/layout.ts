@@ -100,6 +100,8 @@ export const geo = {
   expandedW: 640,
   /** Height of the Agents hub. */
   hubH: 290,
+  /** Height of the chat; 0 = it grows with the conversation. */
+  chatH: 0,
 };
 
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
@@ -186,7 +188,7 @@ export function islandSize(
     case "expanded": {
       const h =
         view === "prompt"
-          ? chatPromptHeight(chatCount)
+          ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
           : view === "approval"
           ? approvalHeight(approvalFit)
           : view === "agents" || view === "overview"

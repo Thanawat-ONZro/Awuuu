@@ -111,6 +111,20 @@ export type PromptContext =
   | { kind: "window"; appName: string; title: string; url?: string }
   | { kind: "file"; name: string; path?: string };
 
+/** A file dropped on the island, waiting to be asked about. */
+export interface PendingFile {
+  id: number;
+  name: string;
+  /** Where the inbox copy is; "" until the copy has landed. */
+  path: string;
+  /** Bytes; 0 until known. */
+  size: number;
+  /** What was dropped (source path, or name and size): the same thing is not added twice. */
+  key: string;
+  /** Settles when the copy has landed (or failed, which removes the file). */
+  ready?: Promise<void>;
+}
+
 export interface ResultItem {
   label: string;
   detail: string;
@@ -287,7 +301,14 @@ class AppState {
   fileDragOver = false;
 
   promptContext: PromptContext | null = null;
-  droppedFile: { name: string; path: string } | null = null;
+  /** Dropped files the next question is about, in drop order. */
+  droppedFiles: PendingFile[] = [];
+  /** How many files the drop being swallowed brought ("Uploading 3 files"). */
+  uploadCount = 0;
+  /** Why the last dropped file could not be taken, shown next to the others. */
+  dropError: string | null = null;
+  /** Which chat backends can answer; null = not checked yet (views/chat.ts). */
+  chatBackends: { hermes: boolean; claude: boolean } | null = null;
   noteMessage: string | null = null;
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
