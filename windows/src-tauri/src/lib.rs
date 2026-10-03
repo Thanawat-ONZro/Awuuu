@@ -19,6 +19,7 @@ mod extras;
 mod oauth;
 mod persona;
 mod git;
+mod hotkeys;
 mod win_user;
 mod usage;
 mod history;
@@ -406,6 +407,12 @@ fn update_check_now(app: AppHandle) {
     updater::check_now(&app);
 }
 
+/// Ctrl+Alt+Y / Ctrl+Alt+N answer the approval card; held only while one is up.
+#[tauri::command]
+fn set_approval_keys(app: AppHandle, on: bool) {
+    hotkeys::set_approval_keys(&app, on);
+}
+
 /// What git says changed in a project (island/ground.ts diffs two of these).
 #[tauri::command]
 async fn git_snapshot(cwd: String) -> Option<git::GitSnapshot> {
@@ -771,6 +778,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(hotkeys::plugin())
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
@@ -808,6 +816,7 @@ pub fn run() {
             detect_local_providers,
             hermes_status,
             git_snapshot,
+            set_approval_keys,
             judge_tests,
             update_check_now,
             ingest_file,
