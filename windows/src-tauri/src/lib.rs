@@ -18,6 +18,7 @@ mod cli;
 mod extras;
 mod oauth;
 mod persona;
+mod git;
 mod win_user;
 mod usage;
 mod history;
@@ -403,6 +404,12 @@ async fn chat_send(
 #[tauri::command]
 fn update_check_now(app: AppHandle) {
     updater::check_now(&app);
+}
+
+/// What git says changed in a project (island/ground.ts diffs two of these).
+#[tauri::command]
+async fn git_snapshot(cwd: String) -> Option<git::GitSnapshot> {
+    tauri::async_runtime::spawn_blocking(move || git::snapshot(&cwd)).await.ok().flatten()
 }
 
 /// Settings → "Test connection" for the Hermes gateway.
@@ -794,6 +801,7 @@ pub fn run() {
             hermes_model_options,
             detect_local_providers,
             hermes_status,
+            git_snapshot,
             update_check_now,
             ingest_file,
             ingest_bytes,

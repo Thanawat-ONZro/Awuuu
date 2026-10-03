@@ -247,6 +247,17 @@ class HistoryFeed {
     this.plain(ctx, "done", "ok", said ? said.replace(/\s+/g, " ") : "Done", said || undefined);
   }
 
+  /** What git says the request changed (island/ground.ts). */
+  git(ctx: HistoryCtx, title: string, files: NonNullable<HistoryEntry["files"]>) {
+    if (!this.on()) return;
+    const entry: HistoryEntry = {
+      id: this.nextId(ctx.session), session: ctx.session, agent: ctx.agent, at: Date.now(),
+      kind: "tool", tool: "git", title, status: "info",
+    };
+    if (files.length) entry.files = files;
+    this.push(ctx, entry);
+  }
+
   error(ctx: HistoryCtx, title: string, detail?: string) {
     if (!this.on()) return;
     this.plain(ctx, "error", "failed", title, detail);

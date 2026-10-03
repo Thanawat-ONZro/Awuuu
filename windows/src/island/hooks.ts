@@ -9,6 +9,31 @@ import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type Agent
 import type { Island } from "./island";
 import { History, type HistoryCall, type HistoryCtx } from "./history";
 import { isPlanTool, reducePlan } from "./plan";
+import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
+
+// ── Git as ground truth ─────────────────────────────────────────────────────
+// A snapshot when a request starts and one when it ends; what changed in
+// between is recorded before the turn's `done` (island/ground.ts).
+
+const gitBefore = new Map<string, Promise<GitSnapshot | null>>();
+
+function gitStart(sessionId: string, cwd: string) {
+  if (!IS_TAURI || !cwd || !State.settings.historyEnabled) return;
+  gitBefore.set(sessionId, Bridge.gitSnapshot(cwd).catch(() => null));
+  if (gitBefore.size > 50) gitBefore.delete(gitBefore.keys().next().value as string);
+}
+
+/** Records what git saw change during the request, then resolves. */
+async function gitEnd(sessionId: string, cwd: string, ctx: HistoryCtx): Promise<void> {
+  const before = gitBefore.get(sessionId);
+  gitBefore.delete(sessionId);
+  if (!before || !cwd) return;
+  const [b, a] = await Promise.all([before, Bridge.gitSnapshot(cwd).catch(() => null)]);
+  if (!a) return;
+  const g = groundDiff(b, a);
+  const title = groundTitle(g);
+  if (title) History.git(ctx, title, g.files);
+}
 
 interface HookPayload {
   hook_event_name?: string;
@@ -390,6 +415,7 @@ function handleHook(island: Island, payload: HookPayload) {
       const asked = payload.prompt ?? payload.message;
       if (asked) State.appendStep(taskId, asked.slice(0, 600), "prompt");
       if (asked) History.prompt(who(), asked);
+      gitStart(sessionId, session.sessionCwd || cwd);
       break;
     }
 
@@ -443,10 +469,12 @@ function handleHook(island: Island, payload: HookPayload) {
     case "Stop":
       settleElsewhere(island, sessionId, () => true, "Request closed — the turn ended");
       session.state = "finished";
+      const grounded = gitEnd(sessionId, session.sessionCwd || cwd, who());
       pullTranscript(taskId, source, transcript, payload.last_assistant_message ?? payload.message, () => {
         State.appendStep(taskId, "Done", "done");
         const last = payload.last_assistant_message ?? payload.message;
-        History.done(who(), last ? plainText(last) : null);
+        // git's entry lands first, so it belongs to this turn.
+        void grounded.finally(() => History.done(who(), last ? plainText(last) : null));
       }, who);
       Sound.play("finish");
       session.pillBadge = "finished";
