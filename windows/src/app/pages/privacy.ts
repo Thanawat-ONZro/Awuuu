@@ -4,7 +4,7 @@ import "../dashboard.css";
 import { Bridge } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
 import { navigate } from "../shell";
-import { card, pageOf, save, settings, toggle } from "../ui";
+import { card, pageOf, save, select, settings, toggle } from "../ui";
 import { clearHistory, loadHistoryInfo, type HistoryInfo } from "../history-data";
 import { bytesLabel, plural } from "../dash-ui";
 
@@ -119,10 +119,22 @@ function leavesCard(): HTMLElement {
   );
 }
 
+function awarenessCard(): HTMLElement {
+  return card("Chat awareness",
+    h("div", { class: "row" }, h("label", { text: "Share with the chat" }),
+      select([
+        ["local", "Only with Hermes and models on this PC (default)"],
+        ["always", "With every chat model, cloud ones too"],
+        ["off", "Never"],
+      ], () => settings.chatAwareness || "local", (v) => (settings.chatAwareness = v))),
+    h("div", { class: "hint", text: "A short note of what the island sees (your agents, the next meeting, PRs waiting for you) rides along with each chat message so answers fit what you are doing. E-mail addresses, keys and your user folder are removed first." }),
+  );
+}
+
 export function page(): HTMLElement {
   const root = pageOf("Privacy & history",
     "Awuuu keeps everything on this PC. Nothing is sent anywhere unless you connect a service yourself.",
-    historyCard(), leavesCard());
+    awarenessCard(), historyCard(), leavesCard());
   root.classList.add("dash");
   return root;
 }

@@ -67,6 +67,16 @@ pub struct Settings {
     pub log_lines: u32,
     #[serde(default = "yes")]
     pub show_thinking: bool,
+    /// How Awuuu talks in the chat: "playful" (default), "calm" or "pro".
+    #[serde(default)]
+    pub chat_tone: String,
+    /// The first name Awuuu calls the user by; "" = from the Windows account.
+    #[serde(default)]
+    pub user_name: String,
+    /// What the island sees rides along with a chat turn: "local" (default:
+    /// Hermes and providers on this machine), "always" or "off".
+    #[serde(default)]
+    pub chat_awareness: String,
     #[serde(default = "yes")]
     pub show_time: bool,
     pub autostart: bool,
@@ -202,6 +212,9 @@ impl Default for Settings {
             hub_scale: 1.0,
             log_lines: default_log_lines(),
             show_thinking: true,
+            chat_tone: String::new(),
+            user_name: String::new(),
+            chat_awareness: String::new(),
             show_time: true,
             autostart: false,
             hooks_installed: false,

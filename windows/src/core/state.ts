@@ -212,6 +212,12 @@ export interface Settings {
   logLines: number;
   showThinking: boolean;
   showTime: boolean;
+  /** Chat voice: "playful" (default), "calm" or "pro". */
+  chatTone: string;
+  /** First name Awuuu uses; "" = from the Windows account. */
+  userName: string;
+  /** Chat awareness: "local" (default), "always" or "off". */
+  chatAwareness: string;
   autostart: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
@@ -262,6 +268,9 @@ export const DEFAULT_SETTINGS: Settings = {
   logLines: 40,
   showThinking: true,
   showTime: true,
+  chatTone: "",
+  userName: "",
+  chatAwareness: "",
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",
@@ -309,6 +318,8 @@ class AppState {
   dropError: string | null = null;
   /** Which chat backends can answer; null = not checked yet (views/chat.ts). */
   chatBackends: { hermes: boolean; claude: boolean } | null = null;
+  /** Whether Hermes answers, checked only while the chat is open (island/hermes-watch.ts). */
+  hermesHealth: "unknown" | "online" | "offline" | "nokey" = "unknown";
   noteMessage: string | null = null;
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
