@@ -2,6 +2,7 @@
 // IslandViewContent.swift.
 
 import { h, svg, clear } from "./dom";
+import { renderMarkdown, type RenderOptions } from "./markdown";
 import { ICONS } from "./icons";
 import { Bridge, IS_TAURI, onEvent, type ChatContext } from "../core/bridge";
 import { Sound } from "../core/sound";
@@ -93,6 +94,11 @@ function usable(): SelectOption[] {
   return out;
 }
 
+const MD: RenderOptions = {
+  openUrl: (url) => void Bridge.openUrl(url),
+  copy: (text) => void navigator.clipboard.writeText(text).catch(() => {}),
+};
+
 function bubble(message: ChatMessage): HTMLElement {
   if (message.role === "user") {
     return h(
@@ -101,7 +107,7 @@ function bubble(message: ChatMessage): HTMLElement {
       h("div", { class: "bubble", text: message.content }),
     );
   }
-  return h("div", { class: "chat-row" }, h("div", { class: "reply", text: message.content }));
+  return h("div", { class: "chat-row" }, h("div", { class: "reply md" }, renderMarkdown(message.content, MD)));
 }
 
 function typingDots(): HTMLElement {

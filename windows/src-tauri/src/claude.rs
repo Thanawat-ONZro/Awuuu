@@ -23,7 +23,7 @@ const MAX_TOKENS: u32 = 4096;
 const MAX_INLINE_TEXT: u64 = 200_000;
 
 /// The chat bubble renders Markdown (views/markdown.ts).
-const MARKDOWN: bool = false;
+const MARKDOWN: bool = true;
 
 /// The two system prompts for this turn, from Settings → Chat (tone, name):
 /// the full persona, and the light one for Hermes.
