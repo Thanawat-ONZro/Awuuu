@@ -6,8 +6,8 @@
 // listed as not finished. Nothing is inferred.
 
 import type { HistoryData, HistoryEntry, HistorySession } from "../core/bridge";
-import { AGENT_INFO } from "../core/state";
-import { testLine, testStatus } from "./testcheck";
+import { AGENT_INFO } from "../core/state.ts";
+import { testLine, testStatus } from "./testcheck.ts";
 
 export type FileChange = "read" | "edit" | "write" | "delete";
 

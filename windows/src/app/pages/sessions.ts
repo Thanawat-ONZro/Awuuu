@@ -6,6 +6,7 @@
 // are capped behind "Show more", so 5000 entries stay quick.
 
 import { testLine, testStatus } from "../testcheck";
+import { handoffNote } from "../handoff";
 import "../dashboard.css";
 import { Bridge, type HistoryData, type HistoryEntry } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
@@ -472,6 +473,10 @@ export function page(): HTMLElement {
     copy.addEventListener("click", () => void copyText(sessionMarkdown(s), copy, status).then((ok) => {
       if (!ok) status.scrollIntoView({ block: "nearest" });
     }));
+    const handoff = h("button", { text: "Copy handoff", title: "Copy a note another agent can continue from: what was asked, what changed, how the tests stand" }) as HTMLButtonElement;
+    handoff.addEventListener("click", () => void copyText(handoffNote(s), handoff, status).then((ok) => {
+      if (!ok) status.scrollIntoView({ block: "nearest" });
+    }));
     const exp = h("button", { text: "Export .md + .json", title: "Save this session to Downloads" }) as HTMLButtonElement;
     exp.addEventListener("click", () => void doExport(exportSession(s), "Session exported", exp));
     const logBtn = h("button", {
@@ -490,7 +495,7 @@ export function page(): HTMLElement {
       s.cwd ? h("div", { class: "path" }, highlight(s.cwd, query)) : null,
       h("div", { class: "hint", text: `${rangeLabel(s.first, s.last)}${work >= 1000 ? ` · ${formatDuration(work)} of work` : ""} · ${plural(s.entries.length, "entry", "entries")}` }),
       factChips(s.facts, s.requests),
-      h("div", { class: "row" }, copy, exp, h("span", { class: "spacer" }), logBtn),
+      h("div", { class: "row" }, copy, handoff, exp, h("span", { class: "spacer" }), logBtn),
     ));
 
     if (query) {
