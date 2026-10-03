@@ -21,6 +21,14 @@ pub const KNOWN_KEYS: &[&str] = &[
     "mail-password",
     "ical-url",
     "todoist-token",
+    // Sign-ins (oauth.rs). The access tokens themselves stay in memory.
+    "google-refresh-token",
+    "microsoft-refresh-token",
+    "google-client-secret",
+    // Who is signed in, for the label on the card.
+    "google-account",
+    "microsoft-account",
+    "github-account",
 ];
 
 /// `provider-key:<id>` for a chat provider added in Settings: a short id of

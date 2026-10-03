@@ -16,6 +16,7 @@ mod transcript;
 mod hermes;
 mod cli;
 mod extras;
+mod oauth;
 mod win_user;
 
 use std::os::windows::process::CommandExt;
@@ -719,6 +720,13 @@ pub fn run() {
             detect_agents,
             aw_path_set,
             set_paused,
+            oauth::oauth_status,
+            oauth::oauth_sign_in,
+            oauth::oauth_cancel,
+            oauth::oauth_sign_out,
+            oauth::github_cli_login,
+            oauth::github_device_start,
+            oauth::github_device_wait,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
