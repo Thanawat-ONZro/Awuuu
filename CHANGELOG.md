@@ -7,6 +7,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## [Unreleased]
 
 ### Added
+- Awuuu has a personality in the chat: pick a tone (Playful, Calm or Professional) and the name it calls you by in Settings → Chat → Personality. It answers in your language and sounds natural in Thai. Hermes keeps its own memory.
 - Frontend unit tests (vitest) for the live plan and the island's open/close logic; `npm test` runs them.
 
 ## [0.3.0] - 2026-10-03

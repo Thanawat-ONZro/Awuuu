@@ -212,6 +212,10 @@ export interface Settings {
   logLines: number;
   showThinking: boolean;
   showTime: boolean;
+  /** Chat voice: "playful" (default), "calm" or "pro". */
+  chatTone: string;
+  /** First name Awuuu uses; "" = from the Windows account. */
+  userName: string;
   autostart: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
@@ -262,6 +266,8 @@ export const DEFAULT_SETTINGS: Settings = {
   logLines: 40,
   showThinking: true,
   showTime: true,
+  chatTone: "",
+  userName: "",
   autostart: false,
   hooksInstalled: false,
   model: "hermes-agent",

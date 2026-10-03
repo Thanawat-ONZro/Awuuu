@@ -22,14 +22,25 @@ const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 const MAX_TOKENS: u32 = 4096;
 const MAX_INLINE_TEXT: u64 = 200_000;
 
-const SYSTEM_PROMPT: &str = "You are Awuuu, a personal AI companion dog living at the top of the user's screen. \
-Respond in the user's language. Be thorough, helpful and concise.";
+/// The chat bubble renders Markdown (views/markdown.ts).
+const MARKDOWN: bool = false;
 
-/// Sent ahead of the Hermes history. Kept light on persona so the agent's own
-/// profile and memories stay in charge; it only sets the display constraints.
-const HERMES_SYSTEM: &str = "You are talking through Awuuu, a small dog companion that lives at the top of the user's screen. \
-Your reply appears in a small chat bubble: keep it clear and reasonably short, plain text with line breaks, no markdown. \
-Respond in the user's language.";
+/// The two system prompts for this turn, from Settings → Chat (tone, name):
+/// the full persona, and the light one for Hermes.
+fn system_prompts(app: &tauri::AppHandle) -> (String, String) {
+    use tauri::Manager;
+    let (tone, name) = app
+        .try_state::<crate::Shared>()
+        .map(|s| {
+            let s = s.settings.lock().unwrap();
+            (s.chat_tone.clone(), s.user_name.clone())
+        })
+        .unwrap_or_default();
+    let account = std::env::var("USERNAME").ok();
+    let name = crate::persona::first_name(&name, account.as_deref());
+    let p = crate::persona::Persona { tone: crate::persona::Tone::parse(&tone), name: &name, markdown: MARKDOWN };
+    (p.full(), p.hermes())
+}
 
 /// Images larger than this are not sent inline (base64 grows them by a third).
 const MAX_INLINE_IMAGE: u64 = 5_000_000;
@@ -273,11 +284,12 @@ pub async fn send(
 ) -> Result<ChatReply, String> {
     let files = context_files(&context);
     check_files(&files, |path| std::fs::metadata(path).map(|m| m.len()).unwrap_or(0))?;
+    let (system, hermes_system) = system_prompts(app);
     if let Some(p) = provider {
-        return send_openai(chat, p, query, context, on_delta).await;
+        return send_openai(chat, p, &system, query, context, on_delta).await;
     }
     if model.starts_with("claude-") {
-        return send_claude(chat, model, query, context).await;
+        return send_claude(chat, model, &system, query, context).await;
     }
     // A real Hermes session through the Runs API (tools, approvals and steps
     // show in the island). Images still go through chat completions, which
@@ -297,7 +309,7 @@ pub async fn send(
                 }
             })
         };
-        match crate::hermes::run_turn(app, &session, &input, Some(HERMES_SYSTEM), pick.as_ref(), on_delta).await {
+        match crate::hermes::run_turn(app, &session, &input, Some(&hermes_system), pick.as_ref(), on_delta).await {
             Ok(reply) => return Ok(reply),
             Err(crate::hermes::RunError::Failed(e)) => return Err(e),
             Err(crate::hermes::RunError::Unsupported) => {
@@ -305,7 +317,7 @@ pub async fn send(
             }
         }
     }
-    send_hermes(chat, model, query, context, on_delta).await
+    send_hermes(chat, model, &hermes_system, query, context, on_delta).await
 }
 
 /// The first message of a chat carries the dropped files or the window it was
@@ -360,6 +372,7 @@ fn image_part(path: &str) -> Option<Value> {
 async fn send_openai(
     chat: &Chat,
     p: &crate::settings::ChatProvider,
+    system: &str,
     query: String,
     context: Option<ChatContext>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
@@ -368,7 +381,7 @@ async fn send_openai(
     let key = secrets::get(&format!("provider-key:{}", p.id));
     let content = with_context(chat.is_empty(), &context, &query);
     chat.push(json!({ "role": "user", "content": content }));
-    let mut messages = vec![json!({ "role": "system", "content": SYSTEM_PROMPT })];
+    let mut messages = vec![json!({ "role": "system", "content": system })];
     messages.extend(chat.snapshot());
     let body = json!({ "model": p.model, "messages": messages, "stream": true });
     match stream_chat(&url, key.as_deref(), &body, on_delta, &p.name).await {
@@ -482,6 +495,7 @@ pub async fn list_models(base_url: &str, key: Option<String>) -> Result<Vec<Stri
 async fn send_hermes(
     chat: &Chat,
     model: &str,
+    system: &str,
     query: String,
     context: Option<ChatContext>,
     on_delta: &(dyn Fn(&str) + Send + Sync),
@@ -519,7 +533,7 @@ async fn send_hermes(
     };
     chat.push(json!({ "role": "user", "content": content }));
 
-    let mut messages = vec![json!({ "role": "system", "content": HERMES_SYSTEM })];
+    let mut messages = vec![json!({ "role": "system", "content": system })];
     messages.extend(chat.snapshot());
     let body = json!({ "model": model, "messages": messages, "stream": true });
 
@@ -621,6 +635,7 @@ async fn send_hermes(
 async fn send_claude(
     chat: &Chat,
     model: &str,
+    system: &str,
     query: String,
     context: Option<ChatContext>,
 ) -> Result<ChatReply, String> {
@@ -648,7 +663,7 @@ async fn send_claude(
     let body = json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
+        "system": system,
         "tools": [{ "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }],
         "fallbacks": "default",
         "messages": chat.snapshot(),

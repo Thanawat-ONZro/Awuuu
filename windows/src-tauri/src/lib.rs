@@ -17,6 +17,7 @@ mod hermes;
 mod cli;
 mod extras;
 mod oauth;
+mod persona;
 mod win_user;
 mod usage;
 mod history;

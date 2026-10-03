@@ -3,7 +3,7 @@
 import { Bridge } from "../../core/bridge";
 import type { ChatProvider } from "../../core/state";
 import { h, clear } from "../../views/dom";
-import { pageOf, save, settings, statusDot } from "../ui";
+import { pageOf, save, select, settings, statusDot, textField } from "../ui";
 
 // ── Agent / API section ────────────────────────────────────────────────────────
 
@@ -349,8 +349,27 @@ function apiSection(hasKey: boolean): HTMLElement {
 }
 
 
+// ── Personality: how Awuuu talks ───────────────────────────────────────────────
+
+const TONES: [string, string][] = [
+  ["playful", "Playful: warm, a little silly"],
+  ["calm", "Calm: few words, no chatter"],
+  ["pro", "Professional: straight to the point"],
+];
+
+function personalitySection(): HTMLElement {
+  return h("section", {},
+    h("h2", {}, h("span", { text: "Personality" })),
+    h("div", { class: "row" }, h("label", { text: "Tone" }),
+      select(TONES, () => settings.chatTone || "playful", (v) => (settings.chatTone = v))),
+    h("div", { class: "row" }, h("label", { text: "Call me" }),
+      textField(() => settings.userName ?? "", (v) => (settings.userName = v), "Your first name (default: from your Windows account)")),
+    h("div", { class: "hint", text: "Awuuu replies in the language you write in. Hermes keeps its own memory; this only sets the voice." }),
+  );
+}
+
 export async function page(): Promise<HTMLElement> {
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   return pageOf("Chat & models", "The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server.",
-    hermesSection(), providersSection(), apiSection(hasKey));
+    personalitySection(), hermesSection(), providersSection(), apiSection(hasKey));
 }
