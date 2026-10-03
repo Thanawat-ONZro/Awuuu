@@ -12,6 +12,9 @@ import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { EXTRA_IDS, hasExtraData, renderExtraCard, renderToday, weatherChip } from "./today";
+import "./hub-extra.css";
+import { planHeadline } from "../island/plan";
+import { refreshUsage } from "../island/usage";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -292,8 +295,15 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
   const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
   const pillRow = h("div", { class: "hub-pill-row" }, pills, clearDone);
   // Who is focused, then room for more on the same line (plan step, usage…), then the jump.
-  const head = h("div", { class: "hub-head" }, who, jump);
-  const body = h("div", { class: "hub" }, pillRow, waiting, head, steps, empty);
+  const usage = h("div", { class: "hub-usage" });
+  const head = h("div", { class: "hub-head" }, who, usage, jump);
+  // The plan the focused agent is working through: "2/4 · what it is doing".
+  const planBar = h("i", {});
+  const planText = h("span", { class: "txt" });
+  const plan = h("div", { class: "hub-plan" }, h("span", { class: "meter" }, planBar), planText);
+  const body = h("div", { class: "hub" }, pillRow, waiting, head, plan, steps, empty);
+  let usageKey = "";
+  let usageAsked = 0;
   const el = h("div", { class: "view hub-view" }, card(null, body));
 
   let pillKey = "";
@@ -327,6 +337,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
       for (const part of [pillRow, head, steps]) part.style.display = none ? "none" : "";
+      if (none) plan.style.display = "none";
       if (none) {
         pillKey = stepsKey = "";
         clear(pills);
@@ -346,6 +357,30 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         h("span", { class: "tool", text: stateLabel(focused.state) }),
       );
       if (folder) who.title = folder;
+
+      const headline = planHeadline(focused.plan);
+      plan.style.display = headline ? "" : "none";
+      if (headline && focused.plan) {
+        planText.textContent = headline;
+        planBar.style.width = `${Math.round((focused.plan.done / Math.max(1, focused.plan.total)) * 100)}%`;
+        plan.title = focused.plan.items
+          .map((i) => `${i.status === "completed" ? "✓" : i.status === "in_progress" ? "▸" : "·"} ${i.text}`)
+          .join("\n");
+      }
+
+      // Plan limits of the focused agent, when it reports them (Claude, Codex).
+      // Asked again at most once a minute, and only while the hub is looked at.
+      if (State.mode === "expanded" && Date.now() - usageAsked > 60_000) {
+        usageAsked = Date.now();
+        void refreshUsage();
+      }
+      const mine = State.usage.find((u) => u.agent === focused.source);
+      const nextUsage = mine ? JSON.stringify(mine.limits) : "";
+      if (nextUsage !== usageKey) {
+        usageKey = nextUsage;
+        clear(usage);
+        for (const l of mine?.limits ?? []) usage.append(limitChip(l));
+      }
 
       const log = focused.log ?? [];
       const key = `${focused.id}:${log.length}:${log.at(-1)?.at ?? 0}:${focused.state}:${Math.floor(Date.now() / 30000)}:${State.settings.logLines}`;
@@ -369,7 +404,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       }
 
       clearDone.style.display = sessions.some((s) => ["idle", "finished", "error"].includes(s.state)) ? "" : "none";
-      const nextPillKey = sessions.map((s) => `${s.id}:${s.name}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}`).join("|");
+      const nextPillKey = sessions.map((s) => `${s.id}:${s.name}:${s.pillBadge ?? ""}:${s.id === focused.id ? "1" : "0"}:${planCount(s)}`).join("|");
       if (nextPillKey !== pillKey) {
         const at = pills.scrollLeft;
         pillKey = nextPillKey;
@@ -393,6 +428,33 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       }
     },
   };
+}
+
+/** "2/4" for a session with a plan still under way. */
+function planCount(task: AgentTask): string {
+  const p = task.plan;
+  return p && p.total > 0 && p.done < p.total ? `${Math.min(p.done + 1, p.total)}/${p.total}` : "";
+}
+
+function resetText(at: number | null): string {
+  if (!at) return "";
+  const min = Math.round((at - Date.now()) / 60_000);
+  if (min <= 0) return "resets now";
+  if (min < 60) return `resets in ${min} min`;
+  if (min < 24 * 60) return `resets in ${Math.floor(min / 60)}h ${min % 60}m`;
+  return `resets ${new Date(at).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** One plan limit: a small ring, what is left, and when it resets (tooltip). */
+function limitChip(l: { label: string; usedPercent: number; resetsAt: number | null }): HTMLElement {
+  const used = Math.max(0, Math.min(100, l.usedPercent));
+  const left = Math.round(100 - used);
+  const tone = used >= 90 ? "hot" : used >= 70 ? "warm" : "";
+  const chip = h("span", { class: `limit-chip ${tone}`.trim() },
+    h("i", { class: "ring", style: `--used:${used}` }),
+    h("span", { text: `${l.label} ${left}% left` }));
+  chip.title = [`${l.label} limit: ${Math.round(used)}% used`, resetText(l.resetsAt)].filter(Boolean).join(" · ");
+  return chip;
 }
 
 const LOG_MARK: Record<LogKind, string> = {
@@ -439,6 +501,7 @@ function buildPill(task: AgentTask, actions: ViewActions, focused = false, onRem
     { class: focused ? "pill focused" : "pill", onclick: () => actions.setFocus(task.id) },
     canvas,
     h("span", { class: "lbl", text: label, title: label }),
+    !task.isIntegration && planCount(task) ? h("span", { class: "pill-plan", text: planCount(task) }) : null,
   );
   // The end of a session pill: the agent's tag, which gives its place to the
   // × while the pill is hovered — same slot, so the pill never changes width.

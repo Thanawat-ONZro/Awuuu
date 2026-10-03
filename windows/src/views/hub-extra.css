@@ -1,0 +1,82 @@
+/* Agents hub: the focused agent's live plan and plan limits. */
+
+.hub-plan {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: var(--agent-soft, rgba(255, 255, 255, 0.06));
+  font: 500 calc(12px * var(--hub-scale, 1)) var(--font);
+  color: var(--agent-ink, var(--ink));
+}
+
+.hub-plan .meter {
+  flex: 0 0 54px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.hub-plan .meter i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--agent, #c9956a);
+  transition: width 0.3s ease;
+}
+
+.hub-plan .txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-usage {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.limit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font: 500 10.5px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  --tone: #22c55e;
+}
+
+.limit-chip.warm {
+  --tone: #f5a524;
+  color: #fbc06a;
+}
+
+.limit-chip.hot {
+  --tone: #f4505e;
+  color: #ff8d97;
+}
+
+.limit-chip .ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, #1a1612 58%, transparent 60%),
+    conic-gradient(var(--tone) calc(var(--used) * 1%), rgba(255, 255, 255, 0.16) 0);
+}
+
+.pill-plan {
+  flex: 0 0 auto;
+  font: 600 10px var(--font);
+  color: var(--dim-2);
+  font-variant-numeric: tabular-nums;
+}
