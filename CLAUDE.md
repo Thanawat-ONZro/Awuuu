@@ -16,6 +16,9 @@ Awuuu is a top-of-screen dynamic island AI dog companion for Windows: Awuuu the 
   - `windows/src-tauri/src/secrets.rs` — Windows Credential Manager integration.
   - `windows/src-tauri/src/claude.rs` — Native Hermes Agent client (`http://127.0.0.1:8642`) with auto API_SERVER_KEY discovery, and Anthropic fallback.
   - `windows/src-tauri/src/integrations.rs` — Background pollers (GitHub, Stripe, n8n, Vercel, Resend, Notion, Cal.com).
+- `windows/src/app/` — dashboard window; pure models live in `recap.ts` (turns, facts), `testcheck.ts` (did the tests pass), `handoff.ts` (note for another agent).
+- `windows/src/core/markdown.ts` — the Markdown slice chat replies show (rendered by `views/markdown.ts`, text only, http(s) links only).
+- `windows/src-tauri/src/ground.rs` + `island/ground.ts` — git snapshots at prompt/turn end, so history includes changes no tool call named.
 - `windows/hook/` — source for `awuuu-hook.exe`, the lightweight CLI relay called by Claude Code.
 - `shared/sounds/` — 28 royalty-free mathematically synthesized WAV audio assets.
 - `scripts/gen_dog_sounds.py` — procedural sound generator.
@@ -38,6 +41,7 @@ Awuuu is a top-of-screen dynamic island AI dog companion for Windows: Awuuu the 
   cd windows
   npm run pack
   ```
+- Pure-logic checks (node, no framework): `npm test` in `windows/`; Rust: `cargo test --lib` in `windows/src-tauri/`.
 - Re-generate icons:
   ```powershell
   cd windows
