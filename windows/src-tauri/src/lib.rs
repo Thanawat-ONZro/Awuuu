@@ -20,6 +20,7 @@ mod oauth;
 mod persona;
 mod git;
 mod hotkeys;
+mod doctor;
 mod win_user;
 mod usage;
 mod history;
@@ -411,6 +412,12 @@ fn update_check_now(app: AppHandle) {
 #[tauri::command]
 fn set_approval_keys(app: AppHandle, on: bool) {
     hotkeys::set_approval_keys(&app, on);
+}
+
+/// Settings → About → Check my setup.
+#[tauri::command]
+async fn doctor() -> Vec<doctor::Check> {
+    doctor::run().await
 }
 
 /// What git says changed in a project (island/ground.ts diffs two of these).
@@ -816,6 +823,7 @@ pub fn run() {
             detect_local_providers,
             hermes_status,
             git_snapshot,
+            doctor,
             set_approval_keys,
             judge_tests,
             update_check_now,

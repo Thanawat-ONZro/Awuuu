@@ -3,6 +3,7 @@ rem aw - run a coding agent with Awuuu watching it.
 rem   aw                                                 a short menu: what is here, what to type
 rem   aw <claude|agy|hermes|opencode|codex> [args...]    start Awuuu, check the agent's hook, run the agent
 rem   aw status                                          which agents are here and connected
+rem   aw doctor                                          status + open the setup check
 rem   aw setup [agent]                                   open Awuuu to connect an agent
 rem   aw dashboard                                       open the Awuuu window at Sessions
 rem   aw settings                                        open the Awuuu window where you left it
@@ -24,6 +25,7 @@ set "RC=0"
 
 if "%~1"=="" goto menu
 if /I "%~1"=="status" goto status
+if /I "%~1"=="doctor" goto doctor
 if /I "%~1"=="help" goto help
 if "%~1"=="--help" goto help
 if "%~1"=="-h" goto help
@@ -216,6 +218,15 @@ if errorlevel 1 goto fail
 echo  Opened Awuuu at Sessions.
 goto end
 
+:doctor
+call :marks_on
+call :print_status
+call :marks_off
+call :open_awuuu about
+if errorlevel 1 goto fail
+echo  Opened Awuuu at About - click Check my setup for Hermes, git and PATH.
+goto end
+
 :settings
 call :open_awuuu settings
 if errorlevel 1 goto fail
@@ -326,6 +337,7 @@ echo.
 echo  Look and set up
 echo    aw                    a short menu: what is here, what to type
 echo    aw status             which agents are here and connected to Awuuu
+echo    aw doctor             the same, then Awuuu's full setup check
 echo    aw setup ^<agent^>      open Awuuu to connect that agent
 echo    aw dashboard          open the Awuuu window at Sessions
 echo    aw settings           open the Awuuu window where you left it

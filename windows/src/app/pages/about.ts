@@ -40,6 +40,34 @@ function awSection(): HTMLElement {
 }
 
 
+/** "Check my setup": every reason Awuuu might stay quiet, with the fix (doctor.rs). */
+function doctorSection(): HTMLElement {
+  const list = h("div", { class: "doctor" });
+  const run = h("button", { class: "primary", text: "Check my setup" });
+  run.addEventListener("click", async () => {
+    run.setAttribute("disabled", "");
+    run.textContent = "Checking…";
+    list.replaceChildren();
+    const checks = (await Bridge.doctor()) ?? [];
+    for (const c of checks) {
+      const mark = c.level === "ok" ? "✓" : c.level === "warn" ? "!" : "✕";
+      list.append(h("div", { class: `doctor-row d-${c.level}` },
+        h("span", { class: "doctor-mark", text: mark }),
+        h("span", { class: "doctor-main" },
+          h("b", { text: c.name }), ` ${c.detail}`,
+          c.fix ? h("div", { class: "hint", text: c.fix }) : null)));
+    }
+    if (checks.length === 0) list.append(h("div", { class: "hint", text: "Nothing to check outside the app." }));
+    run.removeAttribute("disabled");
+    run.textContent = "Check again";
+  });
+  return h("section", {},
+    h("h2", {}, h("span", { text: "Check my setup" })),
+    h("div", { class: "hint", text: "Agents connected, the hook relay, Hermes, git and the aw command. Read-only: nothing is changed." }),
+    h("div", { class: "row" }, run),
+    list);
+}
+
 export function page(): HTMLElement {
   return pageOf("About & aw", "",
     h("section", {},
@@ -47,5 +75,6 @@ export function page(): HTMLElement {
       h("div", { class: "hint", text: "No telemetry. Network requests only go to the services you configure yourself." }),
       h("div", { class: "row" }, h("button", { text: "Check for updates", onclick: () => void Bridge.updateCheckNow() })),
     ),
+    doctorSection(),
     awSection());
 }

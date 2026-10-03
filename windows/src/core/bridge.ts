@@ -139,6 +139,7 @@ export const Bridge = {
   hermesStatus: () => callOrThrow<string[]>("hermes_status"),
   judgeTests: (command: string, output: string) => callOrThrow<"passed" | "failed" | "unclear">("judge_tests", { command, output }),
   setApprovalKeys: (on: boolean) => call<void>("set_approval_keys", { on }),
+  doctor: () => call<{ name: string; level: "ok" | "warn" | "fail"; detail: string; fix?: string | null }[]>("doctor"),
   gitSnapshot: (cwd: string) => call<import("../island/ground").GitSnapshot | null>("git_snapshot", { cwd }),
   /** Check GitHub for a newer Awuuu now; Rust shows the result natively. */
   updateCheckNow: () => call<void>("update_check_now"),
