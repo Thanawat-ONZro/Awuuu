@@ -178,10 +178,28 @@ fn target_monitor(app: &AppHandle, pref: &str) -> Option<Monitor> {
             }
         }
     }
+    if let Some(i) = display_index(pref) {
+        let mut ordered = monitors.clone();
+        ordered.sort_by_key(|m| (m.position().x, m.position().y));
+        if let Some(m) = ordered.get(i) {
+            return Some(m.clone());
+        }
+    }
     app.primary_monitor()
         .ok()
         .flatten()
         .or_else(|| monitors.into_iter().next())
+}
+
+/// "display:2" → 1: the n-th display from the left (1-based in the setting).
+/// A display that is unplugged falls back to the main one.
+fn display_index(pref: &str) -> Option<usize> {
+    pref.strip_prefix("display:")?.parse::<usize>().ok()?.checked_sub(1)
+}
+
+/// How many displays are connected (Settings lists "Display 1…N").
+pub fn monitor_count(app: &AppHandle) -> usize {
+    app.available_monitors().map(|m| m.len()).unwrap_or(1).max(1)
 }
 
 pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
@@ -783,6 +801,15 @@ mod tests {
 
     const SCREEN: Rect = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0 };
     const WORK: Rect = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1032.0 };
+
+    #[test]
+    fn display_pref_is_one_based() {
+        assert_eq!(display_index("display:1"), Some(0));
+        assert_eq!(display_index("display:3"), Some(2));
+        assert_eq!(display_index("display:0"), None);
+        assert_eq!(display_index("cursor"), None);
+        assert_eq!(display_index("display:x"), None);
+    }
 
     #[test]
     fn default_is_top_centre() {

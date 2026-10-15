@@ -441,6 +441,8 @@
  "Never — stays on screen": "ไม่ซ่อน — อยู่บนหน้าจอตลอด",
  "Main display": "จอหลัก",
  "Display under the cursor": "จอที่เคอร์เซอร์อยู่",
+ "Display": "จอ",
+ "Wardrobe…": "ตู้เสื้อผ้า…",
  "{n} replaced by your files": "ใช้ไฟล์ของคุณแทนแล้ว {n} เสียง",
  "Open sounds folder": "เปิดโฟลเดอร์เสียง",
  "Reload sounds": "โหลดเสียงใหม่",

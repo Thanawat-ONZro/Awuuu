@@ -6,6 +6,10 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## [Unreleased]
 
+### Added
+- Settings → General can pin the island to a specific display ("Display 1…N", counted from the left); an unplugged one falls back to the main display.
+- Tray menu: "Wardrobe…" opens Appearance.
+
 ### Changed
 - The dog notices tab changes: a short tail wag and a lean toward the new tab, ears up when an alert rises, a hop when an agent finishes. Off with "reduce motion".
 - The Awuuu window changes pages with a short ease-in, and its sidebar highlight slides to the open page.
