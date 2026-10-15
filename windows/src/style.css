@@ -7,28 +7,28 @@
   --font: system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
-  --ink: #fff4e6;        /* primary text */
-  --ink-2: #fbefdf;
+  --ink: var(--ink-cream);        /* primary text */
+  --ink-2: var(--ink-cream-2);
   --dim: #a89a8a;
   --dim-2: #a29484;
   --dim-3: #7d7062;
   --dim-4: #706356;
   --dim-5: #5a4e43;
-  --card: #1a1612;
-  --card-flat: #120f0c;
-  --tab-on: #241e19;
+  --card: var(--bg-kibble);
+  --card-flat: var(--bg-kibble-flat);
+  --tab-on: var(--bg-biscuit);
   --hairline: rgba(255, 255, 255, 0.035);
-  --red: #f0645a;
-  --red-text: #ff8d97;
-  --green: #22c55e;
-  --green-2: #34d399;
-  --amber: #f5a524;
-  --cyan: #22d3ee;
-  --indigo: #6366f1;
-  --pink: #f472b6;
-  --accent: #e4a871;      /* caramel — primary buttons, highlights */
-  --accent-hover: #edb985;
-  --accent-ink: #2b1e14;  /* text on caramel */
+  --red: var(--state-error);
+  --red-text: var(--state-error-text);
+  --green: var(--state-done);
+  --green-2: var(--state-done);
+  --amber: var(--state-wait);
+  --cyan: var(--state-agent);
+  --indigo: var(--state-agent);
+  --pink: var(--state-info);
+  --accent: var(--accent-caramel);      /* caramel — primary buttons, highlights */
+  --accent-hover: var(--accent-caramel-hover);
+  --accent-ink: var(--accent-caramel-ink);  /* text on caramel */
 }
 
 * {

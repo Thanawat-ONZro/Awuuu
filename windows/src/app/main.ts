@@ -1,6 +1,7 @@
 // The Awuuu window — dashboard and settings in one place. Anything that writes
 // to disk outside Awuuu's own folder is confirmed here first.
 
+import "../core/tokens.css";
 import "../settings/settings.css";
 import "./app.css";
 import { Bridge, onEvent } from "../core/bridge";

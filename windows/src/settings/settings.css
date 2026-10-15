@@ -7,15 +7,15 @@
 
   --font: system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-  --ink: #fff4e6;
+  --ink: var(--ink-cream);
   --dim: #a89a8a;
   --dim-2: #7d7062;
-  --bg: #0e0b09;
-  --card: #1a1612;
+  --bg: var(--bg-window);
+  --card: var(--bg-kibble);
   --hairline: rgba(255, 255, 255, 0.07);
-  --green: #22c55e;
-  --red: #f0645a;
-  --amber: #f5a524;
+  --green: var(--state-done);
+  --red: var(--state-error);
+  --amber: var(--state-wait);
 }
 
 * {

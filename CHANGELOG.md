@@ -6,6 +6,9 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## [Unreleased]
 
+### Changed
+- Colours now come from one place (`windows/src/core/tokens.css`, "Shiba Warm"). Waiting, done, error and info states use warmer colours named after the dog; nothing else changes yet.
+
 ### Fixed
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
