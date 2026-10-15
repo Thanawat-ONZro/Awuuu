@@ -167,7 +167,7 @@ export class Mover {
     defs.append(filter);
     const g = svgEl("g", { filter: "url(#awuuu-goo)", fill: "#120f0c" });
     const source = svgEl("rect", { rx: 10 });
-    const blob = svgEl("rect", { rx: 16 });
+    const blob = svgEl("rect", { rx: 24 });
     const bulge = svgEl("circle", { r: 0 });
     const beads = Array.from({ length: BEADS }, () => svgEl("circle", { r: 0 }));
     const bridge = Array.from({ length: 6 }, () => svgEl("circle", { r: 0 }));
