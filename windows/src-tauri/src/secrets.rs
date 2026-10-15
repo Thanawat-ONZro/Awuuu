@@ -21,6 +21,7 @@ pub const KNOWN_KEYS: &[&str] = &[
     "mail-password",
     "ical-url",
     "todoist-token",
+    "composio-api-key",
     // Sign-ins (oauth.rs). The access tokens themselves stay in memory.
     "google-refresh-token",
     "microsoft-refresh-token",

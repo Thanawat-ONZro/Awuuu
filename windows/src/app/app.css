@@ -28,6 +28,19 @@ body.settings-window {
   border-right: 1px solid var(--hairline);
   overflow-y: auto;
   scrollbar-width: thin;
+  position: relative;
+}
+
+/* The highlight behind the active item; shell.ts moves it with a transform. */
+.side-thumb {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  z-index: 0;
+  border-radius: 9px;
+  background: var(--bg-biscuit);
+  pointer-events: none;
 }
 
 .brand {
@@ -70,6 +83,8 @@ body.settings-window {
   color: var(--dim);
   font: 500 12.5px var(--font);
   text-align: left;
+  position: relative;
+  z-index: 1;
 }
 
 .side-item:hover:not(:disabled) {
@@ -82,7 +97,6 @@ body.settings-window {
 }
 
 .side-item.on {
-  background: rgba(228, 168, 113, 0.16);
   color: #f3c79b;
 }
 
@@ -98,6 +112,23 @@ body.settings-window {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* The hero band: a fixed-height decoration above the page, outside .page so page spacing is unchanged. */
+.hero-band {
+  position: relative;
+  height: 72px;
+  overflow: hidden;
+  background: var(--bg-nose);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+.hero-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .page {

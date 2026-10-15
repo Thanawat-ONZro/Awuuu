@@ -153,3 +153,17 @@ export class Tracked {
     }
   }
 }
+
+/**
+ * Motion tokens. The same numbers are in core/motion.css for plain CSS
+ * transitions; Web Animations in island/transition.ts read them from here.
+ */
+export const MOTION = {
+  fast: 140,
+  base: 260,
+  slow: 420,
+  /** A light spring: a small overshoot, then rest. */
+  spring: "linear(0, 0.18 7%, 0.55 17%, 0.86 27%, 1.04 38%, 1.05 46%, 1.02 58%, 0.995 72%, 1)",
+  out: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+  in: "cubic-bezier(0.4, 0, 1, 1)",
+} as const;

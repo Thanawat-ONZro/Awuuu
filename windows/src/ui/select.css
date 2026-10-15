@@ -35,7 +35,7 @@
 }
 
 .aw-select-btn:focus-visible {
-  outline: 2px solid rgba(228, 168, 113, 0.7);
+  outline: 2px solid rgba(var(--accent-caramel-rgb), 0.7);
   outline-offset: 1px;
 }
 
@@ -150,12 +150,16 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #e4a871;
+  background: var(--accent-caramel);
   align-self: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .aw-select-pop {
     animation: none;
+  }
+
+  .aw-select-caret {
+    transition: none;
   }
 }

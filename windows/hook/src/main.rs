@@ -518,7 +518,15 @@ fn read_event(args: &Args) -> Option<HookEvent> {
         .map(str::to_string)
         .filter(|s| !s.is_empty())
         .unwrap_or(arg_event);
+    // Gemini CLI and Cursor name their events their own way.
+    let event = canonical_event(&event).to_string();
     map.insert("hook_event_name".into(), serde_json::Value::String(event.clone()));
+    // Cursor has no session_id; its conversation is the session.
+    if !map.contains_key("session_id") {
+        if let Some(cid) = map.get("conversation_id").and_then(|v| v.as_str()).map(str::to_string) {
+            map.insert("session_id".into(), serde_json::Value::String(cid));
+        }
+    }
 
     if !map.contains_key("tool_output") {
         if let Some(out) = map.get("tool_response").and_then(clipped_output) {
@@ -595,6 +603,21 @@ fn truncate_strings(value: &mut serde_json::Value) {
     }
 }
 
+/// Gemini CLI's and Cursor's event names as the island knows them (Claude
+/// Code's). Everything else, including Claude's own names, passes through.
+fn canonical_event(name: &str) -> &str {
+    match name {
+        "BeforeTool" | "preToolUse" => "PreToolUse",
+        "AfterTool" | "postToolUse" => "PostToolUse",
+        "BeforeAgent" | "beforeSubmitPrompt" => "UserPromptSubmit",
+        "AfterAgent" | "stop" => "Stop",
+        "sessionStart" => "SessionStart",
+        "sessionEnd" => "SessionEnd",
+        "postToolUseFailure" => "PostToolUseFailure",
+        other => other,
+    }
+}
+
 /// Connect, send, and — for a permission request — wait for the island's word.
 fn talk(payload: &str, waits_for_answer: bool) -> Option<String> {
     let mut pipe = connect()?;
@@ -637,6 +660,14 @@ mod tests {
 
     fn val(s: &str) -> serde_json::Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn gemini_and_cursor_events_are_mapped() {
+        assert_eq!(canonical_event("BeforeTool"), "PreToolUse");
+        assert_eq!(canonical_event("beforeSubmitPrompt"), "UserPromptSubmit");
+        assert_eq!(canonical_event("Stop"), "Stop");
+        assert_eq!(canonical_event("on_session_start"), "on_session_start");
     }
 
     #[test]

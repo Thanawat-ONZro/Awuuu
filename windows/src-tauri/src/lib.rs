@@ -1,6 +1,9 @@
 // Awuuu for Windows — app wiring and the commands the island calls.
 
+mod adapters;
 mod claude;
+mod composio;
+mod desktop_dog;
 mod files;
 mod hooks;
 mod integrations;
@@ -24,6 +27,7 @@ mod doctor;
 mod win_user;
 mod usage;
 mod history;
+mod sounds;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -80,9 +84,14 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
+fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) {
     let (screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
+        // Where the desktop dog lives is Rust's to write (desktop_dog.rs); a
+        // page's copy may be stale. Only `enabled` comes from the pages.
+        let enabled = settings.desktop_dog.enabled;
+        settings.desktop_dog = current.desktop_dog.clone();
+        settings.desktop_dog.enabled = enabled;
         let screen_changed = current.screen != settings.screen
             || current.position != settings.position
             || current.along != settings.along
@@ -101,6 +110,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
             eprintln!("[awuuu] autostart: {err}");
         }
     }
+    hotkeys::apply(&app, &settings.shortcuts, settings.desktop_dog.enabled);
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings, collapsed);
@@ -294,6 +304,25 @@ fn set_paused(paused: bool) {
     integrations::set_paused(paused);
 }
 
+// ── Composio via Hermes (opt-in; see docs/HERMES-COMPOSIO.md) ────────────────
+
+#[tauri::command]
+fn composio_status() -> composio::ComposioStatus {
+    composio::status()
+}
+
+#[tauri::command]
+fn composio_preview(target: String, install: bool, url: String) -> Result<HookPreview, String> {
+    let t = composio::Target::parse(&target).ok_or("Unknown target")?;
+    composio::preview(t, install, &url)
+}
+
+#[tauri::command]
+fn composio_apply(target: String, install: bool, url: String, fingerprint: String) -> Result<String, String> {
+    let t = composio::Target::parse(&target).ok_or("Unknown target")?;
+    composio::apply(t, install, &url, &fingerprint)
+}
+
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -408,10 +437,16 @@ fn update_check_now(app: AppHandle) {
     updater::check_now(&app);
 }
 
-/// Ctrl+Alt+Y / Ctrl+Alt+N answer the approval card; held only while one is up.
+/// The approval keys (Ctrl+Alt+Y / N by default) answer the card; held only while one is up.
 #[tauri::command]
 fn set_approval_keys(app: AppHandle, on: bool) {
     hotkeys::set_approval_keys(&app, on);
+}
+
+/// Shortcuts page: action -> why its keys could not be registered.
+#[tauri::command]
+fn shortcut_errors() -> std::collections::BTreeMap<String, String> {
+    hotkeys::errors()
 }
 
 /// Settings → About → Check my setup.
@@ -642,7 +677,9 @@ fn detect_agents() -> Vec<AgentFound> {
                 || local.join("Programs").join("@opencode-aidesktop").join("OpenCode.exe").exists()
         }
         "codex" => find_on_path("codex").is_some(),
-        _ => false,
+        other => adapters::find(other).is_some_and(|a| {
+            find_on_path(a.exe).is_some() || std::env::var_os("USERPROFILE").map(std::path::PathBuf::from).unwrap_or_default().join(a.home_dir).is_dir()
+        }),
     };
     [
         ("claude", "Claude Code"),
@@ -652,6 +689,7 @@ fn detect_agents() -> Vec<AgentFound> {
         ("codex", "Codex CLI"),
     ]
     .into_iter()
+    .chain(adapters::ADAPTERS.iter().map(|a| (a.id, a.name)))
     .map(|(id, name)| AgentFound {
         id,
         name,
@@ -825,10 +863,14 @@ pub fn run() {
             git_snapshot,
             doctor,
             set_approval_keys,
+            shortcut_errors,
             judge_tests,
             update_check_now,
             ingest_file,
             ingest_bytes,
+            composio_status,
+            composio_preview,
+            composio_apply,
             secret_present,
             secret_set,
             secret_clear,
@@ -851,6 +893,10 @@ pub fn run() {
             history_info,
             export_files,
             reveal_file,
+            sounds::user_sounds,
+            sounds::user_sound,
+            sounds::reveal_sounds_folder,
+            sounds::reload_sounds,
             oauth::oauth_status,
             oauth::oauth_sign_in,
             oauth::oauth_cancel,
@@ -858,6 +904,12 @@ pub fn run() {
             oauth::github_cli_login,
             oauth::github_device_start,
             oauth::github_device_wait,
+            desktop_dog::desktop_dog_pick_up,
+            desktop_dog::desktop_dog_drag_begin,
+            desktop_dog::desktop_dog_flight_begin,
+            desktop_dog::desktop_dog_set_position,
+            desktop_dog::desktop_dog_flight_end,
+            desktop_dog::desktop_dog_forget,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -867,6 +919,8 @@ pub fn run() {
             }
             // Before the island: see create_settings_window.
             create_settings_window(&handle);
+            // The desktop dog's window, parked off-screen until it is wanted.
+            desktop_dog::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 island::make_non_activating(&win);
@@ -875,6 +929,7 @@ pub fn run() {
             } else {
                 log::line("WARNING: island window not found by label");
             }
+            hotkeys::apply(&handle, &loaded.shortcuts, loaded.desktop_dog.enabled);
             gate.collapsed.store(false, Ordering::Relaxed);
             gate.set_active(true);
             island::spawn_mouse_watch(handle.clone(), gate.clone());

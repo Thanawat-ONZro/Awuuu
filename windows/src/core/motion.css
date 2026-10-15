@@ -1,0 +1,18 @@
+/* Awuuu motion tokens ("Paw Motion"). Keep in step with MOTION in core/anim.ts. */
+
+:root {
+  --m-fast: 140ms;
+  --m-base: 260ms;
+  --m-slow: 420ms;
+  --m-spring: linear(0, 0.18 7%, 0.55 17%, 0.86 27%, 1.04 38%, 1.05 46%, 1.02 58%, 0.995 72%, 1);
+  --m-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --m-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --m-base: 120ms;
+    --m-slow: 120ms;
+    --m-spring: linear;
+  }
+}

@@ -8,6 +8,7 @@ import { ICONS } from "./icons";
 import { State } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { timeAgo } from "./integrations";
+import { t } from "../i18n/i18n";
 
 type Row = {
   /** Lower comes first. */
@@ -52,14 +53,14 @@ export function todayRows(): Row[] {
     if (end < now) continue;
     const soon = start - now;
     const allDay = e.allDay === true;
-    const when = allDay ? "All day" : start <= now ? `Now · until ${clock(end)}` : soon < 3600_000 ? `In ${Math.max(1, Math.round(soon / 60_000))} min` : clock(start);
+    const when = allDay ? t("All day") : start <= now ? t("Now · until {time}", { time: clock(end) }) : soon < 3600_000 ? t("In {n} min", { n: Math.max(1, Math.round(soon / 60_000)) }) : clock(start);
     rows.push({
       rank: allDay ? 40 : start <= now ? 1 : soon < 3600_000 ? 2 : 20 + start / 1e13,
       color: "#4285F4",
       icon: "📅",
       title: str(e.title),
       sub: [when, str(e.location)].filter(Boolean).join(" · "),
-      action: e.join ? { label: "Join", url: str(e.join) } : undefined,
+      action: e.join ? { label: t("Join"), url: str(e.join) } : undefined,
     });
     if (rows.filter((r) => r.icon === "📅").length >= 3) break;
   }
@@ -79,31 +80,31 @@ export function todayRows(): Row[] {
 
   // GitHub: reviews waiting for you, failing CI.
   for (const pr of list("integration_github", "reviewRequests").slice(0, 3)) {
-    rows.push({ rank: 5, color: "#F0645A", icon: "👀", title: str(pr.title), sub: `Review requested · ${str(pr.repo)}`, url: str(pr.url) });
+    rows.push({ rank: 5, color: "#F0645A", icon: "👀", title: str(pr.title), sub: t("Review requested · {repo}", { repo: str(pr.repo) }), url: str(pr.url) });
   }
   for (const f of list("integration_github", "failingRuns").slice(0, 2)) {
-    rows.push({ rank: 4, color: "#F4505E", icon: "✗", title: `${str(f.workflow)} failed`, sub: str(f.repo), url: str(f.url), bad: true });
+    rows.push({ rank: 4, color: "#F4505E", icon: "✗", title: t("{name} failed", { name: str(f.workflow) }), sub: str(f.repo), url: str(f.url), bad: true });
   }
 
   // Todoist: due today / overdue.
-  for (const t of list("integration_todoist", "tasks").slice(0, 4)) {
-    rows.push({ rank: 12, color: "#E44332", icon: "☐", title: str(t.content), sub: t.due ? `Due ${str(t.due)}` : "Today", url: str(t.url) });
+  for (const task of list("integration_todoist", "tasks").slice(0, 4)) {
+    rows.push({ rank: 12, color: "#E44332", icon: "☐", title: str(task.content), sub: task.due ? t("Due {when}", { when: str(task.due) }) : t("Today"), url: str(task.url) });
   }
 
   // Uptime: only what's down.
   for (const s of list("integration_uptime", "sites")) {
-    if (s.up !== true) rows.push({ rank: 0, color: "#F4505E", icon: "⚠", title: `${str(s.url)} is down`, sub: str(s.status), url: str(s.url), bad: true });
+    if (s.up !== true) rows.push({ rank: 0, color: "#F4505E", icon: "⚠", title: t("{url} is down", { url: str(s.url) }), sub: str(s.status), url: str(s.url), bad: true });
   }
 
   // Stripe failed payments, Vercel failed deploys.
   for (const p of list("integration_stripe", "payments")) {
     if (p.status === "failed") {
-      rows.push({ rank: 3, color: "#F4505E", icon: "$", title: `Payment failed · ${str(p.description) || "payment"}`, url: `https://dashboard.stripe.com/payments/${str(p.id)}`, bad: true });
+      rows.push({ rank: 3, color: "#F4505E", icon: "$", title: t("Payment failed · {what}", { what: str(p.description) || t("payment") }), url: `https://dashboard.stripe.com/payments/${str(p.id)}`, bad: true });
     }
   }
   const deploy = list("integration_vercel", "deployments")[0];
   if (deploy && deploy.state === "ERROR") {
-    rows.push({ rank: 3, color: "#F4505E", icon: "▲", title: `${str(deploy.projectName)} deploy failed`, url: `https://${str(deploy.url)}`, bad: true });
+    rows.push({ rank: 3, color: "#F4505E", icon: "▲", title: t("{name} deploy failed", { name: str(deploy.projectName) }), url: `https://${str(deploy.url)}`, bad: true });
   }
 
   // News, last.
@@ -143,7 +144,7 @@ export function weatherChip(): HTMLElement | null {
   const w = data("integration_weather");
   if (w.temp == null) return null;
   return h("span", { class: "today-weather", title: `${str(w.place)} · ${str(w.text)} · ${str(w.min)}–${str(w.max)}°` },
-    `${str(w.icon)} ${Math.round(Number(w.temp))}°  ·  rain ${str(w.rain)}%`);
+    `${str(w.icon)} ${Math.round(Number(w.temp))}°  ·  ${t("rain {n}%", { n: str(w.rain) })}`);
 }
 
 export function renderToday(openSettings: () => void): HTMLElement {
@@ -153,14 +154,14 @@ export function renderToday(openSettings: () => void): HTMLElement {
     const anything = Object.values(State.integrations).some((i) => i.configured);
     box.append(
       h("div", { class: "today-empty" },
-        h("div", { class: "title", text: anything ? "All clear for now." : "Nothing connected yet." }),
+        h("div", { class: "title", text: anything ? t("All clear for now.") : t("Nothing connected yet.") }),
         h("div", {
           class: "sub",
           text: anything
-            ? "Meetings, mail, reviews, tasks and alerts show up here as they come."
-            : "Connect your mail, calendar, GitHub, Todoist, sites to watch or news in Settings — Awuuu brings what needs you here.",
+            ? t("Meetings, mail, reviews, tasks and alerts show up here as they come.")
+            : t("Connect your mail, calendar, GitHub, Todoist, sites to watch or news in Settings — Awuuu brings what needs you here."),
         }),
-        anything ? null : h("button", { class: "link-btn", text: "Open Settings…", onclick: openSettings }),
+        anything ? null : h("button", { class: "link-btn", text: t("Open Settings…"), onclick: openSettings }),
       ),
     );
     return box;
@@ -172,7 +173,7 @@ export function renderToday(openSettings: () => void): HTMLElement {
 // ── Cards for a single extra integration (tap its pill) ─────────────────────
 
 function head(color: string, name: string, kind: string, id: string): HTMLElement {
-  const refresh = h("button", { class: "int-refresh", title: "Refresh" }, svg(ICONS.refresh, 9, { stroke: 2.2 }));
+  const refresh = h("button", { class: "int-refresh", title: t("Refresh") }, svg(ICONS.refresh, 9, { stroke: 2.2 }));
   refresh.addEventListener("click", (e) => {
     e.stopPropagation();
     void Bridge.refreshIntegration(id);
@@ -206,29 +207,29 @@ export function renderExtraCard(id: string): HTMLElement {
         rank: 0, color: "#EA4335", icon: "✉️", title: str(m.subject) || "(no subject)", sub: str(m.from),
         url: m.url ? str(m.url) : d.gmail === true && m.messageId ? gmailLink(str(m.messageId)) : null,
       }));
-      return card("#EA4335", "Mail", `${str(d.unread)} unread`, id, rows, "Inbox zero.");
+      return card("#EA4335", "Mail", `${str(d.unread)} unread`, id, rows, t("Inbox zero."));
     }
     case "integration_calendar":
-      return card("#4285F4", "Calendar", "Today", id, all.filter((r) => r.icon === "📅"), "Nothing on the calendar.");
+      return card("#4285F4", "Calendar", "Today", id, all.filter((r) => r.icon === "📅"), t("Nothing on the calendar."));
     case "integration_feeds":
       return card("#F59E0B", "News", "Latest", id,
         list(id, "items").slice(0, 8).map((it) => ({ rank: 0, color: "#F59E0B", icon: "📰", title: str(it.title), sub: str(it.feed), url: str(it.link) })),
-        "No items yet.");
+        t("No items yet."));
     case "integration_uptime":
       return card("#22C55E", "Uptime", "Sites", id,
         list(id, "sites").map((s) => ({
           rank: 0, color: s.up === true ? "#22C55E" : "#F4505E", icon: s.up === true ? "●" : "⚠",
-          title: str(s.url), sub: s.up === true ? `${str(s.status)} · ${str(s.ms)} ms` : `down · ${str(s.status)}`, url: str(s.url), bad: s.up !== true,
+          title: str(s.url), sub: s.up === true ? `${str(s.status)} · ${str(s.ms)} ms` : t("down · {status}", { status: str(s.status) }), url: str(s.url), bad: s.up !== true,
         })),
-        "No sites yet.");
+        t("No sites yet."));
     case "integration_todoist":
-      return card("#E44332", "Todoist", "Today", id, all.filter((r) => r.icon === "☐"), "Nothing due today.");
+      return card("#E44332", "Todoist", "Today", id, all.filter((r) => r.icon === "☐"), t("Nothing due today."));
     case "integration_weather": {
       const w = data(id);
       return h("div", { class: "int-card" }, head("#38BDF8", "Weather", str(w.place), id),
         h("div", { class: "today-weather-big" },
           h("span", { class: "big", text: `${str(w.icon)} ${Math.round(Number(w.temp ?? 0))}°` }),
-          h("span", { class: "today-sub", text: `${str(w.text)} · ${str(w.min)}–${str(w.max)}° · rain ${str(w.rain)}%` }),
+          h("span", { class: "today-sub", text: `${str(w.text)} · ${str(w.min)}–${str(w.max)}° · ${t("rain {n}%", { n: str(w.rain) })}` }),
         ));
     }
     default:

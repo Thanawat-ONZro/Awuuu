@@ -99,7 +99,7 @@ export function cleanHex(v: unknown): string | null {
   return null;
 }
 
-function hexToHsl(hex: string): [number, number, number] {
+export function hexToHsl(hex: string): [number, number, number] {
   const v = parseInt(hex.slice(1), 16);
   const r = ((v >> 16) & 255) / 255;
   const g = ((v >> 8) & 255) / 255;
@@ -117,7 +117,7 @@ function hexToHsl(hex: string): [number, number, number] {
   return [(h * 60 + 360) % 360, s, l];
 }
 
-function hsl(h: number, s: number, l: number): string {
+export function hsl(h: number, s: number, l: number): string {
   const hh = ((h % 360) + 360) % 360;
   const ss = Math.max(0, Math.min(1, s));
   const ll = Math.max(0, Math.min(1, l));

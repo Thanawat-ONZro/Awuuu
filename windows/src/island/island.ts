@@ -2,6 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
+import { animateView, directionBetween, type Direction } from "./transition";
 import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core/bridge";
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
@@ -12,6 +13,7 @@ import { Sound } from "../core/sound";
 import { State, type PendingFile } from "../core/state";
 import { BotEngine } from "../mochi/engine";
 import { setOwnerLook } from "../mochi/dog";
+import { setOutfitSelection } from "../mochi/outfits";
 import { CLASSIC, lookForAgent, normalizeLook, type DogLook } from "../mochi/looks";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -20,7 +22,11 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
+import { HoverOpen } from "./hover";
 import { Mover, type Edge } from "./move";
+import { DesktopDogLink } from "./desktop-dog";
+import { isDrag } from "../mochi/desktop-logic";
+import { t } from "../i18n/i18n";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -57,6 +63,19 @@ const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 :
 
 export class Island {
   readonly fsm = new IslandStateMachine();
+  /** Open on hover (Settings → General); the timing lives in hover.ts. */
+  private readonly hover: HoverOpen = new HoverOpen({
+    enabled: () => State.settings.openOnHover === true,
+    open: () => {
+      if (this.fsm.state !== "petit") return false;
+      this.fsm.click(); // compact → home
+      return true;
+    },
+    fold: () => {
+      if (this.fsm.state !== "home" || State.isPinned || State.pendingApproval) return;
+      this.fsm.forcePetit();
+    },
+  });
 
   private root: HTMLElement;
   private islandEl!: HTMLElement;
@@ -92,6 +111,14 @@ export class Island {
   private botSize = new Spring(10);
 
   private engine = new BotEngine();
+  /** The dog on the desktop (Settings → General): its life cycle and the drag out. */
+  readonly desktopDog = new DesktopDogLink(() => {
+    this.dirty = true;
+    State.notify();
+    this.ensureRunning();
+  });
+  /** A press on the island's dog that may become a drag to the desktop. */
+  private dogPress: { x: number; y: number } | null = null;
   /** The owner's own dog (settings.dog); agents and integrations wear theirs. */
   private ownLook: DogLook = CLASSIC;
   private greeting = new Greeting();
@@ -118,6 +145,9 @@ export class Island {
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
   private lastSyncedView: IslandViewName | null = null;
+  /** View and mode at the previous syncDom, to know whether a view change is worth animating. */
+  private animView: IslandViewName | null = null;
+  private animExpanded = false;
   /** Session states as last drawn, to catch one finishing or failing (syncGlow). */
   private glowStates = new Map<string, string>();
 
@@ -160,6 +190,7 @@ export class Island {
       this.root,
     );
     this.wireInput();
+    void this.desktopDog.init();
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => this.fsm.greetComplete();
     State.subscribe(() => {
@@ -167,6 +198,10 @@ export class Island {
       this.ensureRunning();
     });
     this.scheduleFidget();
+    // A hidden document draws nothing: the loop stops in frame() and restarts here.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.ensureRunning();
+    });
   }
 
   /**
@@ -294,7 +329,7 @@ export class Island {
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
     this.countdown = h("div", { id: "countdown" });
-    this.resizeGrip = h("div", { id: "resize-grip", title: "Drag to resize" });
+    this.resizeGrip = h("div", { id: "resize-grip", title: t("Drag to resize") });
     this.wireResize();
 
     // Ctrl+Alt+Y / Ctrl+Alt+N answer the card; the keys are held only while one waits.
@@ -312,6 +347,36 @@ export class Island {
       // A question needs its options picked; N hands it back to the terminal.
       if (req.isQuestion && d !== "deny") return;
       actions.decide(d === "allow" ? "allow" : "deny");
+    });
+    // The other global shortcuts (Settings → Shortcuts). They never take focus
+    // from the active app; only the chat's own text field does, via setView.
+    void onEvent<string>("shortcut", (id) => {
+      switch (id) {
+        case "openChat":
+          this.alert("prompt", true);
+          break;
+        case "goToAlert":
+          if (State.pendingApproval) this.alert("approval", true);
+          break;
+        case "jumpToTerminal": {
+          const sid = State.pendingApproval?.sessionId;
+          const task = (sid ? State.agentSessions.find((s) => s.id === `session_${sid}`) : null)
+            ?? State.focusedAgentSession ?? State.focusTask;
+          if (task && !task.isIntegration) actions.focusTerminal(task);
+          else actions.openTerminal(task?.sessionCwd ?? null);
+          break;
+        }
+        case "muteToggle":
+          actions.toggleSound();
+          break;
+        case "toggleIsland":
+          if (State.mode === "expanded") this.collapse();
+          else this.alert(State.defaultView(), true);
+          break;
+        case "toggleDesktopDog":
+          this.desktopDog.toggle();
+          break;
+      }
     });
 
     this.header = buildHeader(actions);
@@ -365,6 +430,8 @@ export class Island {
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.keepVisible = () => State.isPinned || State.pendingApproval != null;
     this.fsm.onTransition = (from, to) => {
+      // The greeting is over, however it ended: the dog may go back to the desktop.
+      if (from === "coucou" && to !== "coucou") this.desktopDog.launch();
       switch (to) {
         case "hidden":
           this.setMode("hidden");
@@ -391,6 +458,8 @@ export class Island {
 
   launch() {
     this.fsm.launch();
+    // Should the greeting never end, the desktop dog still comes out.
+    window.setTimeout(() => this.desktopDog.launch(), 10000);
   }
 
   // ── Mode / view ─────────────────────────────────────────────────────────────
@@ -633,7 +702,7 @@ export class Island {
     }
     if (fresh.length === 0) {
       // Nothing new: straight back to the files that are already there.
-      State.dropError = items.length > 1 ? "Those files are already here." : "That file is already here.";
+      State.dropError = items.length > 1 ? t("Those files are already here.") : t("That file is already here.");
       this.engine.animateMorph(0);
       this.setView("choose");
       return;
@@ -962,6 +1031,7 @@ export class Island {
     const onEnter = () => {
       Sound.resume();
       this.wasInIsland = true;
+      this.hover.enter();
       if (State.mode === "hidden") {
         this.fsm.mouseEntered();
       }
@@ -973,6 +1043,7 @@ export class Island {
     this.islandEl.addEventListener("mouseleave", () => {
       this.wasInIsland = false;
       this.fsm.mouseLeft();
+      this.hover.leave();
     });
 
     // A finish/error flash has played: take its class off (see syncGlow).
@@ -983,10 +1054,28 @@ export class Island {
     // Alt + press anywhere on the island moves it.
     this.islandEl.addEventListener("pointerdown", (e) => {
       if (e.altKey && e.button === 0) void this.mover.begin(e, this.islandEl);
+      // A press on the dog in the open island may become a drag to the desktop.
+      else if (
+        e.button === 0 && State.mode === "expanded" && this.desktopDog.canPickUp() &&
+        this.isBotHit(e.clientX, e.clientY)
+      ) {
+        this.dogPress = { x: e.clientX, y: e.clientY };
+      }
     });
+    window.addEventListener("pointermove", (e) => {
+      const press = this.dogPress;
+      if (!press || !isDrag(press, { x: e.clientX, y: e.clientY })) return;
+      this.dogPress = null;
+      this.cancelBotHover();
+      this.desktopDog.pickUp();
+    });
+    const endPress = () => { this.dogPress = null; };
+    window.addEventListener("pointerup", endPress);
+    window.addEventListener("pointercancel", endPress);
 
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
+      this.hover.clicked();
       State.lastActivity = performance.now();
       if (State.mode === "hidden") {
         this.fsm.mouseEntered();
@@ -1008,7 +1097,8 @@ export class Island {
     });
 
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
+      if (e.key === "Escape" && State.mode === "expanded" && State.view === "diff") this.setView("agents");
+      else if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
       State.lastActivity = performance.now();
     });
 
@@ -1053,10 +1143,12 @@ export class Island {
     if (inIsland && !this.wasInIsland) {
       if (this.fsm.state === "coucou") this.greeting.hover();
       this.fsm.mouseEntered();
+      this.hover.enter();
       this.homeCollapseAt = null;
     }
     if (!inIsland && this.wasInIsland) {
       this.fsm.mouseLeft();
+      this.hover.leave();
       if (this.fsm.state === "home" && !State.isPinned) {
         this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
       }
@@ -1080,6 +1172,8 @@ export class Island {
   }
 
   private isBotHit(x: number, y: number): boolean {
+    // On the desktop, the island's dog isn't here at all.
+    if (this.desktopDog.away) return false;
     const rect = this.islandRect();
     const cx = rect.x + this.botCx.value;
     const cy = rect.y + this.botCy.value;
@@ -1144,6 +1238,10 @@ export class Island {
   }
 
   private frame = (nowMs: number) => {
+    if (document.visibilityState !== "visible") {
+      this.running = false;
+      return;
+    }
     const dt = Math.min(0.05, (nowMs - this.lastFrame) / 1000);
     this.lastFrame = nowMs;
 
@@ -1216,7 +1314,7 @@ export class Island {
 
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     // The drop canvas draws its own Mochi; two of them would overlap.
-    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive;
+    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !this.desktopDog.away;
     this.botCanvas.style.opacity = visible ? "1" : "0";
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive) {
@@ -1309,6 +1407,19 @@ export class Island {
 
   // ── DOM sync ────────────────────────────────────────────────────────────────
 
+  /** The dog notices the move: a tail wag and a lean toward the new tab; ears up for an alert. */
+  private reactToViewChange(dir: Direction) {
+    if (REDUCED_MOTION.matches || dir === "none") return;
+    if (dir === "up") {
+      this.engine.earFlick();
+    } else {
+      const lean = dir === "forward" ? 0.12 : -0.12;
+      this.engine.wagBurst(0.2, 4, 90);
+      this.engine.lean(lean);
+    }
+    this.ensureRunning();
+  }
+
   private syncDom() {
     const expanded = State.mode === "expanded";
     const greetingActive = expanded && State.view === "greeting";
@@ -1318,6 +1429,22 @@ export class Island {
     this.greetingCanvas.style.display = greetingActive ? "block" : "none";
 
     this.header.sync();
+    if (this.animView !== null && this.animView !== State.view) {
+      // Only a change inside an open island slides; opening, closing and the
+      // drop sequence (which draws itself) keep their own motion.
+      const seq = DROP_VIEWS.has(State.view) && State.view !== "upload";
+      const seqPrev = DROP_VIEWS.has(this.animView) && this.animView !== "upload";
+      if (expanded && this.animExpanded && !greetingActive && !seq && !seqPrev && this.animView !== "greeting") {
+        const dir = directionBetween(this.animView, State.view);
+        const leaving = this.views.get(this.animView)?.el;
+        const entering = this.views.get(State.view)?.el;
+        if (leaving) animateView(leaving, false, dir);
+        if (entering) animateView(entering, true, dir);
+        this.reactToViewChange(dir);
+      }
+    }
+    this.animView = State.view;
+    this.animExpanded = expanded;
     for (const [name, view] of this.views) {
       const on = name === State.view;
       view.el.classList.toggle("on", on);
@@ -1377,10 +1504,16 @@ export class Island {
       seen.set(s.id, s.state);
     }
     this.glowStates = seen;
+    // A finished task calls the desktop dog home for a moment.
+    if (flash === "glow-done") this.desktopDog.noteFinished();
     if (!flash || REDUCED_MOTION.matches) return;
     this.root.classList.remove("glow-done", "glow-error");
     void this.islandEl.offsetWidth; // restart the animation if one is still playing
     this.root.classList.add(flash);
+    if (flash === "glow-done") {
+      this.engine.hop();
+      this.ensureRunning();
+    }
   }
 
   /**
@@ -1407,6 +1540,8 @@ export class Island {
     // The Appearance page edits the dog live; the frame loop picks it up.
     this.ownLook = normalizeLook(State.settings.dog);
     setOwnerLook(this.ownLook);
+    setOutfitSelection(State.settings.outfit);
+    this.desktopDog.settingsChanged();
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     this.animateGeometry(false);

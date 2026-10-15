@@ -1,9 +1,13 @@
 // Entry point: boot the bridge, wire the island, start the greeting.
 
+import "./core/tokens.css";
+import "./core/motion.css";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
+import { applyAccent } from "./core/accent";
+import { setLanguage } from "./i18n/i18n";
 import { Island } from "./island/island";
 import type { IslandLayout } from "./core/layout";
 import { registerHookHandlers } from "./island/hooks";
@@ -28,9 +32,13 @@ async function main() {
   if (boot) {
     State.settings = { ...State.settings, ...boot.settings };
   }
+  setLanguage(State.settings.language);
   island.applySettings();
+  applyAccent(State.settings.dog);
   if (boot?.layout) island.setLayout(boot.layout);
   await onEvent<IslandLayout>("layout", (l) => island.setLayout(l));
+  // Settings → Reload sounds: read the sounds folder again.
+  await onEvent("sounds-changed", () => void Sound.reload());
   // Moving the island (grip or Alt + drag): a click must not also land on a button.
   root.addEventListener("click", (e) => { if (e.altKey) { e.stopPropagation(); e.preventDefault(); } }, true);
   State.loadIntegrationTasks();
@@ -76,7 +84,9 @@ async function main() {
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
     State.settings = { ...State.settings, ...s };
+    setLanguage(State.settings.language);
     island.applySettings();
+    applyAccent(State.settings.dog);
     State.loadIntegrationTasks();
     void refreshConfigured();
   });

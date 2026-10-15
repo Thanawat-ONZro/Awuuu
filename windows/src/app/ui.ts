@@ -2,14 +2,17 @@
 // controls every page is built from.
 
 import { Bridge } from "../core/bridge";
+import { applyAccent } from "../core/accent";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h } from "../views/dom";
 import { dropdown } from "../ui/select";
+import { t } from "../i18n/i18n";
 
 /** The one copy of the settings this window edits (mutated in place). */
 export const settings: Settings = { ...DEFAULT_SETTINGS };
 
 export async function save() {
+  applyAccent(settings.dog);
   await Bridge.saveSettings(settings);
 }
 
@@ -37,7 +40,7 @@ export function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement
 }
 
 export function statusDot(ok: boolean): HTMLElement {
-  return h("i", { class: "dot", style: `background:${ok ? "#22c55e" : "#f4505e"}` });
+  return h("i", { class: "dot", style: `background:${ok ? "var(--state-done)" : "var(--state-error)"}` });
 }
 
 export function renderDiff(text: string): HTMLElement {
@@ -51,16 +54,16 @@ export function renderDiff(text: string): HTMLElement {
 
 export function testRow(id: string): HTMLElement {
   const result = h("span", { class: "hint", style: "font-size:11.5px" });
-  const btn = h("button", { text: "Test" });
+  const btn = h("button", { text: t("Test") });
   btn.addEventListener("click", async () => {
-    result.textContent = "Testing…";
+    result.textContent = t("Testing…");
     result.style.color = "";
     try {
       result.textContent = await Bridge.integrationTest(id);
-      result.style.color = "#22c55e";
+      result.style.color = "var(--state-done)";
     } catch (err) {
       result.textContent = String(err).replace(/^Error:\s*/, "");
-      result.style.color = "#f4505e";
+      result.style.color = "var(--state-error)";
     }
   });
   return h("div", { class: "row" }, btn, result);
@@ -71,7 +74,7 @@ export function secretField(key: string, placeholder: string): HTMLElement {
   void Bridge.secretPresent(key).then((has) => {
     if (has) input.placeholder = "••••••••  (stored)";
   });
-  const saveBtn = h("button", { text: "Save" });
+  const saveBtn = h("button", { text: t("Save") });
   saveBtn.addEventListener("click", async () => {
     await Bridge.secretSet(key, input.value.trim());
     input.placeholder = input.value.trim() ? "••••••••  (stored)" : placeholder;
