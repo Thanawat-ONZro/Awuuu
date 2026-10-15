@@ -2,6 +2,7 @@
 // to disk outside Awuuu's own folder is confirmed here first.
 
 import "../core/tokens.css";
+import "../core/motion.css";
 import "../settings/settings.css";
 import "./app.css";
 import { Bridge, onEvent } from "../core/bridge";

@@ -7,6 +7,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## [Unreleased]
 
 ### Changed
+- Switching tabs in the island now moves: the lit-tab highlight slides to the new tab (stretching a little on the way) and the new view slides in from the side of its tab, while alerts rise from below. With "reduce motion" on in Windows it is a short fade. Motion values live in `windows/src/core/motion.css` and `MOTION` in `anim.ts`.
 - Colours now come from one place (`windows/src/core/tokens.css`, "Shiba Warm"). Waiting, done, error and info states use warmer colours named after the dog; the hard-coded copies in the island, dashboard and settings CSS now use them too.
 
 ### Fixed

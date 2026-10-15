@@ -6,6 +6,7 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State, agentInfo, type AgentTask, type LogEntry, type LogKind } from "../core/state";
 import { Bridge } from "../core/bridge";
+import { moveThumb, tabOf, TAB_ORDER } from "../island/transition";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
@@ -129,6 +130,11 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  // The lit-tab highlight is one element that travels, not a background per tab.
+  const thumb = h("div", { class: "tab-thumb" });
+  const tabEls = { agents: tabAgents, prompt: tabChat, overview: tabHome, upload: tabDrop };
+  let thumbX: number | null = null;
+
   // Grip: press and drag to move the island (Alt + drag works anywhere on it).
   const grip = h("div", { class: "grip", title: "Drag to move the island (or Alt + drag)" },
     ...Array.from({ length: 6 }, () => h("i")));
@@ -137,7 +143,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabAgents, tabChat, tabHome, tabDrop),
+    h("div", { class: "tabs" }, thumb, tabAgents, tabChat, tabHome, tabDrop),
     grip,
     h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
@@ -150,6 +156,15 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabAgents.classList.toggle("on", v === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
+      const lit = tabOf(v);
+      thumb.classList.toggle("on", lit !== null);
+      if (lit !== null && TAB_ORDER.includes(lit)) {
+        const x = tabEls[lit].offsetLeft;
+        if (x > 0 && x !== thumbX) {
+          moveThumb(thumb, thumbX ?? x, x);
+          thumbX = x;
+        }
+      }
       clear(soundBtn);
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
       soundBtn.title = State.settings.soundEnabled ? "Mute" : "Unmute";

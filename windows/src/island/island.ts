@@ -2,6 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
+import { animateView, directionBetween } from "./transition";
 import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core/bridge";
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
@@ -118,6 +119,9 @@ export class Island {
   private confusedRecovery: number | null = null;
   private prevViewBeforeConfused: IslandViewName = "overview";
   private lastSyncedView: IslandViewName | null = null;
+  /** View and mode at the previous syncDom, to know whether a view change is worth animating. */
+  private animView: IslandViewName | null = null;
+  private animExpanded = false;
   /** Session states as last drawn, to catch one finishing or failing (syncGlow). */
   private glowStates = new Map<string, string>();
 
@@ -1318,6 +1322,21 @@ export class Island {
     this.greetingCanvas.style.display = greetingActive ? "block" : "none";
 
     this.header.sync();
+    if (this.animView !== null && this.animView !== State.view) {
+      // Only a change inside an open island slides; opening, closing and the
+      // drop sequence (which draws itself) keep their own motion.
+      const seq = DROP_VIEWS.has(State.view) && State.view !== "upload";
+      const seqPrev = DROP_VIEWS.has(this.animView) && this.animView !== "upload";
+      if (expanded && this.animExpanded && !greetingActive && !seq && !seqPrev && this.animView !== "greeting") {
+        const dir = directionBetween(this.animView, State.view);
+        const leaving = this.views.get(this.animView)?.el;
+        const entering = this.views.get(State.view)?.el;
+        if (leaving) animateView(leaving, false, dir);
+        if (entering) animateView(entering, true, dir);
+      }
+    }
+    this.animView = State.view;
+    this.animExpanded = expanded;
     for (const [name, view] of this.views) {
       const on = name === State.view;
       view.el.classList.toggle("on", on);
