@@ -21,6 +21,7 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
+import { HoverOpen } from "./hover";
 import { Mover, type Edge } from "./move";
 
 const BOT_OVERHANG = 40;
@@ -58,6 +59,19 @@ const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 :
 
 export class Island {
   readonly fsm = new IslandStateMachine();
+  /** Open on hover (Settings → General); the timing lives in hover.ts. */
+  private readonly hover: HoverOpen = new HoverOpen({
+    enabled: () => State.settings.openOnHover === true,
+    open: () => {
+      if (this.fsm.state !== "petit") return false;
+      this.fsm.click(); // compact → home
+      return true;
+    },
+    fold: () => {
+      if (this.fsm.state !== "home" || State.isPinned || State.pendingApproval) return;
+      this.fsm.forcePetit();
+    },
+  });
 
   private root: HTMLElement;
   private islandEl!: HTMLElement;
@@ -171,6 +185,10 @@ export class Island {
       this.ensureRunning();
     });
     this.scheduleFidget();
+    // A hidden document draws nothing: the loop stops in frame() and restarts here.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.ensureRunning();
+    });
   }
 
   /**
@@ -966,6 +984,7 @@ export class Island {
     const onEnter = () => {
       Sound.resume();
       this.wasInIsland = true;
+      this.hover.enter();
       if (State.mode === "hidden") {
         this.fsm.mouseEntered();
       }
@@ -977,6 +996,7 @@ export class Island {
     this.islandEl.addEventListener("mouseleave", () => {
       this.wasInIsland = false;
       this.fsm.mouseLeft();
+      this.hover.leave();
     });
 
     // A finish/error flash has played: take its class off (see syncGlow).
@@ -991,6 +1011,7 @@ export class Island {
 
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
+      this.hover.clicked();
       State.lastActivity = performance.now();
       if (State.mode === "hidden") {
         this.fsm.mouseEntered();
@@ -1057,10 +1078,12 @@ export class Island {
     if (inIsland && !this.wasInIsland) {
       if (this.fsm.state === "coucou") this.greeting.hover();
       this.fsm.mouseEntered();
+      this.hover.enter();
       this.homeCollapseAt = null;
     }
     if (!inIsland && this.wasInIsland) {
       this.fsm.mouseLeft();
+      this.hover.leave();
       if (this.fsm.state === "home" && !State.isPinned) {
         this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
       }
@@ -1148,6 +1171,10 @@ export class Island {
   }
 
   private frame = (nowMs: number) => {
+    if (document.visibilityState !== "visible") {
+      this.running = false;
+      return;
+    }
     const dt = Math.min(0.05, (nowMs - this.lastFrame) / 1000);
     this.lastFrame = nowMs;
 

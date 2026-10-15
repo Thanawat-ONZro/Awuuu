@@ -6,6 +6,7 @@ import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
+import { applyAccent } from "./core/accent";
 import { Island } from "./island/island";
 import type { IslandLayout } from "./core/layout";
 import { registerHookHandlers } from "./island/hooks";
@@ -31,6 +32,7 @@ async function main() {
     State.settings = { ...State.settings, ...boot.settings };
   }
   island.applySettings();
+  applyAccent(State.settings.dog);
   if (boot?.layout) island.setLayout(boot.layout);
   await onEvent<IslandLayout>("layout", (l) => island.setLayout(l));
   // Settings → Reload sounds: read the sounds folder again.
@@ -81,6 +83,7 @@ async function main() {
   await onEvent<Settings>("settings-changed", (s) => {
     State.settings = { ...State.settings, ...s };
     island.applySettings();
+    applyAccent(State.settings.dog);
     State.loadIntegrationTasks();
     void refreshConfigured();
   });

@@ -255,3 +255,14 @@ button.int-link:active:not(:disabled) {
   outline-offset: 3px;
   border-radius: 10px;
 }
+
+/* Reduced motion: the spinner keeps turning, slower; chevrons turn instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .int-spin {
+    animation-duration: 1.8s;
+  }
+
+  .int-adv > summary::before {
+    transition: none;
+  }
+}

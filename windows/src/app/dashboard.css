@@ -826,3 +826,10 @@
 .story.t-failed .story-line::before { content: "✕ "; color: var(--state-error); }
 .story.t-no-tests .story-line::before, .story.t-unclear .story-line::before { content: "? "; color: #f59e0b; }
 .story-ask { margin-left: 8px; font: 500 11px inherit; padding: 1px 8px; }
+
+/* Reduced motion: chevrons turn instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    transition: none;
+  }
+}

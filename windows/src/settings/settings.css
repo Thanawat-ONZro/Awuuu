@@ -351,3 +351,18 @@ section.welcome.folded h2::after {
 .d-ok .doctor-mark { color: #4ade80; }
 .d-warn .doctor-mark { color: #f59e0b; }
 .d-fail .doctor-mark { color: var(--state-error); }
+
+/* Reduced motion: presses and switch knobs change colour only. */
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: background-color var(--m-fast) ease;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
+  }
+
+  .switch::after {
+    transition: none;
+  }
+}

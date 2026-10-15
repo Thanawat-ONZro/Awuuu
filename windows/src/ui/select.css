@@ -158,4 +158,8 @@
   .aw-select-pop {
     animation: none;
   }
+
+  .aw-select-caret {
+    transition: none;
+  }
 }

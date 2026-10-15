@@ -2,6 +2,7 @@
 // colours and wording are copied from the Swift views so both platforms read
 // identically.
 
+import { assembleAnswer, togglePick } from "../island/ask-question";
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State, agentInfo, type AgentTask, type LogEntry, type LogKind } from "../core/state";
@@ -709,8 +710,7 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
           const on = picked.has(opt.label);
           const b = btn(opt.label, q.multiSelect && !on ? "secondary" : "primary", () => {
             if (!q.multiSelect) return answer(opt.label);
-            if (picked.has(opt.label)) picked.delete(opt.label);
-            else picked.add(opt.label);
+            picked = togglePick(picked, opt.label);
             State.notify();
           });
           if (opt.description) b.title = opt.description;
@@ -718,7 +718,7 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
         }
         if (q.multiSelect) {
           const done = btn(questionIndex + 1 < questions.length ? "Next" : "Send", "primary", () => {
-            if (picked.size) answer([...picked].join(", "));
+            if (picked.size) answer(assembleAnswer(picked));
           });
           if (!picked.size) done.style.opacity = "0.5";
           row.append(done);

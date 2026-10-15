@@ -2,6 +2,7 @@
 // controls every page is built from.
 
 import { Bridge } from "../core/bridge";
+import { applyAccent } from "../core/accent";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h } from "../views/dom";
 import { dropdown } from "../ui/select";
@@ -10,6 +11,7 @@ import { dropdown } from "../ui/select";
 export const settings: Settings = { ...DEFAULT_SETTINGS };
 
 export async function save() {
+  applyAccent(settings.dog);
   await Bridge.saveSettings(settings);
 }
 

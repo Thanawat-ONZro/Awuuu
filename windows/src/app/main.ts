@@ -8,6 +8,7 @@ import "./app.css";
 import { Bridge, onEvent } from "../core/bridge";
 import type { Settings } from "../core/state";
 import { layoutRefreshers, settings } from "./ui";
+import { applyAccent } from "../core/accent";
 import { mountShell, navigateFromEvent, type PageId } from "./shell";
 
 async function main() {
@@ -21,6 +22,7 @@ async function main() {
   } catch {
     /* private mode */
   }
+  applyAccent(settings.dog);
   mountShell(document.getElementById("settings-root")!, boot?.version ?? "", first);
 
   // `aw setup <agent>`, the tray and the island's gear: open at a page.
@@ -28,6 +30,7 @@ async function main() {
 
   void onEvent<Settings>("settings-changed", (s) => {
     Object.assign(settings, s);
+    applyAccent(settings.dog);
     layoutRefreshers.forEach((f) => f());
   });
 }

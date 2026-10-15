@@ -16,6 +16,10 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- Open on hover (Settings → General, off by default): rest the pointer on the small island and it opens; it folds a moment after the pointer leaves unless you clicked inside.
+- The accent colour follows the dog you pick (Settings → Appearance); the default Shiba keeps the caramel it always had, and every breed is kept readable on the dark island.
+- With "reduce motion" on in Windows, all movement becomes a short fade and the looping animations stand still. The island also stops its frame loop while it is not visible.
+- Questions from agents: at most 4 at once, with the answer-building logic tested.
 - Your own sounds (Settings → General): put a file named like one of Awuuu's sounds (`finish.wav`, `approval.mp3` …) in the sounds folder and press "Reload sounds". Files that cannot be played fall back to the built-in sound.
 - Quiet hours (Settings → General): no pop-ups or sounds when an agent finishes or asks something in the terminal. Approvals and errors still show, because an agent is waiting on them. Outside quiet hours, many agents finishing together make one pop-up instead of several.
 - Any agent can talk to the island: point its hooks at `awuuu-hook --agent <name> <Event>` (for example `gemini` or `cursor`) with Claude Code-shaped JSON, and it shows under its own name in Sessions and history.

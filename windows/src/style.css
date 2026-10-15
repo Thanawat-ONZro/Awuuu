@@ -2123,3 +2123,41 @@ input[type="range"]::-webkit-slider-thumb {
   60% { translate: -3px 0; }
   80% { translate: 3px 0; }
 }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   Moves and presses become colour/opacity changes; loops stop. Spinners keep
+   turning, slower. Keep this block last so it wins over the rules above. */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .pill,
+  .send-btn,
+  .switch::after {
+    transition-property: opacity, background-color, border-color, color, box-shadow, filter;
+    transition-duration: var(--m-fast);
+    transition-delay: 0s;
+    transition-timing-function: ease;
+  }
+
+  .chip {
+    transform: none;
+    transition-property: border-color;
+    transition-duration: var(--m-fast);
+    transition-delay: 0s;
+  }
+
+  .send-btn:active {
+    transform: none;
+  }
+
+  .shimmer,
+  .typing i,
+  .drop-frame rect,
+  .drop-card.over .drop-frame rect,
+  .pulse {
+    animation: none;
+  }
+
+  .int-refresh.spin svg {
+    animation-duration: 1.8s;
+  }
+}

@@ -221,6 +221,8 @@ export interface Settings {
   /** Chat awareness: "local" (default), "always" or "off". */
   chatAwareness: string;
   autostart: boolean;
+  /** Resting the pointer on the compact island opens it; off by default. */
+  openOnHover: boolean;
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
   model: string;
@@ -276,6 +278,7 @@ export const DEFAULT_SETTINGS: Settings = {
   userName: "",
   chatAwareness: "",
   autostart: false,
+  openOnHover: false,
   hooksInstalled: false,
   model: "hermes-agent",
   hideAfter: 5,

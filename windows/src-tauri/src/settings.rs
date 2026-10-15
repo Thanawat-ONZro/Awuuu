@@ -82,6 +82,9 @@ pub struct Settings {
     pub quiet_hours: String,
     #[serde(default = "yes")]
     pub show_time: bool,
+    /// Resting the pointer on the compact island opens it (off by default).
+    #[serde(default)]
+    pub open_on_hover: bool,
     pub autostart: bool,
     pub hooks_installed: bool,
     /// Claude model used by the chat. Changeable in the settings window.
@@ -221,6 +224,7 @@ impl Default for Settings {
             quiet_hours: String::new(),
             show_time: true,
             autostart: false,
+            open_on_hover: false,
             hooks_installed: false,
             model: default_model(),
             hide_after: default_hide_after(),
