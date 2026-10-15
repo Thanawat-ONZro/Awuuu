@@ -5,6 +5,7 @@
 
 import { h, svg, clear } from "../views/dom";
 import { MOTION } from "../core/anim";
+import { createHero, setHeroPage } from "./hero";
 import { page as sessionsPage } from "./pages/sessions";
 import { page as statsPage } from "./pages/stats";
 import { page as welcomePage } from "./pages/welcome";
@@ -161,7 +162,9 @@ export async function navigate(id: PageId, anchor?: string) {
     el = h("div", { class: "page" }, h("div", { class: "notice err", text: `This page could not load: ${String(err)}` }));
   }
   if (mine !== seq) return; // another page was opened meanwhile
-  clear(content);
+  // Everything but the hero band is swapped; only `el` animates, never the band.
+  Array.from(content.children).forEach((c) => { if (!c.classList.contains("hero-band")) c.remove(); });
+  setHeroPage(def.id);
   content.append(el);
   content.scrollTop = 0;
   // The first page of a session appears without motion; later ones ease in.
@@ -219,6 +222,7 @@ export function mountShell(root: HTMLElement, ver: string, first: PageId) {
     }
   }
   content = h("main", { class: "content" });
+  content.append(createHero());
   clear(root);
   root.append(nav, content);
   void navigate(first);

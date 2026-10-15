@@ -10,6 +10,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Awuuu", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard…", true, None::<&str>)?;
+    let recap = MenuItem::with_id(app, "weekly-recap", "Weekly recap…", true, None::<&str>)?;
     let updates = MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset-position", "Reset island position", true, None::<&str>)?;
@@ -18,7 +19,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
-    let menu = Menu::with_items(app, &[&open, &sep1, &dashboard, &welcome, &settings, &reset, &updates, &pause, &sep2, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &sep1, &dashboard, &recap, &welcome, &settings, &reset, &updates, &pause, &sep2, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("awuuu")
         .tooltip("Awuuu")
@@ -27,6 +28,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "settings" => crate::open_settings_at(app, "settings"),
             "dashboard" => crate::open_settings_at(app, "sessions"),
+            "weekly-recap" => crate::open_settings_at(app, "stats"),
             "updates" => crate::updater::check_now(app),
             "reset-position" => crate::reset_island_position(app),
             "welcome" => crate::open_settings_at(app, "welcome"),

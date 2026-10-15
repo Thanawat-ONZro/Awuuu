@@ -3,12 +3,14 @@
 // are read when the page opens and when Refresh is clicked.
 
 import "../dashboard.css";
-import type { AgentUsage, HistoryEntry, UsageLimit } from "../../core/bridge";
+import type { AgentUsage, HistoryData, HistoryEntry, UsageLimit } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
 import { navigate, onLeave } from "../shell";
 import { pageOf, settings } from "../ui";
 import { loadHistory, loadUsage, onHistoryChanged } from "../history-data";
 import { agentDot, clock, plural, relTime } from "../dash-ui";
+import { weekStart } from "../weekly";
+import { weeklyCard } from "../weekly-card";
 import { activity, agentMeta, dayStart, formatDuration, requestsPerDay, type Activity } from "../recap";
 
 /** "resets in 2h 14m" within a day, else "resets Thu 09:00". */
@@ -169,7 +171,16 @@ export function page(): HTMLElement {
       for (const u of usage) usageBox.append(usageCard(u, ticking));
     }
 
+    let weekData: HistoryData | null = null;
+    try {
+      weekData = await loadHistory(weekStart(Date.now()));
+    } catch {
+      /* the card says nothing was recorded */
+    }
+    if (!alive) return;
+
     clear(activityBox);
+    activityBox.append(weeklyCard(weekData));
     if (entries.length === 0) {
       activityBox.append(h("section", {}, h("h2", {}, h("span", { text: "Activity" })), h("div", { class: "empty-state" },
         h("strong", { text: settings.historyEnabled === false ? "History is turned off." : "No activity in the last 7 days." }),

@@ -16,6 +16,9 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- A thin coloured band tops each page of the Awuuu window, in the page's colour, with a few slow particles. It stands still with "reduce motion" or when the window is hidden.
+- Weekly recap (Stats page, tray menu): sessions, files, commands, top agent and project, busiest day and longest session for the week from Monday, with a shareable image (save or copy). Lines changed and permissions answered show a dash, because that data is not recorded yet.
+- Composio through Hermes (Integrations, off by default): adds Composio as an MCP server in Hermes's config after a diff, a backup and your confirmation. Your app data then goes through Composio's service; see `docs/HERMES-COMPOSIO.md`. The API key stays in Windows Credential Manager unless you also choose to write it to Hermes's `.env`.
 - Shortcuts page (Awuuu window): rebind or turn off Ctrl+Alt+Space (open the chat from any app), Ctrl+Alt+A (go to the waiting question), Ctrl+Alt+T (open the session's terminal), Ctrl+Alt+S (mute) and Ctrl+Alt+I (open/close the island, off by default). Allow/Deny stay approval-only. A key another app already owns is reported in its row.
 - Connect Gemini CLI and Cursor Agent from the Agents page, with the same backup, diff and confirm as Claude Code. Copilot CLI is not included yet.
 - Click an edit in the session ticker to read its diff in the island (Esc goes back; an Open in VS Code button).

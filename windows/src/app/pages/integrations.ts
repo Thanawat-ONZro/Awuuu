@@ -5,6 +5,7 @@
 import "../integrations.css";
 import { Bridge, type SignInStatus } from "../../core/bridge";
 import { h } from "../../views/dom";
+import { composioSection } from "./composio-card";
 import { dropdown } from "../../ui/select";
 import { listField, pageOf, save, settings, testRow, textField } from "../ui";
 
@@ -491,7 +492,7 @@ function advancedSection(): HTMLElement {
 export async function page(): Promise<HTMLElement> {
   watchers = [];
   const el = pageOf("Integrations", "What Awuuu brings to the Today page. Each one turns on when it is set up and off when you remove it.",
-    mailAndCalendar(), githubSection(), simpleSection(), advancedSection());
+    mailAndCalendar(), githubSection(), simpleSection(), composioSection(), advancedSection());
   await sync();
   return el;
 }

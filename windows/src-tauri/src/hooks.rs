@@ -466,7 +466,7 @@ fn stamp() -> String {
     )
 }
 
-fn backup_path_for(path: &Path) -> PathBuf {
+pub(crate) fn backup_path_for(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -481,7 +481,7 @@ fn backup_path() -> PathBuf {
 
 /// Identifies the exact bytes a preview was computed from. FNV-1a is plenty:
 /// the question is only "is this still the file I showed the user?".
-fn fingerprint(bytes: &[u8]) -> String {
+pub(crate) fn fingerprint(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
         hash ^= *b as u64;
@@ -703,7 +703,7 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
     Ok(backup.to_string_lossy().to_string())
 }
 
-fn read_text(path: &Path) -> Result<String, String> {
+pub(crate) fn read_text(path: &Path) -> Result<String, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
             let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
@@ -975,7 +975,7 @@ pub fn statusline_write(install: bool, fingerprint: &str) -> Result<String, Stri
 // ── Minimal unified diff (LCS) ────────────────────────────────────────────────
 
 /// settings.json is short, so a plain O(n·m) LCS is the simplest honest diff.
-fn unified_diff(before: &str, after: &str) -> String {
+pub(crate) fn unified_diff(before: &str, after: &str) -> String {
     let a: Vec<&str> = before.lines().collect();
     let b: Vec<&str> = after.lines().collect();
     let (n, m) = (a.len(), b.len());

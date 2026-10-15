@@ -2,6 +2,7 @@
 
 mod adapters;
 mod claude;
+mod composio;
 mod files;
 mod hooks;
 mod integrations;
@@ -295,6 +296,25 @@ fn quit_app(app: AppHandle) {
 #[tauri::command]
 fn set_paused(paused: bool) {
     integrations::set_paused(paused);
+}
+
+// ── Composio via Hermes (opt-in; see docs/HERMES-COMPOSIO.md) ────────────────
+
+#[tauri::command]
+fn composio_status() -> composio::ComposioStatus {
+    composio::status()
+}
+
+#[tauri::command]
+fn composio_preview(target: String, install: bool, url: String) -> Result<HookPreview, String> {
+    let t = composio::Target::parse(&target).ok_or("Unknown target")?;
+    composio::preview(t, install, &url)
+}
+
+#[tauri::command]
+fn composio_apply(target: String, install: bool, url: String, fingerprint: String) -> Result<String, String> {
+    let t = composio::Target::parse(&target).ok_or("Unknown target")?;
+    composio::apply(t, install, &url, &fingerprint)
 }
 
 // ── Claude Code hooks ─────────────────────────────────────────────────────────
@@ -842,6 +862,9 @@ pub fn run() {
             update_check_now,
             ingest_file,
             ingest_bytes,
+            composio_status,
+            composio_preview,
+            composio_apply,
             secret_present,
             secret_set,
             secret_clear,

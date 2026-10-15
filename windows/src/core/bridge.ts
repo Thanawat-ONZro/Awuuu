@@ -86,6 +86,13 @@ export const Bridge = {
   /** Writes to %LOCALAPPDATA%\Awuuu\awuuu.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),
 
+  // ── Composio via Hermes (opt-in, docs/HERMES-COMPOSIO.md) ───────────
+  composioStatus: () => call<ComposioStatus>("composio_status"),
+  composioPreview: (target: "config" | "env", install: boolean, url: string) =>
+    callOrThrow<HookPreview>("composio_preview", { target, install, url }),
+  composioApply: (target: "config" | "env", install: boolean, url: string, fingerprint: string) =>
+    callOrThrow<string>("composio_apply", { target, install, url, fingerprint }),
+
   // ── Agent hooks (Claude, AGY) ───────────────────────────────────────
   agentHooksStatus: (agent: HookAgentId) =>
     call<HookStatus>("agent_hooks_status", { agent }),
@@ -312,6 +319,15 @@ export interface HookStatus {
   settingsPath: string;
   hookPath: string;
   hookReady: boolean;
+}
+
+export interface ComposioStatus {
+  configPath: string;
+  envPath: string;
+  configInstalled: boolean;
+  envInstalled: boolean;
+  keySaved: boolean;
+  url: string | null;
 }
 
 export interface HookPreview {
