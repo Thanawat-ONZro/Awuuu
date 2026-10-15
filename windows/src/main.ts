@@ -33,6 +33,8 @@ async function main() {
   island.applySettings();
   if (boot?.layout) island.setLayout(boot.layout);
   await onEvent<IslandLayout>("layout", (l) => island.setLayout(l));
+  // Settings → Reload sounds: read the sounds folder again.
+  await onEvent("sounds-changed", () => void Sound.reload());
   // Moving the island (grip or Alt + drag): a click must not also land on a button.
   root.addEventListener("click", (e) => { if (e.altKey) { e.stopPropagation(); e.preventDefault(); } }, true);
   State.loadIntegrationTasks();

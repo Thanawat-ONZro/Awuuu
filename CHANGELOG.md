@@ -7,6 +7,8 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 ## [Unreleased]
 
 ### Changed
+- The dog notices tab changes: a short tail wag and a lean toward the new tab, ears up when an alert rises, a hop when an agent finishes. Off with "reduce motion".
+- The Awuuu window changes pages with a short ease-in, and its sidebar highlight slides to the open page.
 - Switching tabs in the island now moves: the lit-tab highlight slides to the new tab (stretching a little on the way) and the new view slides in from the side of its tab, while alerts rise from below. With "reduce motion" on in Windows it is a short fade. Motion values live in `windows/src/core/motion.css` and `MOTION` in `anim.ts`.
 - Colours now come from one place (`windows/src/core/tokens.css`, "Shiba Warm"). Waiting, done, error and info states use warmer colours named after the dog; the hard-coded copies in the island, dashboard and settings CSS now use them too.
 
@@ -14,6 +16,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- Your own sounds (Settings → General): put a file named like one of Awuuu's sounds (`finish.wav`, `approval.mp3` …) in the sounds folder and press "Reload sounds". Files that cannot be played fall back to the built-in sound.
 - Quiet hours (Settings → General): no pop-ups or sounds when an agent finishes or asks something in the terminal. Approvals and errors still show, because an agent is waiting on them. Outside quiet hours, many agents finishing together make one pop-up instead of several.
 - Any agent can talk to the island: point its hooks at `awuuu-hook --agent <name> <Event>` (for example `gemini` or `cursor`) with Claude Code-shaped JSON, and it shows under its own name in Sessions and history.
 - Copy handoff (Sessions): a note another agent can continue from, with what was asked, what the previous agent claimed, what the history shows changed, how the tests stand and what failed.

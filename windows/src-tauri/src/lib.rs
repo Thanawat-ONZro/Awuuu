@@ -24,6 +24,7 @@ mod doctor;
 mod win_user;
 mod usage;
 mod history;
+mod sounds;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -851,6 +852,10 @@ pub fn run() {
             history_info,
             export_files,
             reveal_file,
+            sounds::user_sounds,
+            sounds::user_sound,
+            sounds::reveal_sounds_folder,
+            sounds::reload_sounds,
             oauth::oauth_status,
             oauth::oauth_sign_in,
             oauth::oauth_cancel,

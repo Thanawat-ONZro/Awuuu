@@ -66,6 +66,15 @@ export const Bridge = {
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 
+  /** The sounds folder (%APPDATA%\Awuuu\sounds) and which of these names it replaces. */
+  userSounds: (names: readonly string[]) =>
+    call<{ folder: string; custom: string[] }>("user_sounds", { names: [...names] }),
+  /** The user's file for one sound, as raw bytes. */
+  userSound: (name: string) => call<ArrayBuffer>("user_sound", { name }),
+  revealSoundsFolder: () => call<void>("reveal_sounds_folder"),
+  /** Tells the island to read the sounds folder again ("sounds-changed"). */
+  reloadSounds: () => call<void>("reload_sounds"),
+
   /** "Open terminal" → opens the folder in VS Code when `code` is on PATH. */
   openInVSCode: (path: string | null) => call<boolean>("open_in_vscode", { path }),
 

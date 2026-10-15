@@ -1,6 +1,7 @@
 // Sound & behaviour.
 
 import { Bridge } from "../../core/bridge";
+import { SOUND_NAMES } from "../../core/sound";
 import type { Settings } from "../../core/state";
 import { h } from "../../views/dom";
 import { pageOf, save, select, settings, toggle } from "../ui";
@@ -62,6 +63,23 @@ function generalSection(): HTMLElement {
     void save();
   });
 
+  const replaced = h("span", { class: "hint" }) as HTMLElement;
+  const countReplaced = async () => {
+    const found = await Bridge.userSounds(SOUND_NAMES);
+    const n = found?.custom.length ?? 0;
+    replaced.textContent = n ? `${n} replaced by your files` : "";
+  };
+  void countReplaced();
+
+  const openSounds = h("button", { text: "Open sounds folder", onclick: () => void Bridge.revealSoundsFolder() });
+  const reloadSounds = h("button", {
+    text: "Reload sounds",
+    onclick: async () => {
+      await Bridge.reloadSounds();
+      await countReplaced();
+    },
+  });
+
   return h(
     "section",
     {},
@@ -70,6 +88,13 @@ function generalSection(): HTMLElement {
       h("label", { text: "Sound" }),
       toggle(settings.soundEnabled, (v) => { settings.soundEnabled = v; void save(); }),
       volume,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Your sounds" }),
+      openSounds,
+      reloadSounds,
+      replaced,
+      h("span", { class: "hint", text: "a file named like a sound (finish.wav, approve.mp3…) replaces it" }),
     ),
     h("div", { class: "row" },
       h("label", { text: "Auto-close" }),
