@@ -23,7 +23,7 @@ import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../vie
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
 import { HoverOpen } from "./hover";
-import { Mover, type Edge } from "./move";
+import { DROPLET, Mover } from "./move";
 import { DesktopDogLink } from "./desktop-dog";
 import { isDrag } from "../mochi/desktop-logic";
 import { t } from "../i18n/i18n";
@@ -60,9 +60,6 @@ const SIDE_LIFT = 160;
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
-
-/** Diameter of the droplet the island becomes while it is carried (move.ts). */
-const DROPLET = 48;
 
 export class Island {
   readonly fsm = new IslandStateMachine();
@@ -164,7 +161,6 @@ export class Island {
     this.wireFsm();
     this.mover = new Mover(
       {
-        pillSize: () => ({ w: DROPLET, h: DROPLET }),
         rect: () => this.islandRect(),
         setMoveOverride: (at) => {
           const changed = (this.moveAt === null) !== (at === null);
@@ -172,10 +168,6 @@ export class Island {
           // Picked up: the pill rounds into a droplet; put down: back again.
           if (changed) this.animateGeometry(false);
           this.applyGeometry();
-        },
-        previewEdge: (edge: Edge) => {
-          geo.layout = { ...geo.layout, edge, vertical: edge === "left" || edge === "right" };
-          this.animateGeometry(false);
         },
         enterMove: () => {
           const saved = { wasExpanded: State.mode === "expanded", view: State.view };
@@ -1315,7 +1307,7 @@ export class Island {
 
   private updateBotTargets() {
     const p = this.moveAt
-      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: 24, opacity: 1 }
+      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: DROPLET / 2, opacity: 1 }
       : botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
     this.botCx.target = p.cx;
     this.botCy.target = p.cy;

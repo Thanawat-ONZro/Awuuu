@@ -174,6 +174,25 @@ fn island_overlay_begin(app: AppHandle, shared: State<Shared>, apply: Option<boo
     geometry
 }
 
+/// Moving the island (see island::carry_begin): the window shrinks to a square
+/// around the card instead of covering the display.
+#[tauri::command]
+fn island_carry_begin(app: AppHandle, shared: State<Shared>, off_x: f64, off_y: f64, side: f64) -> Option<[f64; 9]> {
+    let pref = shared.settings.lock().unwrap().screen.clone();
+    shared.gate.overlay.store(true, Ordering::Relaxed);
+    shared.gate.forget_ignore_state();
+    let r = island::carry_begin(&app, &pref, off_x, off_y, side);
+    if r.is_none() {
+        shared.gate.overlay.store(false, Ordering::Relaxed);
+    }
+    r
+}
+
+#[tauri::command]
+fn island_carry_step(app: AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
+    island::carry_step(&app, cx, cy)
+}
+
 /// Released: dock to `edge` at `along` (the front end already animated the
 /// island into place), or just restore when `edge` is empty.
 #[tauri::command]
@@ -845,6 +864,8 @@ pub fn run() {
             reposition,
             island_overlay_begin,
             island_overlay_end,
+            island_carry_begin,
+            island_carry_step,
             reset_position,
             island_resize_mode,
             open_url,
