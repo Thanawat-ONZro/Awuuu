@@ -86,7 +86,7 @@ export class Mover {
 
     // The window becomes a small square around the card's centre.
     const r0 = this.host.rect();
-    const info = await Bridge.islandCarryBegin(r0.x + r0.w / 2, r0.y + r0.h / 2, WINDOW);
+    const info = await Bridge.islandCarryBegin(r0.x + r0.w / 2, r0.y + r0.h / 2, WINDOW, DROPLET);
     if (!info) {
       void Bridge.log("move: could not start carrying");
       this.active = false;
@@ -111,7 +111,6 @@ export class Mover {
       { edge: "right" as Edge, d: wx + ww - x },
     ];
     const nearest = (x: number, y: number) => edges(x, y).reduce((a, b) => (b.d < a.d ? b : a));
-    const REACH = R * 2.8; // the flattening starts this far from an edge
 
     let down = true;
     let release: { t0: number; from: { x: number; y: number }; edge: Edge; along: number } | null = null;
@@ -124,7 +123,6 @@ export class Mover {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
 
-      let k = 0; // how flat: 0 round … 1 lying on the edge
       let edge: Edge;
       if (!release) {
         const held = Math.pow(1 - Math.min(1, (now - t0) / GRAB_MS), 3);
@@ -134,20 +132,25 @@ export class Mover {
         const f = Math.min(1, dt * 18);
         pos.x = clamp(pos.x + (ax - pos.x) * f, wx, wx + ww);
         pos.y = clamp(pos.y + (ay - pos.y) * f, wy, wy + wh);
+        // Near an edge the water draws the drop in, gently: it stays round,
+        // it just leans toward the edge the closer it is.
         const n = nearest(pos.x, pos.y);
         edge = n.edge;
-        k = smooth(clamp((REACH - n.d) / (REACH - R * 0.6), 0, 1));
+        const k = smooth(clamp(1 - (n.d - R) / (R * 1.4), 0, 1));
+        const pull = Math.max(0, n.d - R * 1.05) * k * 0.45;
+        if (edge === "top") pos.y -= pull;
+        else if (edge === "bottom") pos.y += pull;
+        else if (edge === "left") pos.x -= pull;
+        else pos.x += pull;
       } else {
-        // Settling: lie down flat on the nearest edge.
+        // Settling: the drop rests on the edge, where the island docks.
         edge = release.edge;
         const t = Math.min(1, (now - release.t0) / SETTLE_MS);
-        k = 1;
-        const flatD = R * (1 - 0.6);
         const to =
-          edge === "top" ? { x: release.from.x, y: wy + flatD }
-          : edge === "bottom" ? { x: release.from.x, y: wy + wh - flatD }
-          : edge === "left" ? { x: wx + flatD, y: release.from.y }
-          : { x: wx + ww - flatD, y: release.from.y };
+          edge === "top" ? { x: release.from.x, y: wy + R }
+          : edge === "bottom" ? { x: release.from.x, y: wy + wh - R }
+          : edge === "left" ? { x: wx + R, y: release.from.y }
+          : { x: wx + ww - R, y: release.from.y };
         const e = 1 - Math.pow(1 - t, 3);
         pos.x = release.from.x + (to.x - release.from.x) * e;
         pos.y = release.from.y + (to.y - release.from.y) * e;
@@ -157,26 +160,7 @@ export class Mover {
           return;
         }
       }
-
-      // Flat against the edge: squashed across it, stretched along it, and held
-      // to the edge the flatter it gets.
-      const perp = 1 - 0.6 * k;
-      const par = 1 + 0.35 * k;
-      if (!release && k > 0) {
-        const d = edges(pos.x, pos.y).find((x) => x.edge === edge)!.d;
-        const want = Math.max(d + (R * perp - d) * k, R * perp);
-        const shift = want - d;
-        if (edge === "top") pos.y += shift;
-        else if (edge === "bottom") pos.y -= shift;
-        else if (edge === "left") pos.x += shift;
-        else pos.x -= shift;
-      }
-      const horizontal = edge === "top" || edge === "bottom";
-      this.host.setMoveOverride({
-        x: WINDOW / 2,
-        y: WINDOW / 2,
-        transform: horizontal ? `scale(${par}, ${perp})` : `scale(${perp}, ${par})`,
-      });
+      this.host.setMoveOverride({ x: WINDOW / 2, y: WINDOW / 2, transform: "none" });
 
       const answer = await Bridge.islandCarryStep(pos.x, pos.y);
       if (done) return;

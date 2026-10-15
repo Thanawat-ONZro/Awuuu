@@ -4,6 +4,7 @@ mod adapters;
 mod claude;
 mod composio;
 mod desktop_dog;
+mod water;
 mod files;
 mod hooks;
 mod integrations;
@@ -177,11 +178,11 @@ fn island_overlay_begin(app: AppHandle, shared: State<Shared>, apply: Option<boo
 /// Moving the island (see island::carry_begin): the window shrinks to a square
 /// around the card instead of covering the display.
 #[tauri::command]
-fn island_carry_begin(app: AppHandle, shared: State<Shared>, off_x: f64, off_y: f64, side: f64) -> Option<[f64; 9]> {
+fn island_carry_begin(app: AppHandle, shared: State<Shared>, off_x: f64, off_y: f64, side: f64, droplet: f64) -> Option<[f64; 9]> {
     let pref = shared.settings.lock().unwrap().screen.clone();
     shared.gate.overlay.store(true, Ordering::Relaxed);
     shared.gate.forget_ignore_state();
-    let r = island::carry_begin(&app, &pref, off_x, off_y, side);
+    let r = island::carry_begin(&app, &pref, off_x, off_y, side, droplet);
     if r.is_none() {
         shared.gate.overlay.store(false, Ordering::Relaxed);
     }
@@ -198,6 +199,7 @@ fn island_carry_step(app: AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
 #[tauri::command]
 fn island_overlay_end(app: AppHandle, shared: State<Shared>, edge: String, along: f64) {
     shared.gate.overlay.store(false, Ordering::Relaxed);
+    water::hide(&app);
     let mut settings = shared.settings.lock().unwrap().clone();
     if matches!(edge.as_str(), "top" | "bottom" | "left" | "right") {
         settings.position = edge;
@@ -948,6 +950,7 @@ pub fn run() {
             create_settings_window(&handle);
             // The desktop dog's window, parked off-screen until it is wanted.
             desktop_dog::setup(&handle);
+            water::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 island::make_non_activating(&win);

@@ -403,12 +403,14 @@ pub fn overlay_begin(app: &AppHandle, pref: &str, apply: bool) -> Option<(f64, f
 
 /// Physical side of the square window while the island is carried.
 static CARRY_SIDE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// The display being carried over (work area, physical) and the drop's radius (logical).
+static CARRY_WORK: Mutex<Option<(Rect, f64, f64)>> = Mutex::new(None);
 
 /// Carrying the island: instead of covering the display, the window shrinks to a
 /// square of `side` logical px around the centre of the card (`off_x`, `off_y`
 /// inside the window) and is then only ever moved (`carry_step`). Returns
 /// `[scale, work x, y, w, h (physical), centre x, y, cursor x, y]`.
-pub fn carry_begin(app: &AppHandle, pref: &str, off_x: f64, off_y: f64, side: f64) -> Option<[f64; 9]> {
+pub fn carry_begin(app: &AppHandle, pref: &str, off_x: f64, off_y: f64, side: f64, droplet: f64) -> Option<[f64; 9]> {
     let win = window(app)?;
     let m = target_monitor(app, pref)?;
     let (_, work) = rect_of(&m);
@@ -430,6 +432,10 @@ pub fn carry_begin(app: &AppHandle, pref: &str, off_x: f64, off_y: f64, side: f6
     let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
     let _ = win.set_size(size);
     let _ = win.set_ignore_cursor_events(false);
+    *CARRY_WORK.lock().unwrap() = Some((work, scale, droplet / 2.0));
+    // The water over the display, the island's small window above it.
+    crate::water::show(app, work.x, work.y, work.w, work.h);
+    crate::water::raise_island(app);
     let (px, py) = cursor_physical()?;
     Some([scale, work.x, work.y, work.w, work.h, cx, cy, px, py])
 }
@@ -452,6 +458,9 @@ pub fn carry_step(app: &AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
             );
         }
     }
+    if let Some((work, scale, r)) = *CARRY_WORK.lock().unwrap() {
+        crate::water::ball(app, (cx - work.x) / scale, (cy - work.y) / scale, r);
+    }
     let (px, py) = cursor_physical()?;
     let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000 != 0;
     Some([px, py, if down { 1.0 } else { 0.0 }])
@@ -463,7 +472,7 @@ pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
     Some((screen, work, m.scale_factor()))
 }
 
-fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
+pub(crate) fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
     let raw = win.hwnd().ok()?.0 as isize;
     if raw == 0 {
         return None;
