@@ -4,6 +4,7 @@
 // opened, so what it shows is never stale. Add a page by adding it to PAGES.
 
 import { h, svg, clear } from "../views/dom";
+import { MOTION } from "../core/anim";
 import { page as sessionsPage } from "./pages/sessions";
 import { page as statsPage } from "./pages/stats";
 import { page as welcomePage } from "./pages/welcome";
@@ -84,8 +85,36 @@ let appVersion = "";
 let currentId: PageId | null = null;
 let seq = 0;
 let content: HTMLElement;
+let thumb: HTMLElement | null = null;
+let thumbY: number | null = null;
+let pageAnim: Animation | null = null;
+let shown = false;
 const navButtons = new Map<PageId, HTMLElement>();
 const leaveHandlers: (() => void)[] = [];
+
+const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Slides the sidebar highlight to the active item; it stretches while it travels. */
+function moveSideThumb() {
+  const b = currentId ? navButtons.get(currentId) : undefined;
+  if (!thumb || !b) return;
+  const fromY = thumbY ?? b.offsetTop;
+  const toY = b.offsetTop;
+  thumbY = toY;
+  thumb.style.height = `${b.offsetHeight}px`;
+  thumb.style.transform = `translateY(${toY}px)`;
+  if (fromY === toY || reduced() || typeof thumb.animate !== "function") return;
+  thumb.getAnimations().forEach((a) => a.cancel());
+  const mid = (fromY + toY) / 2;
+  thumb.animate(
+    [
+      { transform: `translateY(${fromY}px) scaleY(1)` },
+      { transform: `translateY(${mid}px) scaleY(${1 + Math.min(0.6, Math.abs(toY - fromY) / 120)})`, offset: 0.45 },
+      { transform: `translateY(${toY}px) scaleY(1)` },
+    ],
+    { duration: MOTION.base + 20, easing: MOTION.spring },
+  );
+}
 
 export function version(): string {
   return appVersion;
@@ -116,6 +145,7 @@ export async function navigate(id: PageId, anchor?: string) {
   }
   currentId = def.id;
   navButtons.forEach((b, k) => b.classList.toggle("on", k === def.id));
+  moveSideThumb();
   try {
     localStorage.setItem("awuuu_page", def.id);
   } catch {
@@ -131,6 +161,21 @@ export async function navigate(id: PageId, anchor?: string) {
   clear(content);
   content.append(el);
   content.scrollTop = 0;
+  // The first page of a session appears without motion; later ones ease in.
+  // Navigation never waits on this animation.
+  const animate = shown && typeof el.animate === "function";
+  shown = true;
+  if (animate) {
+    pageAnim?.cancel();
+    const from = reduced()
+      ? { opacity: 0 }
+      : { opacity: 0, transform: "translateY(8px)" };
+    const to = reduced() ? { opacity: 1 } : { opacity: 1, transform: "translateY(0)" };
+    pageAnim = el.animate([from, to], {
+      duration: reduced() ? MOTION.fast : MOTION.base,
+      easing: reduced() ? MOTION.out : MOTION.spring,
+    });
+  }
   if (anchor) {
     const target = document.getElementById(anchor);
     if (target) {
@@ -151,7 +196,10 @@ export function navigateFromEvent(target: string) {
 
 export function mountShell(root: HTMLElement, ver: string, first: PageId) {
   appVersion = ver;
+  thumb = h("div", { class: "side-thumb", "aria-hidden": "true" });
+  thumbY = null;
   const nav = h("nav", { class: "side" },
+    thumb,
     h("div", { class: "brand" },
       h("span", { class: "brand-dog", text: "🐶" }),
       h("span", { class: "brand-name", text: "Awuuu" }),
