@@ -37,7 +37,7 @@ export function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement
 }
 
 export function statusDot(ok: boolean): HTMLElement {
-  return h("i", { class: "dot", style: `background:${ok ? "#22c55e" : "#f4505e"}` });
+  return h("i", { class: "dot", style: `background:${ok ? "var(--state-done)" : "var(--state-error)"}` });
 }
 
 export function renderDiff(text: string): HTMLElement {
@@ -57,10 +57,10 @@ export function testRow(id: string): HTMLElement {
     result.style.color = "";
     try {
       result.textContent = await Bridge.integrationTest(id);
-      result.style.color = "#22c55e";
+      result.style.color = "var(--state-done)";
     } catch (err) {
       result.textContent = String(err).replace(/^Error:\s*/, "");
-      result.style.color = "#f4505e";
+      result.style.color = "var(--state-error)";
     }
   });
   return h("div", { class: "row" }, btn, result);

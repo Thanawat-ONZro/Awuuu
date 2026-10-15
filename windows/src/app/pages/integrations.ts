@@ -98,7 +98,7 @@ function secretRow(label: string, key: string, placeholder: string, secret = tru
       void sync();
     } catch (err) {
       note.textContent = reason(err);
-      note.style.color = "#f4505e";
+      note.style.color = "var(--state-error)";
     }
   });
   return h("div", { class: "row int-field" }, h("label", { text: label }), input, saveBtn, note);

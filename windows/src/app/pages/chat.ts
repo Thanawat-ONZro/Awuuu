@@ -93,7 +93,7 @@ function hermesSection(): HTMLElement {
     say("ok", "Sniffing for Hermes…");
     try {
       const models = await Bridge.hermesStatus();
-      dot.style.background = "#22c55e";
+      dot.style.background = "var(--state-done)";
       say("ok", models.length
         ? `Connected — ${models.length} model${models.length > 1 ? "s" : ""}: ${models.slice(0, 6).join(", ")}`
         : "Connected.");
@@ -105,7 +105,7 @@ function hermesSection(): HTMLElement {
         }
       }
     } catch (err) {
-      dot.style.background = "#f0645a";
+      dot.style.background = "var(--state-error)";
       say("err", String(err).replace(/^Error:\s*/, ""));
     } finally {
       test.removeAttribute("disabled");
@@ -302,7 +302,7 @@ function apiSection(hasKey: boolean): HTMLElement {
 
   async function refresh() {
     const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
+    dot.style.background = present ? "var(--state-done)" : "var(--state-error)";
     state.textContent = present
       ? "Key saved in the Windows Credential Manager."
       : "No Claude key yet.";

@@ -1050,7 +1050,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .hermes-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; align-self: center; background: #8a7d70; transition: background 0.3s; }
 .hermes-dot.online { background: #4ade80; }
-.hermes-dot.offline { background: #f4505e; }
+.hermes-dot.offline { background: var(--state-error); }
 .hermes-dot.nokey { background: #f59e0b; }
 
 .chat-used {
@@ -1173,12 +1173,12 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── Uploading ──────────────────────────────────────────────────────────── */
 
 .up-card {
-  background: radial-gradient(260px 260px at 50% 140%, rgba(52, 211, 153, 0.14), transparent 70%),
+  background: radial-gradient(260px 260px at 50% 140%, rgba(var(--state-done-rgb), 0.14), transparent 70%),
     var(--card);
 }
 
 .up-card.done {
-  background: radial-gradient(260px 260px at 50% 140%, rgba(52, 211, 153, 0.28), transparent 70%),
+  background: radial-gradient(260px 260px at 50% 140%, rgba(var(--state-done-rgb), 0.28), transparent 70%),
     var(--card);
 }
 
@@ -1224,7 +1224,7 @@ input[type="range"]::-webkit-slider-thumb {
 .up-fill {
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(90deg, #1fa87a, #34d399);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--state-done) 70%, #000), var(--state-done));
 }
 
 .up-glow {
@@ -1299,8 +1299,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-tag.bad {
   font: 600 9.5px var(--font);
-  color: #f4505e;
-  background: rgba(244, 80, 94, 0.14);
+  color: var(--state-error);
+  background: rgba(var(--state-error-rgb), 0.14);
   border-radius: 4px;
   padding: 0 4px;
 }
@@ -1699,7 +1699,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .pill-x:hover {
-  background: #f4505e;
+  background: var(--state-error);
 }
 
 .hub-head {
@@ -1801,12 +1801,12 @@ input[type="range"]::-webkit-slider-thumb {
 
 .hub-step.k-done .mark,
 .hub-step.k-done .txt {
-  color: #34d399;
+  color: var(--state-done);
 }
 
 .hub-step.k-error .mark,
 .hub-step.k-error .txt {
-  color: #f4505e;
+  color: var(--state-error);
 }
 
 .hub-step.now {
@@ -1858,15 +1858,15 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-clear:hover {
-  background: rgba(244, 80, 94, 0.18);
-  border-color: rgba(244, 80, 94, 0.4);
-  color: #ff8d97;
+  background: rgba(var(--state-error-rgb), 0.18);
+  border-color: rgba(var(--state-error-rgb), 0.4);
+  color: var(--state-error-text);
 }
 
 .hub-waiting {
   flex: 0 0 auto;
-  border: 1px solid rgba(245, 165, 36, 0.5);
-  background: rgba(245, 165, 36, 0.14);
+  border: 1px solid rgba(var(--state-wait-rgb), 0.5);
+  background: rgba(var(--state-wait-rgb), 0.14);
   color: #f5c46a;
   font: 600 12px var(--font);
   border-radius: 10px;
@@ -1876,7 +1876,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-waiting:hover {
-  background: rgba(245, 165, 36, 0.24);
+  background: rgba(var(--state-wait-rgb), 0.24);
 }
 
 .hub-tag {
@@ -1967,7 +1967,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .today-row.bad .today-title {
-  color: #f4505e;
+  color: var(--state-error);
 }
 
 .today-icon {
@@ -2064,18 +2064,18 @@ input[type="range"]::-webkit-slider-thumb {
   /* A request is waiting for an answer: amber, pulsing for as long as it waits. */
   #root.glow-wait.mode-compact:not(.moving) #island::after,
   #root.glow-wait.mode-expanded:not(.moving) #island::after {
-    --glow: rgba(245, 165, 36, 0.85);
+    --glow: rgba(var(--state-wait-rgb), 0.85);
     animation: glow-pulse 1.4s ease-in-out infinite;
   }
 
   /* A session finished: one green flash. It failed: a red one, and a shake. */
   #root.glow-done #island::after {
-    --glow: rgba(52, 211, 153, 0.9);
+    --glow: rgba(var(--state-done-rgb), 0.9);
     animation: glow-flash 0.9s ease-out 1;
   }
 
   #root.glow-error #island::after {
-    --glow: rgba(244, 80, 94, 0.95);
+    --glow: rgba(var(--state-error-rgb), 0.95);
     animation: glow-flash 0.6s ease-out 1;
   }
 

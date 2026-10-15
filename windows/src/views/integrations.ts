@@ -259,7 +259,7 @@ function stripeCard(): HTMLElement {
           h("span", { class: "int-name", text: String(p.description ?? "Payment") }),
           h("span", {
             class: "int-amount",
-            style: `color:${failed ? "#f4505e" : "#22c55e"}`,
+            style: `color:${failed ? "var(--state-error)" : "var(--state-done)"}`,
             text: failed ? "failed" : `+${(Number(p.amount ?? 0) / 100).toFixed(2)}`,
           }),
           h("span", { class: "int-ago", text: timeAgo(p.createdAt) }),

@@ -21,7 +21,7 @@
   height: 230px;
   border-radius: 26px;
   background:
-    radial-gradient(120% 90% at 50% 100%, rgba(228, 168, 113, 0.13), transparent 60%),
+    radial-gradient(120% 90% at 50% 100%, rgba(var(--accent-caramel-rgb), 0.13), transparent 60%),
     #000;
   border: 1px solid var(--hairline);
   cursor: pointer;
@@ -49,7 +49,7 @@
 
 .chip.on,
 .seg button.on {
-  background: rgba(228, 168, 113, 0.2);
+  background: rgba(var(--accent-caramel-rgb), 0.2);
   color: #f3c79b;
 }
 
@@ -141,7 +141,7 @@
 }
 
 .dog-preset.on {
-  border-color: #e4a871;
+  border-color: var(--accent-caramel);
   color: #f3c79b;
 }
 

@@ -82,7 +82,7 @@ body.settings-window {
 }
 
 .side-item.on {
-  background: rgba(228, 168, 113, 0.16);
+  background: rgba(var(--accent-caramel-rgb), 0.16);
   color: #f3c79b;
 }
 
