@@ -23,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_NOACTIVATE,
-    SWP_NOZORDER, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    SWP_NOSIZE, SWP_NOZORDER, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 /// Logical size of the subtle notch tab when the island is in hidden/idle state.
@@ -401,13 +401,78 @@ pub fn overlay_begin(app: &AppHandle, pref: &str, apply: bool) -> Option<(f64, f
     Some((work.w / scale, work.h / scale, ox, oy))
 }
 
+/// Physical side of the square window while the island is carried.
+static CARRY_SIDE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// The display being carried over (work area, physical) and the drop's radius (logical).
+static CARRY_WORK: Mutex<Option<(Rect, f64, f64)>> = Mutex::new(None);
+
+/// Carrying the island: instead of covering the display, the window shrinks to a
+/// square of `side` logical px around the centre of the card (`off_x`, `off_y`
+/// inside the window) and is then only ever moved (`carry_step`). Returns
+/// `[scale, work x, y, w, h (physical), centre x, y, cursor x, y]`.
+pub fn carry_begin(app: &AppHandle, pref: &str, off_x: f64, off_y: f64, side: f64, droplet: f64) -> Option<[f64; 9]> {
+    let win = window(app)?;
+    let m = target_monitor(app, pref)?;
+    let (_, work) = rect_of(&m);
+    let scale = m.scale_factor();
+    let at = win.outer_position().ok()?;
+    let cx = at.x as f64 + off_x * scale;
+    let cy = at.y as f64 + off_y * scale;
+    let s = (side * scale).round();
+    CARRY_SIDE.store(s as i32, Ordering::Relaxed);
+    let (x, y) = ((cx - s / 2.0).round(), (cy - s / 2.0).round());
+    // One call for position and size, so the island is never drawn in between.
+    if let Some(hwnd) = hwnd_of(&win) {
+        unsafe {
+            let _ = SetWindowPos(hwnd, None, x as i32, y as i32, s as i32, s as i32, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+    let size = PhysicalSize::new(s as u32, s as u32);
+    let _ = win.set_size(size);
+    let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
+    let _ = win.set_size(size);
+    let _ = win.set_ignore_cursor_events(false);
+    *CARRY_WORK.lock().unwrap() = Some((work, scale, droplet / 2.0));
+    // The water over the display, the island's small window above it.
+    crate::water::show(app, work.x, work.y, work.w, work.h);
+    crate::water::raise_island(app);
+    let (px, py) = cursor_physical()?;
+    Some([scale, work.x, work.y, work.w, work.h, cx, cy, px, py])
+}
+
+/// Moves the carried window so its centre is at (`cx`, `cy`) physical; answers
+/// with the cursor and whether the left button is still down.
+pub fn carry_step(app: &AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
+    let win = window(app)?;
+    let s = CARRY_SIDE.load(Ordering::Relaxed) as f64;
+    if let Some(hwnd) = hwnd_of(&win) {
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                (cx - s / 2.0).round() as i32,
+                (cy - s / 2.0).round() as i32,
+                0,
+                0,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE,
+            );
+        }
+    }
+    if let Some((work, scale, r)) = *CARRY_WORK.lock().unwrap() {
+        crate::water::ball(app, (cx - work.x) / scale, (cy - work.y) / scale, r);
+    }
+    let (px, py) = cursor_physical()?;
+    let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000 != 0;
+    Some([px, py, if down { 1.0 } else { 0.0 }])
+}
+
 pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
     let m = target_monitor(app, pref)?;
     let (screen, work) = rect_of(&m);
     Some((screen, work, m.scale_factor()))
 }
 
-fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
+pub(crate) fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
     let raw = win.hwnd().ok()?.0 as isize;
     if raw == 0 {
         return None;

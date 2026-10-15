@@ -59,6 +59,11 @@ export const Bridge = {
    */
   islandOverlayBegin: (apply = true) =>
     call<[number, number, number, number]>("island_overlay_begin", { apply }),
+  /** Carry mode: the window becomes a `side`-px square around the card's centre. */
+  islandCarryBegin: (offX: number, offY: number, side: number, droplet: number) =>
+    call<number[]>("island_carry_begin", { offX, offY, side, droplet }),
+  /** Moves the carried window; answers [cursorX, cursorY, buttonDown]. */
+  islandCarryStep: (cx: number, cy: number) => call<number[]>("island_carry_step", { cx, cy }),
   /** Dock on `edge` at `along` ("" = put it back) and end the overlay. */
   islandOverlayEnd: (edge: string, along: number) => call<void>("island_overlay_end", { edge, along }),
   resetPosition: () => call<void>("reset_position"),
