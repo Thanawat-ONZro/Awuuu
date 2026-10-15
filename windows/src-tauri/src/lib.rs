@@ -710,6 +710,11 @@ pub fn open_settings_at(app: &AppHandle, agent: &str) {
 
 /// Settings → "aw on PATH".
 #[tauri::command]
+fn monitor_count(app: AppHandle) -> usize {
+    island::monitor_count(&app)
+}
+
+#[tauri::command]
 fn aw_path_status() -> bool {
     cli::on_path()
 }
@@ -880,6 +885,7 @@ pub fn run() {
             open_n8n,
             open_settings_window,
             aw_path_status,
+            monitor_count,
             detect_agents,
             aw_path_set,
             set_paused,

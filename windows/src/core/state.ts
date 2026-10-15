@@ -188,7 +188,7 @@ export interface Settings {
   soundVolume: number;
   autoCloseInterval: number;
   activeIntegrations: string[];
-  screen: "primary" | "cursor";
+  screen: "primary" | "cursor" | `display:${number}`;
   /** The screen edge the island docks to. */
   position: "top" | "bottom" | "left" | "right";
   /** Where along that edge, 0..1. */

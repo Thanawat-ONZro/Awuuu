@@ -120,6 +120,7 @@ export const Bridge = {
   /** Welcome page: agents on this machine and their hook status. */
   detectAgents: () =>
     call<{ id: HookAgentId; name: string; present: boolean; hooksInstalled: boolean }[]>("detect_agents"),
+  monitorCount: () => call<number>("monitor_count"),
   awPathStatus: () => call<boolean>("aw_path_status"),
   awPathSet: (on: boolean) => callOrThrow<boolean>("aw_path_set", { on }),
   /** Integrations that are set up (their pills show). */

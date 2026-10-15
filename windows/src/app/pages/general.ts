@@ -60,6 +60,13 @@ function generalSection(): HTMLElement {
     h("option", { value: "primary", text: t("Main display") }),
     h("option", { value: "cursor", text: t("Display under the cursor") }),
   );
+  void Bridge.monitorCount().then((n) => {
+    const count = n ?? 1;
+    for (let i = 1; i <= count && count > 1; i++) {
+      screen.append(h("option", { value: `display:${i}`, text: `${t("Display")} ${i}` }));
+    }
+    screen.value = settings.screen;
+  });
   screen.value = settings.screen;
   screen.addEventListener("change", () => {
     settings.screen = screen.value as Settings["screen"];
