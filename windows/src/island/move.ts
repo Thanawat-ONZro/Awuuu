@@ -335,6 +335,14 @@ export class Mover {
         return abort("overlay could not start");
       }
     }
+    // The overlay call can return before the webview has resized: drawing now
+    // would put the island at overlay coordinates inside the old window (a jump).
+    if (IS_TAURI && !ready) {
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, 250);
+        window.addEventListener("resize", () => { clearTimeout(t); r(); }, { once: true });
+      });
+    }
     place();
     // Let go while the window was changing: put everything back.
     if (letGo) void finish(null);
