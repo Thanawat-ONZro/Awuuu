@@ -147,7 +147,9 @@ export class Mover {
       : ([window.innerWidth, window.innerHeight, 0, 0] as [number, number, number, number]);
     if (!geometry) return abort("overlay could not start");
     if (letGo) return abort("released before the overlay");
-    const [W, H, ox, oy] = geometry;
+    const [W, H] = geometry;
+    let ox = geometry[2];
+    let oy = geometry[3];
     void Bridge.log(`move: overlay ${W}x${H} from ${fromEdge} ${fromAlong.toFixed(2)}, window at ${ox},${oy}`);
     // Where the island is now, in overlay coordinates: it starts there.
     const r0 = this.host.rect();
@@ -330,9 +332,20 @@ export class Mover {
       // The resize event runs before the first frame at the overlay's size is
       // painted, so the island is not drawn at its old window coordinates.
       window.addEventListener("resize", place);
-      if (!(await Bridge.islandOverlayBegin(true))) {
+      const applied = await Bridge.islandOverlayBegin(true);
+      if (!applied) {
         window.removeEventListener("resize", place);
         return abort("overlay could not start");
+      }
+      // The window can have moved or resized (the island opening or closing)
+      // between measuring and switching: the origin the overlay really has
+      // wins, and the island is placed from it so it does not jump.
+      if (applied[2] !== ox || applied[3] !== oy) {
+        void Bridge.log(`move: window shifted ${ox},${oy} -> ${applied[2]},${applied[3]} before the overlay`);
+        pos.x += applied[2] - ox;
+        pos.y += applied[3] - oy;
+        ox = applied[2];
+        oy = applied[3];
       }
     }
     place();
