@@ -11,6 +11,9 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - Tray menu: "Wardrobe…" opens Appearance.
 
 ### Changed
+- Moving the island: it now becomes a round droplet with just the dog while you carry it (instead of a small capsule), and rounds back into the pill when it docks.
+
+### Changed
 - The dog notices tab changes: a short tail wag and a lean toward the new tab, ears up when an alert rises, a hop when an agent finishes. Off with "reduce motion".
 - The Awuuu window changes pages with a short ease-in, and its sidebar highlight slides to the open page.
 - Switching tabs in the island now moves: the lit-tab highlight slides to the new tab (stretching a little on the way) and the new view slides in from the side of its tab, while alerts rise from below. With "reduce motion" on in Windows it is a short fade. Motion values live in `windows/src/core/motion.css` and `MOTION` in `anim.ts`.

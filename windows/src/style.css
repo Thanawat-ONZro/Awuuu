@@ -376,6 +376,13 @@ body {
   transition: none;
 }
 
+/* A droplet carries nothing but the dog. */
+#root.moving #content,
+#root.moving #mini-grid {
+  opacity: 0;
+  pointer-events: none;
+}
+
 #root.moving #wake-strip {
   display: none;
 }

@@ -8,7 +8,7 @@ import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
-  type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP, COMPACT_W, NOTCH_H,} from "../core/layout";
+  type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP,} from "../core/layout";
 import { Sound } from "../core/sound";
 import { State, type PendingFile } from "../core/state";
 import { BotEngine } from "../mochi/engine";
@@ -60,6 +60,9 @@ const SIDE_LIFT = 160;
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
+
+/** Diameter of the droplet the island becomes while it is carried (move.ts). */
+const DROPLET = 48;
 
 export class Island {
   readonly fsm = new IslandStateMachine();
@@ -161,11 +164,13 @@ export class Island {
     this.wireFsm();
     this.mover = new Mover(
       {
-        pillSize: (edge: Edge) =>
-          edge === "left" || edge === "right" ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H },
+        pillSize: () => ({ w: DROPLET, h: DROPLET }),
         rect: () => this.islandRect(),
         setMoveOverride: (at) => {
+          const changed = (this.moveAt === null) !== (at === null);
           this.moveAt = at;
+          // Picked up: the pill rounds into a droplet; put down: back again.
+          if (changed) this.animateGeometry(false);
           this.applyGeometry();
         },
         previewEdge: (edge: Edge) => {
@@ -789,6 +794,8 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
+    // Being carried, the island is a droplet whatever it was.
+    if (this.moveAt) return { w: DROPLET, h: DROPLET, r: DROPLET / 2 };
     const { w, h } = islandSize(
       State.mode,
       State.view,
@@ -1307,7 +1314,9 @@ export class Island {
   };
 
   private updateBotTargets() {
-    const p = botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
+    const p = this.moveAt
+      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: 24, opacity: 1 }
+      : botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
     this.botCx.target = p.cx;
     this.botCy.target = p.cy;
     this.botSize.target = p.diameter / 0.6;
