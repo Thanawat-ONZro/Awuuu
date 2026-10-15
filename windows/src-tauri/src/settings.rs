@@ -82,6 +82,9 @@ pub struct Settings {
     pub quiet_hours: String,
     #[serde(default = "yes")]
     pub show_time: bool,
+    /// Resting the pointer on the compact island opens it (off by default).
+    #[serde(default)]
+    pub open_on_hover: bool,
     pub autostart: bool,
     pub hooks_installed: bool,
     /// Claude model used by the chat. Changeable in the settings window.
@@ -95,6 +98,9 @@ pub struct Settings {
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+    /// Interface language: "auto" (Thai when Windows is Thai), "en" or "th".
+    #[serde(default = "default_language")]
+    pub language: String,
     /// Keep what the agents did (history.json) for the dashboard, and for how
     /// many days (1–90).
     #[serde(default = "yes")]
@@ -107,6 +113,9 @@ pub struct Settings {
     /// How Awuuu looks (coat, ears, tail…). The front end owns the shape.
     #[serde(default)]
     pub dog: serde_json::Value,
+    /// Dog outfit: "auto" (by season), "none" or an outfit id.
+    #[serde(default = "default_outfit")]
+    pub outfit: String,
     /// OAuth client ids for "Sign in with…" (public identifiers, not secrets).
     #[serde(default)]
     pub google_client_id: String,
@@ -114,6 +123,34 @@ pub struct Settings {
     pub microsoft_client_id: String,
     #[serde(default)]
     pub github_client_id: String,
+    /// Global shortcuts: action id -> accelerator ("Ctrl+Alt+Space"), only the
+    /// ones the user changed; "" = off. Defaults live in hotkeys.rs.
+    #[serde(default)]
+    pub shortcuts: std::collections::BTreeMap<String, String>,
+    /// The dog on the desktop (desktop_dog.rs). Off by default; missing in
+    /// older settings.json → off.
+    #[serde(default)]
+    pub desktop_dog: DesktopDogPref,
+}
+
+/// `enabled` is the user's switch (Settings → General). The rest is written
+/// by Rust only: whether the dog lives on the desktop, and where, per monitor.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DesktopDogPref {
+    pub enabled: bool,
+    pub on_desktop: bool,
+    /// Monitor key → top-left of the dog window, logical px from the top-left
+    /// of that monitor's work area.
+    pub spots: std::collections::BTreeMap<String, DogSpot>,
+    /// The monitor the dog sat on last.
+    pub last: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct DogSpot {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -124,6 +161,10 @@ pub struct ChatProvider {
     /// ".../v1" — `/chat/completions` and `/models` are appended.
     pub base_url: String,
     pub model: String,
+}
+
+fn default_outfit() -> String {
+    "auto".into()
 }
 
 fn default_hide_after() -> f64 {
@@ -180,6 +221,10 @@ impl Settings {
     }
 }
 
+fn default_language() -> String {
+    "auto".to_string()
+}
+
 fn default_model() -> String {
     crate::claude::DEFAULT_MODEL.to_string()
 }
@@ -221,17 +266,22 @@ impl Default for Settings {
             quiet_hours: String::new(),
             show_time: true,
             autostart: false,
+            open_on_hover: false,
             hooks_installed: false,
             model: default_model(),
             hide_after: default_hide_after(),
             update_check: None,
+            language: default_language(),
             history_enabled: true,
             history_days: default_history_days(),
             chat_height: 0.0,
             dog: serde_json::Value::Null,
+            outfit: default_outfit(),
             google_client_id: String::new(),
             microsoft_client_id: String::new(),
             github_client_id: String::new(),
+            shortcuts: Default::default(),
+            desktop_dog: DesktopDogPref::default(),
         }
     }
 }
@@ -274,4 +324,29 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
     let json = serde_json::to_vec_pretty(settings)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(settings_path(), json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn older_settings_load_with_the_desktop_dog_off() {
+        let json = serde_json::to_value(Settings::default()).unwrap();
+        let mut obj = json.as_object().unwrap().clone();
+        obj.remove("desktopDog");
+        let s: Settings = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
+        assert_eq!(s.desktop_dog, DesktopDogPref::default());
+        assert!(!s.desktop_dog.enabled);
+    }
+
+    #[test]
+    fn a_partial_desktop_dog_entry_fills_in_the_rest() {
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        v["desktopDog"] = serde_json::json!({ "enabled": true });
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert!(s.desktop_dog.enabled);
+        assert!(!s.desktop_dog.on_desktop);
+        assert!(s.desktop_dog.spots.is_empty());
+    }
 }

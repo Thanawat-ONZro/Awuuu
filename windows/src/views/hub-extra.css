@@ -52,17 +52,17 @@
   font: 500 10.5px var(--font);
   color: var(--dim-2);
   white-space: nowrap;
-  --tone: #22c55e;
+  --tone: var(--state-done);
 }
 
 .limit-chip.warm {
-  --tone: #f5a524;
+  --tone: var(--state-wait);
   color: #fbc06a;
 }
 
 .limit-chip.hot {
-  --tone: #f4505e;
-  color: #ff8d97;
+  --tone: var(--state-error);
+  color: var(--state-error-text);
 }
 
 .limit-chip .ring {
@@ -70,7 +70,7 @@
   height: 12px;
   border-radius: 50%;
   background:
-    radial-gradient(closest-side, #1a1612 58%, transparent 60%),
+    radial-gradient(closest-side, var(--bg-kibble) 58%, transparent 60%),
     conic-gradient(var(--tone) calc(var(--used) * 1%), rgba(255, 255, 255, 0.16) 0);
 }
 

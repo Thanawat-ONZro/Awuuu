@@ -7,28 +7,28 @@
   --font: system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
-  --ink: #fff4e6;        /* primary text */
-  --ink-2: #fbefdf;
+  --ink: var(--ink-cream);        /* primary text */
+  --ink-2: var(--ink-cream-2);
   --dim: #a89a8a;
   --dim-2: #a29484;
   --dim-3: #7d7062;
   --dim-4: #706356;
   --dim-5: #5a4e43;
-  --card: #1a1612;
-  --card-flat: #120f0c;
-  --tab-on: #241e19;
+  --card: var(--bg-kibble);
+  --card-flat: var(--bg-kibble-flat);
+  --tab-on: var(--bg-biscuit);
   --hairline: rgba(255, 255, 255, 0.035);
-  --red: #f0645a;
-  --red-text: #ff8d97;
-  --green: #22c55e;
-  --green-2: #34d399;
-  --amber: #f5a524;
-  --cyan: #22d3ee;
-  --indigo: #6366f1;
-  --pink: #f472b6;
-  --accent: #e4a871;      /* caramel — primary buttons, highlights */
-  --accent-hover: #edb985;
-  --accent-ink: #2b1e14;  /* text on caramel */
+  --red: var(--state-error);
+  --red-text: var(--state-error-text);
+  --green: var(--state-done);
+  --green-2: var(--state-done);
+  --amber: var(--state-wait);
+  --cyan: var(--state-agent);
+  --indigo: var(--state-agent);
+  --pink: var(--state-info);
+  --accent: var(--accent-caramel);      /* caramel — primary buttons, highlights */
+  --accent-hover: var(--accent-caramel-hover);
+  --accent-ink: var(--accent-caramel-ink);  /* text on caramel */
 }
 
 * {
@@ -256,9 +256,32 @@ body {
 }
 
 .tabs {
+  position: relative;
   display: flex;
   gap: 5px;
   padding-left: 14px;
+}
+
+/* One highlight that travels to the lit tab (island/transition.ts moveThumb). */
+.tab-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 22px;
+  border-radius: 13px;
+  background: var(--tab-on);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--m-fast) ease;
+}
+
+.tab-thumb.on {
+  opacity: 1;
+}
+
+.tab {
+  position: relative;
 }
 
 .tab {
@@ -279,7 +302,6 @@ body {
 }
 
 .tab.on {
-  background: var(--tab-on);
   color: var(--ink);
 }
 
@@ -433,20 +455,18 @@ body {
   min-height: 0;
 }
 
+/* View changes are Web Animations (island/transition.ts): they know which way
+   the island is going. CSS only holds the resting states. */
 .view {
   position: absolute;
   inset: 0;
   opacity: 0;
-  transform: scale(0.97);
   pointer-events: none;
-  transition: opacity 0.16s ease-in;
 }
 
 .view.on {
   opacity: 1;
-  transform: scale(1);
   pointer-events: auto;
-  transition: opacity 0.3s ease-out 0.16s, transform 0.3s cubic-bezier(0.3, 1.2, 0.4, 1) 0.16s;
 }
 
 /* A view that is not on is only transparent, not gone: an infinite animation
@@ -1050,7 +1070,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .hermes-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; align-self: center; background: #8a7d70; transition: background 0.3s; }
 .hermes-dot.online { background: #4ade80; }
-.hermes-dot.offline { background: #f4505e; }
+.hermes-dot.offline { background: var(--state-error); }
 .hermes-dot.nokey { background: #f59e0b; }
 
 .chat-used {
@@ -1173,12 +1193,12 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── Uploading ──────────────────────────────────────────────────────────── */
 
 .up-card {
-  background: radial-gradient(260px 260px at 50% 140%, rgba(52, 211, 153, 0.14), transparent 70%),
+  background: radial-gradient(260px 260px at 50% 140%, rgba(var(--state-done-rgb), 0.14), transparent 70%),
     var(--card);
 }
 
 .up-card.done {
-  background: radial-gradient(260px 260px at 50% 140%, rgba(52, 211, 153, 0.28), transparent 70%),
+  background: radial-gradient(260px 260px at 50% 140%, rgba(var(--state-done-rgb), 0.28), transparent 70%),
     var(--card);
 }
 
@@ -1224,7 +1244,7 @@ input[type="range"]::-webkit-slider-thumb {
 .up-fill {
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(90deg, #1fa87a, #34d399);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--state-done) 70%, #000), var(--state-done));
 }
 
 .up-glow {
@@ -1299,8 +1319,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-tag.bad {
   font: 600 9.5px var(--font);
-  color: #f4505e;
-  background: rgba(244, 80, 94, 0.14);
+  color: var(--state-error);
+  background: rgba(var(--state-error-rgb), 0.14);
   border-radius: 4px;
   padding: 0 4px;
 }
@@ -1699,7 +1719,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .pill-x:hover {
-  background: #f4505e;
+  background: var(--state-error);
 }
 
 .hub-head {
@@ -1801,12 +1821,12 @@ input[type="range"]::-webkit-slider-thumb {
 
 .hub-step.k-done .mark,
 .hub-step.k-done .txt {
-  color: #34d399;
+  color: var(--state-done);
 }
 
 .hub-step.k-error .mark,
 .hub-step.k-error .txt {
-  color: #f4505e;
+  color: var(--state-error);
 }
 
 .hub-step.now {
@@ -1858,15 +1878,15 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-clear:hover {
-  background: rgba(244, 80, 94, 0.18);
-  border-color: rgba(244, 80, 94, 0.4);
-  color: #ff8d97;
+  background: rgba(var(--state-error-rgb), 0.18);
+  border-color: rgba(var(--state-error-rgb), 0.4);
+  color: var(--state-error-text);
 }
 
 .hub-waiting {
   flex: 0 0 auto;
-  border: 1px solid rgba(245, 165, 36, 0.5);
-  background: rgba(245, 165, 36, 0.14);
+  border: 1px solid rgba(var(--state-wait-rgb), 0.5);
+  background: rgba(var(--state-wait-rgb), 0.14);
   color: #f5c46a;
   font: 600 12px var(--font);
   border-radius: 10px;
@@ -1876,7 +1896,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .hub-waiting:hover {
-  background: rgba(245, 165, 36, 0.24);
+  background: rgba(var(--state-wait-rgb), 0.24);
 }
 
 .hub-tag {
@@ -1967,7 +1987,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .today-row.bad .today-title {
-  color: #f4505e;
+  color: var(--state-error);
 }
 
 .today-icon {
@@ -2064,18 +2084,18 @@ input[type="range"]::-webkit-slider-thumb {
   /* A request is waiting for an answer: amber, pulsing for as long as it waits. */
   #root.glow-wait.mode-compact:not(.moving) #island::after,
   #root.glow-wait.mode-expanded:not(.moving) #island::after {
-    --glow: rgba(245, 165, 36, 0.85);
+    --glow: rgba(var(--state-wait-rgb), 0.85);
     animation: glow-pulse 1.4s ease-in-out infinite;
   }
 
   /* A session finished: one green flash. It failed: a red one, and a shake. */
   #root.glow-done #island::after {
-    --glow: rgba(52, 211, 153, 0.9);
+    --glow: rgba(var(--state-done-rgb), 0.9);
     animation: glow-flash 0.9s ease-out 1;
   }
 
   #root.glow-error #island::after {
-    --glow: rgba(244, 80, 94, 0.95);
+    --glow: rgba(var(--state-error-rgb), 0.95);
     animation: glow-flash 0.6s ease-out 1;
   }
 
@@ -2103,3 +2123,88 @@ input[type="range"]::-webkit-slider-thumb {
   60% { translate: -3px 0; }
   80% { translate: 3px 0; }
 }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   Moves and presses become colour/opacity changes; loops stop. Spinners keep
+   turning, slower. Keep this block last so it wins over the rules above. */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .pill,
+  .send-btn,
+  .switch::after {
+    transition-property: opacity, background-color, border-color, color, box-shadow, filter;
+    transition-duration: var(--m-fast);
+    transition-delay: 0s;
+    transition-timing-function: ease;
+  }
+
+  .chip {
+    transform: none;
+    transition-property: border-color;
+    transition-duration: var(--m-fast);
+    transition-delay: 0s;
+  }
+
+  .send-btn:active {
+    transform: none;
+  }
+
+  .shimmer,
+  .typing i,
+  .drop-frame rect,
+  .drop-card.over .drop-frame rect,
+  .pulse {
+    animation: none;
+  }
+
+  .int-refresh.spin svg {
+    animation-duration: 1.8s;
+  }
+}
+
+/* ── Diff view (views/diff-view.ts) ─────────────────────────────────────── */
+.diff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 10px 80px;
+  min-height: 0;
+}
+.diff-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 12.5px var(--font);
+  color: var(--ink-cream);
+}
+.diff-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-counts { flex: 1 1 auto; color: var(--dim-2); font-weight: 500; white-space: nowrap; }
+.diff-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 0;
+  background: var(--bg-biscuit);
+  color: var(--ink-cream);
+  cursor: pointer;
+}
+.diff-btn:hover { background: var(--bg-kibble-flat); }
+.diff-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--bg-kibble-flat);
+  font: 400 11.5px / 1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.diff-line { white-space: pre; padding: 0 8px; color: var(--ink-cream-2); min-width: max-content; }
+.diff-line.added { background: rgba(var(--state-done-rgb), 0.16); color: var(--state-done); }
+.diff-line.removed { background: rgba(var(--state-error-rgb), 0.16); color: var(--state-error-text); }
+.diff-hunk, .diff-gap, .diff-note { padding: 1px 8px; color: var(--dim-2); }
+.diff-note { font-style: italic; }
+.hub-step.has-diff { cursor: pointer; }
+.hub-step.has-diff:hover { background: rgba(255, 255, 255, 0.07); }

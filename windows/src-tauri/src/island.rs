@@ -111,7 +111,7 @@ pub fn window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(WINDOW_LABEL)
 }
 
-fn cursor_physical() -> Option<(f64, f64)> {
+pub(crate) fn cursor_physical() -> Option<(f64, f64)> {
     let mut p = POINT::default();
     unsafe { GetCursorPos(&mut p).ok()? };
     Some((p.x as f64, p.y as f64))
@@ -154,7 +154,7 @@ unsafe extern "system" fn revoke_render_widget(hwnd: HWND, _: LPARAM) -> BOOL {
 
 /// True while the left mouse button is held — the only signal we get that a
 /// drag might be in flight before it reaches the window.
-fn left_button_down() -> bool {
+pub(crate) fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
@@ -602,6 +602,7 @@ impl Watch {
             if !first {
                 crate::log::line("display layout changed — repositioning".to_string());
                 let _ = self.app.emit_to(WINDOW_LABEL, "screen-changed", ());
+                crate::desktop_dog::reclamp(&self.app);
             }
         }
     }
@@ -633,6 +634,9 @@ impl Watch {
                 (x, y, None, true)
             }
         };
+        // The dog on the desktop hears every event too (one atomic load while
+        // it is home): its click-through, its eyes and its drag.
+        crate::desktop_dog::on_mouse(&self.app, cx, cy, edge == Some(false));
         let Some(win) = window(&self.app) else { return };
         // Moving the island: the overlay window takes every mouse event itself.
         if self.gate.overlay.load(Ordering::Relaxed) {

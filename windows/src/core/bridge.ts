@@ -3,13 +3,13 @@
 // `npm run dev` alone.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
 import type { IslandLayout } from "./layout";
 
 /** Agents whose hooks Awuuu installs (Rust hooks::HookAgent). */
-export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex";
+export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex" | "gemini" | "cursor";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -66,6 +66,15 @@ export const Bridge = {
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 
+  /** The sounds folder (%APPDATA%\Awuuu\sounds) and which of these names it replaces. */
+  userSounds: (names: readonly string[]) =>
+    call<{ folder: string; custom: string[] }>("user_sounds", { names: [...names] }),
+  /** The user's file for one sound, as raw bytes. */
+  userSound: (name: string) => call<ArrayBuffer>("user_sound", { name }),
+  revealSoundsFolder: () => call<void>("reveal_sounds_folder"),
+  /** Tells the island to read the sounds folder again ("sounds-changed"). */
+  reloadSounds: () => call<void>("reload_sounds"),
+
   /** "Open terminal" → opens the folder in VS Code when `code` is on PATH. */
   openInVSCode: (path: string | null) => call<boolean>("open_in_vscode", { path }),
 
@@ -76,6 +85,13 @@ export const Bridge = {
 
   /** Writes to %LOCALAPPDATA%\Awuuu\awuuu.log, next to the Rust lines. */
   log: (message: string) => call<void>("log_line", { message }),
+
+  // ── Composio via Hermes (opt-in, docs/HERMES-COMPOSIO.md) ───────────
+  composioStatus: () => call<ComposioStatus>("composio_status"),
+  composioPreview: (target: "config" | "env", install: boolean, url: string) =>
+    callOrThrow<HookPreview>("composio_preview", { target, install, url }),
+  composioApply: (target: "config" | "env", install: boolean, url: string, fingerprint: string) =>
+    callOrThrow<string>("composio_apply", { target, install, url, fingerprint }),
 
   // ── Agent hooks (Claude, AGY) ───────────────────────────────────────
   agentHooksStatus: (agent: HookAgentId) =>
@@ -139,6 +155,8 @@ export const Bridge = {
   hermesStatus: () => callOrThrow<string[]>("hermes_status"),
   judgeTests: (command: string, output: string) => callOrThrow<"passed" | "failed" | "unclear">("judge_tests", { command, output }),
   setApprovalKeys: (on: boolean) => call<void>("set_approval_keys", { on }),
+  /** Shortcuts page: action -> why its keys could not be registered. */
+  shortcutErrors: () => call<Record<string, string>>("shortcut_errors"),
   doctor: () => call<{ name: string; level: "ok" | "warn" | "fail"; detail: string; fix?: string | null }[]>("doctor"),
   gitSnapshot: (cwd: string) => call<import("../island/ground").GitSnapshot | null>("git_snapshot", { cwd }),
   /** Check GitHub for a newer Awuuu now; Rust shows the result natively. */
@@ -206,7 +224,32 @@ export const Bridge = {
     callOrThrow<{ userCode: string; verificationUri: string; expiresIn: number }>("github_device_start"),
   /** Step 2: resolves once the code was entered; throws when it expired or was cancelled. */
   githubDeviceWait: () => callOrThrow<SignInStatus>("github_device_wait"),
+
+  // ── The dog on the desktop (desktop_dog.rs) ───────────────────────────────
+  /** Dragging the dog out of the island: its window appears under the cursor and follows it. */
+  dogPickUp: () => call<boolean>("desktop_dog_pick_up"),
+  /** A drag started on the dog where it sits; Rust carries it until release. */
+  dogDragBegin: () => call<boolean>("desktop_dog_drag_begin"),
+  /** Start of a flight: the end points (window top-left, physical px), or null. */
+  dogFlightBegin: (kind: "out" | "home") =>
+    call<{ from: { x: number; y: number }; to: { x: number; y: number } }>("desktop_dog_flight_begin", { kind }),
+  /** One step of a flight. */
+  dogSetPosition: (x: number, y: number) => call<void>("desktop_dog_set_position", { x, y }),
+  /** End of a flight; `forget`: the user brought it home for good. */
+  dogFlightEnd: (kind: "out" | "home", forget: boolean) => call<void>("desktop_dog_flight_end", { kind, forget }),
+  /** It stays home from now on (the feature was switched off). */
+  dogForget: () => call<void>("desktop_dog_forget"),
 };
+
+/** An event for one window only (island ⇄ dog). No-op in a plain browser. */
+export async function emitToWindow(label: string, event: string, payload?: unknown) {
+  if (!IS_TAURI) return;
+  try {
+    await emitTo(label, event, payload);
+  } catch (err) {
+    console.error(`[awuuu] emit ${event} failed`, err);
+  }
+}
 
 /** One provider on the Integrations page. */
 export interface SignInStatus {
@@ -301,6 +344,15 @@ export interface HookStatus {
   settingsPath: string;
   hookPath: string;
   hookReady: boolean;
+}
+
+export interface ComposioStatus {
+  configPath: string;
+  envPath: string;
+  configInstalled: boolean;
+  envInstalled: boolean;
+  keySaved: boolean;
+  url: string | null;
 }
 
 export interface HookPreview {

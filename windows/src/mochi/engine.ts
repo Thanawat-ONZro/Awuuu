@@ -4,6 +4,7 @@
 // (design/prototype/notch-buddy.html, the visual source of truth) — the Swift
 // arc angles produce a different shape.
 
+import { currentOutfit, drawOutfit } from "./outfits";
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
@@ -356,6 +357,11 @@ export class BotEngine {
     this.anim("oy", [[-0.22, 150, Ease.out], [0.03, 170, Ease.inOut], [0, 200, Ease.back]]);
     this.anim("sy", [[1.1, 150, Ease.out], [0.84, 170, Ease.inOut], [1, 220, Ease.back]]);
     this.anim("sx", [[0.93, 150, Ease.out], [1.12, 170, Ease.inOut], [1, 220, Ease.back]]);
+  }
+
+  /** A short lean to one side (sign = side) and back: the dog looks where the island is going. */
+  lean(amount: number) {
+    this.anim("tilt", [[amount, 120, Ease.out], [amount * 0.6, 160, Ease.lin], [0, 260, Ease.back]]);
   }
 
   /** Wet-dog shake: fast side-to-side twist that dies out. */
@@ -866,6 +872,7 @@ export class BotEngine {
       }, pal);
     }
     if (R > 9) drawCollarTag(x, rx, ry, dogA, pal);
+    if (!this.isMini && dogA > 0.01) drawOutfit(x, rx, ry, currentOutfit(), { shift: earShift, alpha: dogA });
     if (this.morph > 0.05) this.drawMouth(x, body, R);
 
     x.restore();

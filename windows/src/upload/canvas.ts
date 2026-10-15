@@ -14,6 +14,7 @@ import {
   USC, UploadSeq, eIn, eInOut, eOut, lerp, progressAt, setUploadBox, uploadOrigin,
   type UploadEyeShape, type UploadFrame,
 } from "./sequence";
+import { t } from "../i18n/i18n";
 
 const FONT = 'system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif';
 
@@ -466,14 +467,15 @@ export class UploadCanvas {
 
 /** The drop zone's line: more files are welcome while some already wait. */
 export function dropTitle(): string {
-  return State.droppedFiles.length > 0 ? "Toss more files to Awuuu" : "Toss files to Awuuu";
+  return State.droppedFiles.length > 0 ? t("Toss more files to Awuuu") : t("Toss files to Awuuu");
 }
 
 /** "Uploading notes.txt" / "Uploading 3 files": what the drop being swallowed brought. */
-export function uploadLabel(): string {
-  if (State.uploadCount > 1) return `Uploading ${State.uploadCount} files`;
-  const last = State.droppedFiles[State.droppedFiles.length - 1];
-  return `Uploading ${last?.name ?? "file"}`;
+export function uploadLabel(bare = false): string {
+  const what = State.uploadCount > 1
+    ? t("{n} files", { n: State.uploadCount })
+    : State.droppedFiles[State.droppedFiles.length - 1]?.name ?? t("file");
+  return bare ? what : t("Uploading {what}", { what });
 }
 
 /** `s` cut with an ellipsis so it fits in `max` px. */

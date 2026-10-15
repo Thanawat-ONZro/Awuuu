@@ -2,19 +2,23 @@
 // colours and wording are copied from the Swift views so both platforms read
 // identically.
 
+import { assembleAnswer, togglePick } from "../island/ask-question";
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State, agentInfo, type AgentTask, type LogEntry, type LogKind } from "../core/state";
 import { Bridge } from "../core/bridge";
+import { moveThumb, tabOf, TAB_ORDER } from "../island/transition";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
+import { buildDiffView, showDiff } from "./diff-view";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { EXTRA_IDS, hasExtraData, renderExtraCard, renderToday, weatherChip } from "./today";
 import "./hub-extra.css";
 import { planHeadline } from "../island/plan";
 import { refreshUsage } from "../island/usage";
+import { t } from "../i18n/i18n";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -98,24 +102,24 @@ const ICON_DASHBOARD =
 const ICON_CLEAR = "M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5";
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Overview (Integrations)", onclick: () => go("overview") }, svg(ICONS.kennel, 13));
-  const tabAgents = h("button", { class: "tab", title: "Agent Sessions", onclick: () => go("agents") }, svg(ICONS.terminal, 13));
-  const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
-  const tabDrop = h("button", { class: "tab", title: "Feed Awuuu a file", onclick: () => go("upload") }, svg(ICONS.bone, 13));
+  const tabHome = h("button", { class: "tab", title: t("Overview (Integrations)"), onclick: () => go("overview") }, svg(ICONS.kennel, 13));
+  const tabAgents = h("button", { class: "tab", title: t("Agent Sessions"), onclick: () => go("agents") }, svg(ICONS.terminal, 13));
+  const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
+  const tabDrop = h("button", { class: "tab", title: t("Feed Awuuu a file"), onclick: () => go("upload") }, svg(ICONS.bone, 13));
 
   // Both open the Awuuu window: the gear where it was left, the list on Sessions.
   const open = (page?: string) => () => {
     actions.blip();
     actions.openSettingsWindow(page);
   };
-  const dashBtn = h("button", { title: "Dashboard", onclick: open("sessions") }, svg(ICON_DASHBOARD, 15));
-  const gearBtn = h("button", { class: "gear-btn", title: "Settings", onclick: open() }, svg(ICONS.gear, 17));
-  const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
+  const dashBtn = h("button", { title: t("Dashboard"), onclick: open("sessions") }, svg(ICON_DASHBOARD, 15));
+  const gearBtn = h("button", { class: "gear-btn", title: t("Settings"), onclick: open() }, svg(ICONS.gear, 17));
+  const soundBtn = h("button", { title: t("Mute"), onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
   const collapseBtn = h(
     "button",
     {
       class: "collapse-btn",
-      title: "Collapse to notch (Esc)",
+      title: t("Collapse to notch (Esc)"),
       onclick: () => {
         actions.blip();
         actions.collapse();
@@ -129,15 +133,20 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  // The lit-tab highlight is one element that travels, not a background per tab.
+  const thumb = h("div", { class: "tab-thumb" });
+  const tabEls = { agents: tabAgents, prompt: tabChat, overview: tabHome, upload: tabDrop };
+  let thumbX: number | null = null;
+
   // Grip: press and drag to move the island (Alt + drag works anywhere on it).
-  const grip = h("div", { class: "grip", title: "Drag to move the island (or Alt + drag)" },
+  const grip = h("div", { class: "grip", title: t("Drag to move the island (or Alt + drag)") },
     ...Array.from({ length: 6 }, () => h("i")));
   grip.addEventListener("pointerdown", (e) => actions.beginMove(e, grip));
 
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabAgents, tabChat, tabHome, tabDrop),
+    h("div", { class: "tabs" }, thumb, tabAgents, tabChat, tabHome, tabDrop),
     grip,
     h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
@@ -147,12 +156,21 @@ export function buildHeader(actions: ViewActions): ViewHost {
     sync() {
       const v = State.view;
       tabHome.classList.toggle("on", v === "overview" || v === "empty");
-      tabAgents.classList.toggle("on", v === "agents");
+      tabAgents.classList.toggle("on", tabOf(v) === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
+      const lit = tabOf(v);
+      thumb.classList.toggle("on", lit !== null);
+      if (lit !== null && TAB_ORDER.includes(lit)) {
+        const x = tabEls[lit].offsetLeft;
+        if (x > 0 && x !== thumbX) {
+          moveThumb(thumb, thumbX ?? x, x);
+          thumbX = x;
+        }
+      }
       clear(soundBtn);
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
-      soundBtn.title = State.settings.soundEnabled ? "Mute" : "Unmute";
+      soundBtn.title = State.settings.soundEnabled ? t("Mute") : t("Unmute");
       el.style.opacity = v === "confused" ? "0" : "1";
     },
   };
@@ -164,7 +182,7 @@ function buildOverview(actions: ViewActions): ViewHost {
   // Today first: one list of what needs you, from every integration. Tap a
   // pill for that integration's own card; tap Today to come back.
   const pills = h("div", { class: "hub-pills" });
-  const todayPill = h("button", { class: "today-pill", text: "Today" });
+  const todayPill = h("button", { class: "today-pill", text: t("Today") });
   todayPill.addEventListener("click", () => {
     State.overviewToday = true;
     cardKey = "";
@@ -240,7 +258,7 @@ function buildOverview(actions: ViewActions): ViewHost {
         const info = State.integrations[focused.id];
         body.append(hasExtraData(focused.id)
           ? renderExtraCard(focused.id)
-          : h("div", { class: "today-sub", text: info?.error ?? (info?.configured ? "Loading…" : "Not set up — see Settings.") }));
+          : h("div", { class: "today-sub", text: info?.error ?? (info?.configured ? t("Loading…") : t("Not set up — see Settings.")) }));
       } else {
         body.append(renderIntegrationCard(focused, hooks));
       }
@@ -263,7 +281,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     "button",
     {
       class: "icon-btn",
-      title: "Go to this session's terminal",
+      title: t("Go to this session's terminal"),
       onclick: () => {
         const s = State.focusedAgentSession;
         if (s) actions.focusTerminal(s);
@@ -280,7 +298,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
   // Sessions that are done can be cleared in one go.
   const clearDone = h("button", {
     class: "hub-clear",
-    title: "Clear finished — remove sessions that are idle or finished",
+    title: t("Clear finished — remove sessions that are idle or finished"),
     onclick: () => {
       for (const s of [...State.activeAgentSessions]) {
         if (["idle", "finished", "error"].includes(s.state)) actions.removeSession(s.id);
@@ -288,8 +306,8 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
     },
   }, svg(ICON_CLEAR, 14, { stroke: 1.9 }));
   const empty = h("div", { class: "hub-empty" },
-    h("div", { class: "title", text: "No active agent sessions." }),
-    h("div", { class: "sub", text: "Start Claude Code, AGY, Hermes, OpenCode or Codex and it shows up here." }),
+    h("div", { class: "title", text: t("No active agent sessions.") }),
+    h("div", { class: "sub", text: t("Start Claude Code, AGY, Hermes, OpenCode or Codex and it shows up here.") }),
   );
   // A request waiting for an answer is never hidden behind the hub.
   const waiting = h("button", { class: "hub-waiting", onclick: () => actions.setView("approval") });
@@ -333,7 +351,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
       const focused = State.focusedAgentSession;
       const nWaiting = State.approvalQueue.length;
       waiting.style.display = nWaiting ? "" : "none";
-      waiting.textContent = nWaiting === 1 ? "1 request waiting for you — Review" : `${nWaiting} requests waiting for you — Review`;
+      waiting.textContent = nWaiting === 1 ? t("1 request waiting for you — Review") : t("{n} requests waiting for you — Review", { n: nWaiting });
       const none = !focused || sessions.length === 0;
       empty.style.display = none ? "" : "none";
       for (const part of [pillRow, head, steps]) part.style.display = none ? "none" : "";
@@ -392,11 +410,11 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         clear(steps);
         const n = State.settings.logLines || 80;
         const recent = log.slice(-n);
-        if (recent.length === 0) steps.append(h("div", { class: "hub-step dim", text: "Waiting for the first step…" }));
+        if (recent.length === 0) steps.append(h("div", { class: "hub-step dim", text: t("Waiting for the first step…") }));
         recent.forEach((entry, i) => {
           const last = i === recent.length - 1;
           const live = last && ["working", "thinking"].includes(focused.state);
-          steps.append(logRow(entry, last, live));
+          steps.append(logRow(entry, last, live, entry.diff ? () => { showDiff(entry.diff!); actions.blip(); actions.setView("diff"); } : undefined));
         });
         if (focused.id !== lastStepsFocus) readingBack = false;
         if (!readingBack) toBottom();
@@ -439,10 +457,10 @@ function planCount(task: AgentTask): string {
 function resetText(at: number | null): string {
   if (!at) return "";
   const min = Math.round((at - Date.now()) / 60_000);
-  if (min <= 0) return "resets now";
-  if (min < 60) return `resets in ${min} min`;
-  if (min < 24 * 60) return `resets in ${Math.floor(min / 60)}h ${min % 60}m`;
-  return `resets ${new Date(at).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+  if (min <= 0) return t("resets now");
+  if (min < 60) return t("resets in {n} min", { n: min });
+  if (min < 24 * 60) return t("resets in {h}h {m}m", { h: Math.floor(min / 60), m: min % 60 });
+  return t("resets {when}", { when: new Date(at).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) });
 }
 
 /** One plan limit: a small ring, what is left, and when it resets (tooltip). */
@@ -452,8 +470,8 @@ function limitChip(l: { label: string; usedPercent: number; resetsAt: number | n
   const tone = used >= 90 ? "hot" : used >= 70 ? "warm" : "";
   const chip = h("span", { class: `limit-chip ${tone}`.trim() },
     h("i", { class: "ring", style: `--used:${used}` }),
-    h("span", { text: `${l.label} ${left}% left` }));
-  chip.title = [`${l.label} limit: ${Math.round(used)}% used`, resetText(l.resetsAt)].filter(Boolean).join(" · ");
+    h("span", { text: t("{label} {n}% left", { label: l.label, n: left }) }));
+  chip.title = [t("{label} limit: {n}% used", { label: l.label, n: Math.round(used) }), resetText(l.resetsAt)].filter(Boolean).join(" · ");
   return chip;
 }
 
@@ -461,14 +479,20 @@ const LOG_MARK: Record<LogKind, string> = {
   prompt: "›", sent: "›", tool: "▸", say: "●", think: "∴", done: "✓", error: "!", info: "·",
 };
 
-function logRow(entry: LogEntry, last: boolean, live: boolean): HTMLElement {
-  return h(
+function logRow(entry: LogEntry, last: boolean, live: boolean, onOpen?: () => void): HTMLElement {
+  const row = h(
     "div",
     { class: `hub-step k-${entry.kind}${last ? " now" : ""}`, title: entry.text },
     h("span", { class: "mark", text: LOG_MARK[entry.kind] }),
     h("span", { class: live ? "txt shimmer" : "txt", text: entry.text }),
     h("span", { class: "ago", text: ago(entry.at) }),
   );
+  if (onOpen) {
+    row.classList.add("has-diff");
+    row.title = t("{text} (click to see the diff)", { text: entry.text });
+    row.addEventListener("click", onOpen);
+  }
+  return row;
 }
 
 function ago(at: number): string {
@@ -481,14 +505,14 @@ function ago(at: number): string {
 
 function stateLabel(state: string): string {
   switch (state) {
-    case "working": return "working";
-    case "thinking": return "thinking";
-    case "approval": return "waiting for you";
-    case "question": return "has a question";
-    case "finished": return "finished";
-    case "error": return "error";
-    case "ratelimit": return "rate limited";
-    default: return "idle";
+    case "working": return t("working");
+    case "thinking": return t("thinking");
+    case "approval": return t("waiting for you");
+    case "question": return t("has a question");
+    case "finished": return t("finished");
+    case "error": return t("error");
+    case "ratelimit": return t("rate limited");
+    default: return t("idle");
   }
 }
 
@@ -509,7 +533,7 @@ function buildPill(task: AgentTask, actions: ViewActions, focused = false, onRem
     const end = h("span", { class: "pill-end" },
       h("span", { class: "pill-tag", style: `background:${task.color}22;color:${task.color}`, text: tagText }));
     if (onRemove) {
-      const x = h("button", { class: "pill-x", title: "Remove this session" }, svg(ICONS.xmark, 8, { stroke: 2.6 }));
+      const x = h("button", { class: "pill-x", title: t("Remove this session") }, svg(ICONS.xmark, 8, { stroke: 2.6 }));
       x.addEventListener("click", (e) => {
         e.stopPropagation();
         onRemove();
@@ -565,11 +589,11 @@ function buildEmpty(actions: ViewActions): ViewHost {
     h(
       "div",
       { style: "display:flex;flex-direction:column;gap:5px" },
-      h("div", { class: "title", text: "All quiet — Awuuu is on guard." }),
-      h("div", { class: "sub", text: "Toss me a file or a window, or ask me anything." }),
+      h("div", { class: "title", text: t("All quiet — Awuuu is on guard.") }),
+      h("div", { class: "sub", text: t("Toss me a file or a window, or ask me anything.") }),
     ),
     h("div", { class: "grow" }),
-    btn("Ask Awuuu", "primary", () => actions.setView("prompt")),
+    btn(t("Ask Awuuu"), "primary", () => actions.setView("prompt")),
   );
   return { el: h("div", { class: "view" }, card(null, body)), sync() {} };
 }
@@ -586,10 +610,10 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
   const other = h("input", {
     type: "text",
     class: "chat-input",
-    placeholder: "Other answer…",
+    placeholder: t("Other answer…"),
     spellcheck: "false",
   }) as HTMLInputElement;
-  const otherSend = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
+  const otherSend = h("button", { class: "send-btn", title: t("Send") }, svg(ICONS.arrowUp, 11));
   const otherBar = h("div", { class: "chat-bar", style: "margin-top:6px" }, other, otherSend);
   const body = stack(116, 16, who, code, row, otherBar);
   // Taller than the window allows: scroll instead of clipping the top.
@@ -669,17 +693,17 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
       }
 
       const session = State.agentSessions.find((s) => s.id === `session_${req.sessionId}`);
-      const qCount = State.approvalQueue.length > 1 ? ` (${State.approvalQueue.length} pending)` : "";
+      const qCount = State.approvalQueue.length > 1 ? t(" ({n} pending)", { n: State.approvalQueue.length }) : "";
       const questions = req.isQuestion ? (req.questions ?? []) : [];
       const q = questions[questionIndex];
 
       clear(who);
       if (q) {
         const step = questions.length > 1 ? ` ${questionIndex + 1}/${questions.length}` : "";
-        who.append(agentWho(session ?? State.focusTask, `asks a question${step}${qCount}`));
+        who.append(agentWho(session ?? State.focusTask, t("asks a question{step}{pending}", { step, pending: qCount })));
         code.textContent = q.header ? `${q.header} — ${q.question}` : q.question;
       } else {
-        who.append(agentWho(session ?? State.focusTask, `needs permission${qCount}`));
+        who.append(agentWho(session ?? State.focusTask, t("needs permission{pending}", { pending: qCount })));
         code.textContent = req.command || req.tool || "…";
       }
 
@@ -694,26 +718,25 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
           const on = picked.has(opt.label);
           const b = btn(opt.label, q.multiSelect && !on ? "secondary" : "primary", () => {
             if (!q.multiSelect) return answer(opt.label);
-            if (picked.has(opt.label)) picked.delete(opt.label);
-            else picked.add(opt.label);
+            picked = togglePick(picked, opt.label);
             State.notify();
           });
           if (opt.description) b.title = opt.description;
           row.append(b);
         }
         if (q.multiSelect) {
-          const done = btn(questionIndex + 1 < questions.length ? "Next" : "Send", "primary", () => {
-            if (picked.size) answer([...picked].join(", "));
+          const done = btn(questionIndex + 1 < questions.length ? t("Next") : t("Send"), "primary", () => {
+            if (picked.size) answer(assembleAnswer(picked));
           });
           if (!picked.size) done.style.opacity = "0.5";
           row.append(done);
         }
-        row.append(btn("Answer in terminal", "secondary", () => actions.decide("deny")));
+        row.append(btn(t("Answer in terminal"), "secondary", () => actions.decide("deny")));
       } else {
         row.append(
-          btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-          btn("Allow", "primary", () => actions.decide("allow"), "Y", ICONS.paw),
-          btn("Always allow", "secondary", () => actions.decide("always")),
+          btn(t("Deny"), "secondary", () => actions.decide("deny"), "N"),
+          btn(t("Allow"), "primary", () => actions.decide("allow"), "Y", ICONS.paw),
+          btn(t("Always allow"), "secondary", () => actions.decide("always")),
         );
       }
       requestAnimationFrame(fit);
@@ -725,7 +748,7 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
 
 function buildError(actions: ViewActions): ViewHost {
   const who = h("div");
-  const title = h("div", { class: "title", text: "Workflow stopped." });
+  const title = h("div", { class: "title", text: t("Workflow stopped.") });
   const detail = h("div", { class: "detail" });
   const row = h("div", { class: "actions" });
   const el = h("div", { class: "view" }, card("red", stack(116, 16, who, title, detail, row)));
@@ -736,25 +759,25 @@ function buildError(actions: ViewActions): ViewHost {
       const task = State.alertTask;
       clear(who);
       const n8n = task?.id === "integration_n8n";
-      who.append(agentWho(task, n8n ? "n8n" : task ? agentInfo(task.source).name : "Agent"));
-      title.textContent = n8n ? "Workflow stopped." : "Session stopped on an error.";
-      detail.textContent = task?.steps.at(-1) ?? "No detail available.";
+      who.append(agentWho(task, n8n ? "n8n" : task ? agentInfo(task.source).name : t("Agent")));
+      title.textContent = n8n ? t("Workflow stopped.") : t("Session stopped on an error.");
+      detail.textContent = task?.steps.at(-1) ?? t("No detail available.");
       const key = `${task?.id}:${n8n}`;
       if (key === rowKey) return;
       rowKey = key;
       clear(row);
       if (n8n) {
         row.append(
-          btn("Retry", "primary", () => actions.setView(State.defaultView())),
-          btn("Open in n8n", "secondary", () => actions.openUrl("")),
+          btn(t("Retry"), "primary", () => actions.setView(State.defaultView())),
+          btn(t("Open in n8n"), "secondary", () => actions.openUrl("")),
         );
       } else {
         row.append(
-          btn("Show log", "primary", () => {
+          btn(t("Show log"), "primary", () => {
             if (task) actions.setAgentFocus(task.id);
             actions.setView("agents");
           }),
-          btn("Open terminal", "secondary", () => (task ? actions.focusTerminal(task) : actions.openTerminal(null))),
+          btn(t("Open terminal"), "secondary", () => (task ? actions.focusTerminal(task) : actions.openTerminal(null))),
         );
       }
     },
@@ -767,7 +790,7 @@ function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title" });
   const row = h("div", { class: "actions" },
-    btn("Open terminal", "primary", () => {
+    btn(t("Open terminal"), "primary", () => {
       const t = State.alertTask;
       if (t && !t.isIntegration) actions.focusTerminal(t);
       else actions.openTerminal(t?.sessionCwd ?? null);
@@ -780,8 +803,8 @@ function buildFinished(actions: ViewActions): ViewHost {
     sync() {
       clear(who);
       const task = State.alertTask;
-      who.append(agentWho(task, task && !task.isIntegration ? `${agentInfo(task.source).name} finished` : "Finished"));
-      title.textContent = task?.steps.at(-1) ?? "Session finished";
+      who.append(agentWho(task, task && !task.isIntegration ? t("{name} finished", { name: agentInfo(task.source).name }) : t("Finished")));
+      title.textContent = task?.steps.at(-1) ?? t("Session finished");
     },
   };
 }
@@ -792,8 +815,8 @@ function buildConfused(): ViewHost {
   const body = h(
     "div",
     { class: "stack", style: "padding:0 18px 0 128px" },
-    h("div", { class: "title", text: "Too many pats at once!" }),
-    h("div", { class: "sub", text: "Woof… shaking it off — back to work in three seconds." }),
+    h("div", { class: "title", text: t("Too many pats at once!") }),
+    h("div", { class: "sub", text: t("Woof… shaking it off — back to work in three seconds.") }),
   );
   return { el: h("div", { class: "view" }, card("pink", body)), sync() {} };
 }
@@ -829,7 +852,7 @@ function buildSettings(actions: ViewActions): ViewHost {
   const rows = h(
     "div",
     { class: "settings-rows" },
-    h("div", { class: "settings-row" }, soundSwitch, h("span", { text: "Sound" }), volume),
+    h("div", { class: "settings-row" }, soundSwitch, h("span", { text: t("Sound") }), volume),
     h(
       "div",
       { class: "settings-row" },
@@ -843,7 +866,7 @@ function buildSettings(actions: ViewActions): ViewHost {
     card(null, h("div", { class: "stack", style: "padding:14px 16px 14px 84px;flex-direction:row;align-items:center;justify-content:flex-start;gap:16px" },
       rows,
       h("div", { class: "grow" }),
-      btn("Open Awuuu…", "secondary", () => actions.openSettingsWindow()),
+      btn(t("Open Awuuu…"), "secondary", () => actions.openSettingsWindow()),
     )));
 
   return {
@@ -853,7 +876,7 @@ function buildSettings(actions: ViewActions): ViewHost {
       soundSwitch.classList.toggle("on", s.soundEnabled);
       volume.value = String(s.soundVolume);
       volume.style.opacity = s.soundEnabled ? "1" : "0.4";
-      autoLabel.textContent = `Auto-close · ${Math.round(s.autoCloseInterval)}s`;
+      autoLabel.textContent = t("Auto-close · {n}s", { n: Math.round(s.autoCloseInterval) });
       segButtons.forEach((b, i) => b.classList.toggle("on", s.autoCloseInterval === [10, 15, 30][i]));
     },
   };
@@ -881,6 +904,7 @@ export function buildViews(
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildOverview(actions));
   map.set("agents", buildAgentsHub(actions));
+  map.set("diff", buildDiffView(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions, onApprovalHeightChange));
   map.set("error", buildError(actions));
@@ -893,8 +917,8 @@ export function buildViews(
   map.set("uploading", buildUploading());
   map.set("choose", buildChoose(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
-  map.set("mail", buildPlaceholder("Sending by email isn't in this version.", ""));
-  map.set("searching", buildPlaceholder("Claude is searching…", ""));
-  map.set("result", buildPlaceholder("Result", ""));
+  map.set("mail", buildPlaceholder(t("Sending by email isn't in this version."), ""));
+  map.set("searching", buildPlaceholder(t("Claude is searching…"), ""));
+  map.set("result", buildPlaceholder(t("Result"), ""));
   return map;
 }

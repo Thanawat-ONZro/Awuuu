@@ -4,22 +4,30 @@
 import { Bridge, type HookAgentId, type HookStatus } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
 import { pageOf, renderDiff, statusDot } from "../ui";
+import { t } from "../../i18n/i18n";
+
+/** Not found / Not connected / Connected. `present` null = unknown (shows by hooks only). */
+function agentChip(installed: boolean, present: boolean | null): HTMLElement {
+  const text = installed ? t("Connected") : present === false ? t("Not found") : t("Not connected");
+  return h("span", { class: installed ? "chip" : "chip bad", style: "margin-left:8px", text });
+}
 
 // ── Multi-Agent Hooks section (Claude, AGY, Hermes, OpenCode) ──────────
 
 function agentHooksSection(
-  agent: "claude" | "agy" | "hermes" | "opencode" | "codex",
+  agent: HookAgentId,
   title: string,
   fileName: string,
   descInstalled: string,
   descNotInstalled: string,
   status: HookStatus,
+  present: boolean | null = null,
 ): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
     { id: `agent-${agent}` },
-    h("h2", {}, statusDot(status.installed), h("span", { text: title })),
+    h("h2", {}, statusDot(status.installed), h("span", { text: title }), agentChip(status.installed, present)),
     body,
   );
 
@@ -30,7 +38,7 @@ function agentHooksSection(
     draw();
     const head = section.querySelector("h2")!;
     clear(head);
-    head.append(statusDot(status.installed), h("span", { text: title }));
+    head.append(statusDot(status.installed), h("span", { text: title }), agentChip(status.installed, present));
   };
 
   function draw() {
@@ -44,7 +52,7 @@ function agentHooksSection(
         h("span", { class: "path", text: status.settingsPath }),
       ),
       h("div", { class: "row" },
-        h("label", { text: "Relay" }),
+        h("label", { text: t("Relay") }),
         h("span", { class: "path", text: status.hookPath }),
         statusDot(status.hookReady),
       ),
@@ -53,25 +61,25 @@ function agentHooksSection(
     if (!status.hookReady) {
       body.append(h("div", {
         class: "notice warn",
-        text: "awuuu-hook.exe is not in place yet. Restart Awuuu; if it still fails, build it with `cargo build -p awuuu-hook`.",
+        text: t("awuuu-hook.exe is not in place yet. Restart Awuuu; if it still fails, build it with `cargo build -p awuuu-hook`."),
       }));
     }
 
     const actions = h("div", { class: "row" });
     const install = h("button", {
       class: "primary",
-      text: status.installed ? "Reinstall hooks…" : "Install hooks…",
+      text: status.installed ? t("Reinstall hooks…") : t("Connect…"),
       onclick: () => showPreview(true),
     });
     if (!status.hookReady) {
       install.disabled = true;
-      install.title = "The relay isn't installed yet.";
+      install.title = t("The relay isn't installed yet.");
     }
     actions.append(install);
     if (status.installed) {
       actions.append(h("button", {
         class: "danger",
-        text: "Uninstall hooks…",
+        text: t("Disconnect…"),
         onclick: () => showPreview(false),
       }));
     }
@@ -87,7 +95,7 @@ function agentHooksSection(
       body.append(
         h("div", { class: "notice err", text: String(err).replace(/^Error:\s*/, "") }),
         h("div", { class: "row" }, h("button", {
-          text: "Back",
+          text: t("Back"),
           onclick: () => { clear(body); draw(); },
         })),
       );
@@ -99,17 +107,17 @@ function agentHooksSection(
       h("div", {
         class: "hint",
         text: install
-          ? `This is exactly what will change in your ${fileName}. Your other hooks and configurations are left untouched.`
-          : `This removes Awuuu's entries only. Your other hooks and configurations are left untouched.`,
+          ? t("This is exactly what will change in your {fileName}. Your other hooks and configurations are left untouched.", { fileName })
+          : t("This removes Awuuu's entries only. Your other hooks and configurations are left untouched."),
       }),
       renderDiff(preview.diff),
       h("div", { class: "row" },
-        h("span", { class: "path", text: `Backup → ${preview.backup}` }),
+        h("span", { class: "path", text: t("Backup → {backup}", { backup: preview.backup }) }),
       ),
     );
     const confirm = h("button", {
       class: install ? "primary" : "danger",
-      text: install ? "Back up and write" : "Back up and remove",
+      text: install ? t("Back up and write") : t("Back up and remove"),
     });
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
@@ -118,16 +126,16 @@ function agentHooksSection(
         clear(body);
         body.append(h("div", {
           class: "notice ok",
-          text: `Done. Previous settings saved as ${backup}. Open a new session to pick the hooks up.`,
+          text: t("Done. Previous settings saved as {backup}. Open a new session to pick the hooks up.", { backup }),
         }));
         window.setTimeout(() => void rebuild(), 2600);
       } catch (err) {
         confirm.disabled = false;
-        body.append(h("div", { class: "notice err", text: `Could not write: ${String(err)}` }));
+        body.append(h("div", { class: "notice err", text: t("Could not write: {v}", { v: String(err) }) }));
       }
     });
     body.append(h("div", { class: "row" }, confirm, h("button", {
-      text: "Cancel",
+      text: t("Cancel"),
       onclick: () => { clear(body); draw(); },
     })));
   }
@@ -139,7 +147,7 @@ function agentHooksSection(
 // ── Usage limits (Claude Code's status line) ──────────────────────────────────
 
 function statuslineSection(status: HookStatus): HTMLElement {
-  const title = "Usage limits (status line)";
+  const title = t("Usage limits (status line)");
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
@@ -163,15 +171,15 @@ function statuslineSection(status: HookStatus): HTMLElement {
       h("div", {
         class: "hint",
         text: status.installed
-          ? "Claude Code hands its 5-hour and weekly limits to Awuuu through its status line, and Awuuu shows how much is left. Nothing goes over the network, and the status line you had before keeps working."
-          : "Claude Code only tells its status line command how much of your 5-hour and weekly limits is used; install this and Awuuu can show it. Nothing goes over the network, and the status line you already have keeps working — Awuuu runs it and prints what it prints.",
+          ? t("Claude Code hands its 5-hour and weekly limits to Awuuu through its status line, and Awuuu shows how much is left. Nothing goes over the network, and the status line you had before keeps working.")
+          : t("Claude Code only tells its status line command how much of your 5-hour and weekly limits is used; install this and Awuuu can show it. Nothing goes over the network, and the status line you already have keeps working — Awuuu runs it and prints what it prints."),
       }),
       h("div", { class: "row" },
         h("label", { text: "settings.json" }),
         h("span", { class: "path", text: status.settingsPath }),
       ),
       h("div", { class: "row" },
-        h("label", { text: "Relay" }),
+        h("label", { text: t("Relay") }),
         h("span", { class: "path", text: status.hookPath }),
         statusDot(status.hookReady),
       ),
@@ -180,18 +188,18 @@ function statuslineSection(status: HookStatus): HTMLElement {
     const actions = h("div", { class: "row" });
     const install = h("button", {
       class: "primary",
-      text: status.installed ? "Reinstall…" : "Install…",
+      text: status.installed ? t("Reinstall…") : t("Install…"),
       onclick: () => showPreview(true),
     });
     if (!status.hookReady) {
       install.disabled = true;
-      install.title = "The relay isn't installed yet.";
+      install.title = t("The relay isn't installed yet.");
     }
     actions.append(install);
     if (status.installed) {
       actions.append(h("button", {
         class: "danger",
-        text: "Uninstall…",
+        text: t("Uninstall…"),
         onclick: () => showPreview(false),
       }));
     }
@@ -207,7 +215,7 @@ function statuslineSection(status: HookStatus): HTMLElement {
       body.append(
         h("div", { class: "notice err", text: String(err).replace(/^Error:\s*/, "") }),
         h("div", { class: "row" }, h("button", {
-          text: "Back",
+          text: t("Back"),
           onclick: () => { clear(body); draw(); },
         })),
       );
@@ -219,17 +227,17 @@ function statuslineSection(status: HookStatus): HTMLElement {
       h("div", {
         class: "hint",
         text: install
-          ? "This is exactly what will change in your settings.json. Only `statusLine` is set; a status line you already have is remembered and still runs."
-          : "This puts back the status line you had before (or removes the entry if there was none). Nothing else is touched.",
+          ? t("This is exactly what will change in your settings.json. Only `statusLine` is set; a status line you already have is remembered and still runs.")
+          : t("This puts back the status line you had before (or removes the entry if there was none). Nothing else is touched."),
       }),
       renderDiff(preview.diff),
       h("div", { class: "row" },
-        h("span", { class: "path", text: `Backup → ${preview.backup}` }),
+        h("span", { class: "path", text: t("Backup → {backup}", { backup: preview.backup }) }),
       ),
     );
     const confirm = h("button", {
       class: install ? "primary" : "danger",
-      text: install ? "Back up and write" : "Back up and remove",
+      text: install ? t("Back up and write") : t("Back up and remove"),
     });
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
@@ -238,16 +246,16 @@ function statuslineSection(status: HookStatus): HTMLElement {
         clear(body);
         body.append(h("div", {
           class: "notice ok",
-          text: `Done. Previous settings saved as ${backup}. Claude Code picks the status line up in a new session.`,
+          text: t("Done. Previous settings saved as {backup}. Claude Code picks the status line up in a new session.", { backup }),
         }));
         window.setTimeout(() => void rebuild(), 2600);
       } catch (err) {
         confirm.disabled = false;
-        body.append(h("div", { class: "notice err", text: `Could not write: ${String(err)}` }));
+        body.append(h("div", { class: "notice err", text: t("Could not write: {v}", { v: String(err) }) }));
       }
     });
     body.append(h("div", { class: "row" }, confirm, h("button", {
-      text: "Cancel",
+      text: t("Cancel"),
       onclick: () => { clear(body); draw(); },
     })));
   }
@@ -263,7 +271,7 @@ function alwaysAllowSection(): HTMLElement {
   const section = h(
     "section",
     {},
-    h("h2", {}, h("span", { text: "Always Allowed Commands" })),
+    h("h2", {}, h("span", { text: t("Always Allowed Commands") })),
     body,
   );
 
@@ -291,7 +299,7 @@ function alwaysAllowSection(): HTMLElement {
       body.append(
         h("div", {
           class: "hint",
-          text: "No permanent permissions saved. When you click 'Always allow' on an approval card, the command prefix will appear here so it can execute automatically without prompting.",
+          text: t("No permanent permissions saved. When you click 'Always allow' on an approval card, the command prefix will appear here so it can execute automatically without prompting."),
         }),
       );
       return;
@@ -300,7 +308,7 @@ function alwaysAllowSection(): HTMLElement {
     body.append(
       h("div", {
         class: "hint",
-        text: "The following command prefixes are automatically approved. You can revoke them individually or clear all.",
+        text: t("The following command prefixes are automatically approved. You can revoke them individually or clear all."),
       }),
     );
 
@@ -317,13 +325,13 @@ function alwaysAllowSection(): HTMLElement {
           { style: "display:flex;flex-direction:column;gap:2px;overflow:hidden" },
           h("code", { style: "font-family:var(--mono);font-size:12px;color:var(--ink)", text: rule.commandPrefix }),
           rule.sessionId
-            ? h("span", { class: "hint", style: "font-size:11px", text: `Session: ${rule.sessionId}` })
-            : h("span", { class: "hint", style: "font-size:11px", text: "Global (all sessions)" }),
+            ? h("span", { class: "hint", style: "font-size:11px", text: t("Session: {sessionId}", { sessionId: rule.sessionId }) })
+            : h("span", { class: "hint", style: "font-size:11px", text: t("Global (all sessions)") }),
         ),
         h("button", {
           class: "danger",
           style: "padding:3px 8px;font-size:11px",
-          text: "Revoke",
+          text: t("Revoke"),
           onclick: () => {
             rules.splice(idx, 1);
             saveRules(rules);
@@ -339,7 +347,7 @@ function alwaysAllowSection(): HTMLElement {
     clearAllRow.append(
       h("button", {
         class: "danger",
-        text: "Clear all rules",
+        text: t("Clear all rules"),
         onclick: () => {
           saveRules([]);
           render();
@@ -354,32 +362,40 @@ function alwaysAllowSection(): HTMLElement {
 }
 
 
-const AGENTS: [HookAgentId, string, string, string, string][] = [
+const agentDefs = (): [HookAgentId, string, string, string, string][] => [
   ["claude", "Claude Code", "settings.json",
-    "Awuuu is hooked into your Claude Code sessions (~/.claude/settings.json). Tool calls and permission requests appear in the island.",
-    "Install the hooks to see your Claude Code sessions in the island and approve permissions with 1-click."],
+    t("Awuuu is hooked into your Claude Code sessions (~/.claude/settings.json). Tool calls and permission requests appear in the island."),
+    t("Install the hooks to see your Claude Code sessions in the island and approve permissions with 1-click.")],
   ["agy", "Antigravity CLI (AGY)", "hooks.json",
-    "Awuuu is hooked into your Antigravity CLI sessions (~/.gemini/config/hooks.json). Tool executions appear in the island.",
-    "Install the hooks to see your Antigravity CLI sessions in the island and approve tool calls with 1-click."],
+    t("Awuuu is hooked into your Antigravity CLI sessions (~/.gemini/config/hooks.json). Tool executions appear in the island."),
+    t("Install the hooks to see your Antigravity CLI sessions in the island and approve tool calls with 1-click.")],
   ["hermes", "Hermes Agent", "config.yaml",
-    "Awuuu follows your Hermes sessions (CLI, Desktop, gateway) through shell hooks in config.yaml. Hermes asks for approvals in its own window; the island tells you when it does. Hermes asks once to trust new hooks — or run `hermes hooks list`.",
-    "Install the shell hooks to see Hermes sessions (CLI, Desktop, Discord…) in the island: what it runs, what it says, and when it waits for your approval."],
+    t("Awuuu follows your Hermes sessions (CLI, Desktop, gateway) through shell hooks in config.yaml. Hermes asks for approvals in its own window; the island tells you when it does. Hermes asks once to trust new hooks — or run `hermes hooks list`."),
+    t("Install the shell hooks to see Hermes sessions (CLI, Desktop, Discord…) in the island: what it runs, what it says, and when it waits for your approval.")],
   ["opencode", "OpenCode", "awuuu.js plugin",
-    "Awuuu's plugin is in OpenCode's plugin folder. Sessions show in the island and permission requests can be answered there. Restart OpenCode after installing.",
-    "Install the plugin to see OpenCode sessions in the island and answer its permission requests with 1-click."],
+    t("Awuuu's plugin is in OpenCode's plugin folder. Sessions show in the island and permission requests can be answered there. Restart OpenCode after installing."),
+    t("Install the plugin to see OpenCode sessions in the island and answer its permission requests with 1-click.")],
   ["codex", "Codex CLI — Experimental", "hooks.json",
-    "Awuuu's hooks are in ~/.codex/hooks.json. Codex asks once to trust new hooks: run /hooks in Codex. Approvals show in the island (Allow / Deny — Codex can't keep an \"Always\" rule from a hook); if nobody answers, Codex asks itself after about two minutes.",
-    "Experimental: not yet tried against a live Codex session. Installs Awuuu's hooks in ~/.codex/hooks.json (config.toml is never touched); Codex then asks you to trust them with /hooks."],
+    t("Awuuu's hooks are in ~/.codex/hooks.json. Codex asks once to trust new hooks: run /hooks in Codex. Approvals show in the island (Allow / Deny — Codex can't keep an \"Always\" rule from a hook); if nobody answers, Codex asks itself after about two minutes."),
+    t("Experimental: not yet tried against a live Codex session. Installs Awuuu's hooks in ~/.codex/hooks.json (config.toml is never touched); Codex then asks you to trust them with /hooks.")],
+  ["gemini", "Gemini CLI", "settings.json",
+    t("Awuuu's hooks are in ~/.gemini/settings.json. Tool calls and prompts show in the island; Gemini CLI asks for permissions in its own terminal. Start a new Gemini session after connecting."),
+    t("Connect to see your Gemini CLI sessions in the island. Adds Awuuu's hooks to ~/.gemini/settings.json and leaves your other hooks and settings alone.")],
+  ["cursor", "Cursor Agent", "hooks.json",
+    t("Awuuu's hooks are in ~/.cursor/hooks.json. Sessions show in the island; Cursor asks for permissions itself. Restart Cursor after connecting."),
+    t("Connect to see your Cursor Agent sessions in the island. Adds Awuuu's hooks to ~/.cursor/hooks.json and leaves your other hooks alone.")],
 ];
 
 export async function page(): Promise<HTMLElement> {
   const blank: HookStatus = { installed: false, settingsPath: "", hookPath: "", hookReady: false };
   const cards: HTMLElement[] = [];
-  for (const [id, title, file, on, off] of AGENTS) {
-    cards.push(agentHooksSection(id, title, file, on, off, (await Bridge.agentHooksStatus(id)) ?? { ...blank }));
+  const found = (await Bridge.detectAgents()) ?? [];
+  for (const [id, title, file, on, off] of agentDefs()) {
+    const present = found.find((f) => f.id === id)?.present ?? null;
+    cards.push(agentHooksSection(id, title, file, on, off, (await Bridge.agentHooksStatus(id)) ?? { ...blank }, present));
     // Claude's limits come through its status line: its card sits right after.
     if (id === "claude") cards.push(statuslineSection((await Bridge.statuslineStatus()) ?? { ...blank }));
   }
-  return pageOf("Agents", "Connect a coding agent once and Awuuu follows its sessions. Nothing is written without showing you the change first.",
+  return pageOf(t("Agents"), t("Connect a coding agent once and Awuuu follows its sessions. Nothing is written without showing you the change first."),
     ...cards, alwaysAllowSection());
 }

@@ -1,0 +1,34 @@
+/* Awuuu design tokens — "Shiba Warm". Named after the dog (src/mochi/dog.ts),
+   shared by the island (style.css) and the settings window (settings.css).
+   Colours live here and nowhere else; the old names (--green, --amber, …) are
+   aliases defined next to each window's :root and point at these. */
+
+:root {
+  /* Surfaces */
+  --bg-nose: #0b0908;      /* the island's warm black */
+  --bg-window: #0e0b09;    /* settings window */
+  --bg-kibble: #1a1612;    /* cards */
+  --bg-kibble-flat: #120f0c;
+  --bg-biscuit: #241e19;   /* selected tab / pressed button */
+
+  /* Text */
+  --ink-cream: #fff4e6;
+  --ink-cream-2: #fbefdf;
+
+  /* Signature accent: caramel, the dog's ears */
+  --accent-caramel: #e4a871;
+  --accent-caramel-hover: #edb985;
+  --accent-caramel-ink: #2b1e14;
+  --accent-caramel-rgb: 228, 168, 113;
+
+  /* State: what the island is telling you */
+  --state-wait: #f2b04c;   /* a treat is waiting: needs your answer */
+  --state-wait-rgb: 242, 176, 76;
+  --state-done: #6fcf97;   /* grass: finished */
+  --state-done-rgb: 111, 207, 151;
+  --state-error: #ef6f5e;  /* red nose: failed */
+  --state-error-rgb: 239, 111, 94;
+  --state-error-text: #ff9a8c;
+  --state-info: #f29db0;   /* pink tongue: Awuuu talking */
+  --state-agent: #7fb6d9;  /* sky: another agent */
+}

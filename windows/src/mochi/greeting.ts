@@ -1,6 +1,7 @@
 // The launch greeting ("Awuuu!") — port of GreetingCanvasView.swift.
 // Everything is laid out in the same 640×150 reference space as on macOS.
 
+import { currentOutfit, drawOutfit } from "./outfits";
 import { Sound } from "../core/sound";
 import {
   drawBrows, drawCollarTag, drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat,
@@ -480,6 +481,7 @@ function drawAwuuu(x: CanvasRenderingContext2D, p: Pose) {
   // Floppy ears and the collar tag sit over the body.
   drawEarsFront(x, hw, hh, ears, pal);
   if (hh > 8) drawCollarTag(x, hw, hh, 1, pal);
+  drawOutfit(x, hw, hh, currentOutfit(), { shift: p.lookX * hw * 0.12 });
 
   // Activity badge
   if (p.badge > 0.01) {

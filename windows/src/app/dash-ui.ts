@@ -2,6 +2,7 @@
 
 import { h, clear } from "../views/dom";
 import { agentMeta } from "./recap";
+import { t } from "../i18n/i18n";
 
 const p2 = (n: number) => String(n).padStart(2, "0");
 
@@ -29,17 +30,17 @@ export function rangeLabel(first: number, last: number): string {
 /** "just now", "5 min ago", "3 h ago", "yesterday", "4 d ago", "12 Sep". */
 export function relTime(ms: number, now = Date.now()): string {
   const diff = now - ms;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
-  if (diff < 24 * 3_600_000 && sameDay(ms, now)) return `${Math.floor(diff / 3_600_000)} h ago`;
-  if (sameDay(ms, now - 24 * 3_600_000)) return "yesterday";
+  if (diff < 60_000) return t("just now");
+  if (diff < 3_600_000) return t("{n} min ago", { n: Math.floor(diff / 60_000) });
+  if (diff < 24 * 3_600_000 && sameDay(ms, now)) return t("{n} h ago", { n: Math.floor(diff / 3_600_000) });
+  if (sameDay(ms, now - 24 * 3_600_000)) return t("yesterday");
   const days = Math.floor(diff / (24 * 3_600_000));
-  if (days < 7) return `${Math.max(1, days)} d ago`;
+  if (days < 7) return t("{n} d ago", { n: Math.max(1, days) });
   return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `${n} ${t(n === 1 ? one : many)}`;
 }
 
 export function bytesLabel(bytes: number): string {
@@ -104,7 +105,7 @@ export async function copyText(text: string, button: HTMLButtonElement, fallback
   button.dataset.label = label;
   try {
     await navigator.clipboard.writeText(text);
-    button.textContent = "Copied ✓";
+    button.textContent = t("Copied ✓");
     button.classList.add("copied");
     window.setTimeout(() => {
       button.textContent = label;
@@ -117,9 +118,9 @@ export async function copyText(text: string, button: HTMLButtonElement, fallback
     area.value = text;
     fallback.append(h("div", { class: "notice warn copy-fallback" },
       h("div", { class: "row" },
-        h("span", { text: "Could not reach the clipboard. The text is selected below — press Ctrl+C." }),
+        h("span", { text: t("Could not reach the clipboard. The text is selected below — press Ctrl+C.") }),
         h("span", { class: "spacer" }),
-        h("button", { text: "Close", onclick: () => clear(fallback) })),
+        h("button", { text: t("Close"), onclick: () => clear(fallback) })),
       area));
     area.focus();
     area.select();

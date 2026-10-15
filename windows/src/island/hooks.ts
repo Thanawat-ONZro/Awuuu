@@ -5,13 +5,15 @@
 
 import { Bridge, IS_TAURI, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { State, type AgentTask, type ApprovalInfo, type QuestionItem, type AgentSource } from "../core/state";
+import { parseQuestions } from "./ask-question";
+import { State, type AgentTask, type ApprovalInfo, type AgentSource } from "../core/state";
 import type { Island } from "./island";
 import { History, toolFiles, type HistoryCall, type HistoryCtx } from "./history";
 import { noteEdit, overlapMessage } from "./overlap";
 import { isPlanTool, reducePlan } from "./plan";
 import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
 import { Nudger } from "./quiet";
+import { buildFileDiff } from "../core/diff";
 
 /** A pop-up that can wait (quiet.ts): skipped in quiet hours and right after another. */
 const nudges = new Nudger();
@@ -286,7 +288,7 @@ function queueApprovalRequest(
   key: string,
 ) {
   // Every tool call shows in the log, whether it ends up auto-allowed or not.
-  State.appendStep(session.id, describeTool(tool, input), "tool", key);
+  State.appendStep(session.id, describeTool(tool, input), "tool", key, buildFileDiff(tool, input));
   const target = approvalTarget(tool, input);
   const ruleKey = `${tool}:${target}`;
 
@@ -348,20 +350,7 @@ function queueApprovalRequest(
  * The questions a tool call asks, in the island's shape. AGY's ask_question
  * carries `{question, options: string[], is_multi_select}`.
  */
-function questionItems(tool: string, input: Record<string, unknown>): QuestionItem[] | undefined {
-  if (!Array.isArray(input.questions)) return undefined;
-  if (tool === "AskUserQuestion") return input.questions as QuestionItem[];
-  if (tool === "ask_question") {
-    return (input.questions as Record<string, unknown>[]).map((q) => ({
-      question: String(q.question ?? ""),
-      options: (Array.isArray(q.options) ? q.options : []).map((o) =>
-        typeof o === "string" ? { label: o } : { label: String((o as { label?: unknown }).label ?? o) },
-      ),
-      multiSelect: q.is_multi_select === true,
-    }));
-  }
-  return undefined;
-}
+const questionItems = parseQuestions;
 
 export function registerHookHandlers(island: Island) {
   void onEvent<HookPayload>("hook", (payload) => {
@@ -453,7 +442,7 @@ function handleHook(island: Island, payload: HookPayload) {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
       } else {
         session.state = "working";
-        State.appendStep(taskId, describeTool(tool, input), "tool", key);
+        State.appendStep(taskId, describeTool(tool, input), "tool", key, buildFileDiff(tool, input));
       }
       warnOverlap(island, session, taskId, tool, input);
       // "waiting" only while a card is actually up (an always-rule answers at once).

@@ -2,13 +2,13 @@
    Builds on settings.css (palette, controls) and app.css (page, cards). */
 
 .dash {
-  --accent: #e4a871;
+  --accent: var(--accent-caramel);
   --accent-ink: #f3c79b;
   --well: #08090b;
 }
 
 .dash mark {
-  background: rgba(245, 165, 36, 0.34);
+  background: rgba(var(--state-wait-rgb), 0.34);
   color: inherit;
   border-radius: 2px;
 }
@@ -37,7 +37,7 @@
 }
 
 .dash button.seg.on {
-  background: rgba(228, 168, 113, 0.2);
+  background: rgba(var(--accent-caramel-rgb), 0.2);
   color: var(--accent-ink);
 }
 
@@ -46,7 +46,7 @@
 }
 
 .dash [role="button"]:focus-visible {
-  outline: 2px solid rgba(228, 168, 113, 0.7);
+  outline: 2px solid rgba(var(--accent-caramel-rgb), 0.7);
   outline-offset: -2px;
 }
 
@@ -158,7 +158,7 @@
 }
 
 .sess-row.on {
-  background: rgba(228, 168, 113, 0.15);
+  background: rgba(var(--accent-caramel-rgb), 0.15);
 }
 
 .sess-top,
@@ -267,13 +267,13 @@
 }
 
 .st-waiting {
-  background: rgba(245, 165, 36, 0.18);
+  background: rgba(var(--state-wait-rgb), 0.18);
   color: #fbc06a;
 }
 
 .st-failed {
-  background: rgba(244, 80, 94, 0.16);
-  color: #ff8d97;
+  background: rgba(var(--state-error-rgb), 0.16);
+  color: var(--state-error-text);
 }
 
 /* ── Chips ───────────────────────────────────────────────────────────────── */
@@ -294,8 +294,8 @@
 }
 
 .chip.bad {
-  background: rgba(244, 80, 94, 0.16);
-  color: #ff8d97;
+  background: rgba(var(--state-error-rgb), 0.16);
+  color: var(--state-error-text);
 }
 
 .chip.dim {
@@ -388,7 +388,7 @@
   overflow: auto;
   border-left: 2px solid var(--accent);
   border-radius: 0 8px 8px 0;
-  background: rgba(228, 168, 113, 0.07);
+  background: rgba(var(--accent-caramel-rgb), 0.07);
   color: var(--ink);
 }
 
@@ -434,7 +434,7 @@
 }
 
 .file.c-delete .file-mark {
-  color: #ff8d97;
+  color: var(--state-error-text);
 }
 
 .file .path {
@@ -491,13 +491,13 @@
   color: var(--dim);
 }
 
-.k-prompt { background: rgba(228, 168, 113, 0.2); color: var(--accent-ink); }
-.k-edit, .k-write { background: rgba(245, 165, 36, 0.15); color: #fbc06a; }
+.k-prompt { background: rgba(var(--accent-caramel-rgb), 0.2); color: var(--accent-ink); }
+.k-edit, .k-write { background: rgba(var(--state-wait-rgb), 0.15); color: #fbc06a; }
 .k-run { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
 .k-search, .k-web, .k-read { background: rgba(255, 255, 255, 0.07); color: #cdbfae; }
 .k-agent, .k-mcp, .k-skill, .k-plan { background: rgba(139, 92, 246, 0.18); color: #c4b5fd; }
 .k-done { background: rgba(34, 197, 94, 0.14); color: #86efac; }
-.k-error { background: rgba(244, 80, 94, 0.16); color: #ff8d97; }
+.k-error { background: rgba(var(--state-error-rgb), 0.16); color: var(--state-error-text); }
 
 .step-title {
   font: 400 12px var(--mono);
@@ -566,7 +566,7 @@
 .usage-card h2 .plan {
   padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(228, 168, 113, 0.16);
+  background: rgba(var(--accent-caramel-rgb), 0.16);
   font: 600 10.5px/1.6 var(--font);
   color: var(--accent-ink);
   text-transform: capitalize;
@@ -633,7 +633,7 @@
 }
 
 .limit.hot .limit-pct {
-  color: #ff8d97;
+  color: var(--state-error-text);
 }
 
 .tiles {
@@ -659,7 +659,7 @@
 }
 
 .tile.bad b {
-  color: #ff8d97;
+  color: var(--state-error-text);
 }
 
 .tile span {
@@ -709,7 +709,7 @@
 }
 
 .stat-table > .bad {
-  color: #ff8d97;
+  color: var(--state-error-text);
 }
 
 .chart {
@@ -742,7 +742,7 @@
   max-width: 56px;
   min-height: 2px;
   border-radius: 5px 5px 2px 2px;
-  background: rgba(228, 168, 113, 0.45);
+  background: rgba(var(--accent-caramel-rgb), 0.45);
 }
 
 .chart-col.today .chart-bar {
@@ -823,6 +823,13 @@
 /* A request in one line (app/story.ts). */
 .story { margin: 6px 0; font-weight: 600; font-size: 12.5px; }
 .story.t-passed .story-line::before { content: "✓ "; color: #4ade80; }
-.story.t-failed .story-line::before { content: "✕ "; color: #f4505e; }
+.story.t-failed .story-line::before { content: "✕ "; color: var(--state-error); }
 .story.t-no-tests .story-line::before, .story.t-unclear .story-line::before { content: "? "; color: #f59e0b; }
 .story-ask { margin-left: 8px; font: 500 11px inherit; padding: 1px 8px; }
+
+/* Reduced motion: chevrons turn instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    transition: none;
+  }
+}

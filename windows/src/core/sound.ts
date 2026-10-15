@@ -2,6 +2,11 @@
 // The 28 WAVs live in shared/sounds (see SOUNDS_DIR in vite.config.ts);
 // they are served at /sounds/<name>.wav. Default volume 0.12, slider range 0–0.2,
 // and several sounds may overlap.
+// A file of the user's own in %APPDATA%\Awuuu\sounds named like a sound
+// (finish.mp3, greet.m4a…) replaces the bundled one (src-tauri/src/sounds.rs).
+// A file that will not decode falls back to the bundled sound.
+
+import { Bridge } from "./bridge";
 
 export const SOUND_NAMES = [
   "peek", "open", "close", "hover", "blip", "slap", "annoyed", "dizzy", "greet",
@@ -21,8 +26,9 @@ class SoundEngine {
   private buffers = new Map<string, AudioBuffer>();
   private loading: Promise<void> | null = null;
   private idleTimer: number | null = null;
+  private generation = 0;
 
-  /** Creates the context and decodes every WAV. Safe to call more than once. */
+  /** Creates the context and decodes every sound. Safe to call more than once. */
   preload(): Promise<void> {
     if (this.loading) return this.loading;
     this.loading = (async () => {
@@ -34,20 +40,58 @@ class SoundEngine {
       master.gain.value = this.volume;
       master.connect(ctx.destination);
       this.master = master;
-      await Promise.all(
-        SOUND_NAMES.map(async (name) => {
-          try {
-            const res = await fetch(`/sounds/${name}.wav`);
-            if (!res.ok) return;
-            const buf = await ctx.decodeAudioData(await res.arrayBuffer());
-            this.buffers.set(name, buf);
-          } catch {
-            /* a missing sound must never break the island */
-          }
-        }),
-      );
+      await this.decodeAll();
     })();
     return this.loading;
+  }
+
+  /**
+   * Settings → Reload sounds: reads the sounds folder again. Decoding does not
+   * start the context, so this never wakes an idle island. Sounds keep playing
+   * from the old buffers until the new set is ready.
+   */
+  async reload(): Promise<void> {
+    await this.loading;
+    await this.decodeAll();
+  }
+
+  private async decodeAll(): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const generation = ++this.generation;
+    const found = await Bridge.userSounds(SOUND_NAMES);
+    const custom = new Set(found?.custom ?? []);
+    const next = new Map<string, AudioBuffer>();
+    await Promise.all(
+      SOUND_NAMES.map(async (name) => {
+        const buf =
+          (custom.has(name) ? await this.decodeUser(ctx, name) : null) ?? (await this.decodeBundled(ctx, name));
+        if (buf) next.set(name, buf);
+      }),
+    );
+    // A newer reload has started since: its result is the one to keep.
+    if (generation === this.generation) this.buffers = next;
+  }
+
+  private async decodeUser(ctx: AudioContext, name: string): Promise<AudioBuffer | null> {
+    try {
+      const bytes = await Bridge.userSound(name);
+      if (!bytes) return null;
+      return await ctx.decodeAudioData(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  private async decodeBundled(ctx: AudioContext, name: string): Promise<AudioBuffer | null> {
+    try {
+      const res = await fetch(`/sounds/${name}.wav`);
+      if (!res.ok) return null;
+      return await ctx.decodeAudioData(await res.arrayBuffer());
+    } catch {
+      /* a missing sound must never break the island */
+      return null;
+    }
   }
 
   /** WebView2 can hand us a suspended context; call after any user input. */
