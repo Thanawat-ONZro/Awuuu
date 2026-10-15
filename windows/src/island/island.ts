@@ -2,7 +2,7 @@
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
 import { Tracked, Spring, clamp } from "../core/anim";
-import { animateView, directionBetween } from "./transition";
+import { animateView, directionBetween, type Direction } from "./transition";
 import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core/bridge";
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
@@ -1313,6 +1313,19 @@ export class Island {
 
   // ── DOM sync ────────────────────────────────────────────────────────────────
 
+  /** The dog notices the move: a tail wag and a lean toward the new tab; ears up for an alert. */
+  private reactToViewChange(dir: Direction) {
+    if (REDUCED_MOTION.matches || dir === "none") return;
+    if (dir === "up") {
+      this.engine.earFlick();
+    } else {
+      const lean = dir === "forward" ? 0.12 : -0.12;
+      this.engine.wagBurst(0.2, 4, 90);
+      this.engine.lean(lean);
+    }
+    this.ensureRunning();
+  }
+
   private syncDom() {
     const expanded = State.mode === "expanded";
     const greetingActive = expanded && State.view === "greeting";
@@ -1333,6 +1346,7 @@ export class Island {
         const entering = this.views.get(State.view)?.el;
         if (leaving) animateView(leaving, false, dir);
         if (entering) animateView(entering, true, dir);
+        this.reactToViewChange(dir);
       }
     }
     this.animView = State.view;
@@ -1400,6 +1414,10 @@ export class Island {
     this.root.classList.remove("glow-done", "glow-error");
     void this.islandEl.offsetWidth; // restart the animation if one is still playing
     this.root.classList.add(flash);
+    if (flash === "glow-done") {
+      this.engine.hop();
+      this.ensureRunning();
+    }
   }
 
   /**

@@ -358,6 +358,11 @@ export class BotEngine {
     this.anim("sx", [[0.93, 150, Ease.out], [1.12, 170, Ease.inOut], [1, 220, Ease.back]]);
   }
 
+  /** A short lean to one side (sign = side) and back: the dog looks where the island is going. */
+  lean(amount: number) {
+    this.anim("tilt", [[amount, 120, Ease.out], [amount * 0.6, 160, Ease.lin], [0, 260, Ease.back]]);
+  }
+
   /** Wet-dog shake: fast side-to-side twist that dies out. */
   shakeOff() {
     this.anim("tilt", [
