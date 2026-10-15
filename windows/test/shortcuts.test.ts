@@ -84,3 +84,13 @@ describe("recorder", () => {
     expect(press({ key: "CapsLock", code: "CapsLock", ctrlKey: true }).kind).toBe("unsupported");
   });
 });
+
+describe("desktop dog shortcut", () => {
+  it("is Ctrl+Alt+D, on by default but registered only with the feature (Rust plan)", () => {
+    const d = SHORTCUTS.find((s) => s.id === "toggleDesktopDog")!;
+    expect(d.defaultKeys).toBe("Ctrl+Alt+D");
+    expect(d.desktopOnly).toBe(true);
+    expect(effectiveKeys(d, {})).toBe("Ctrl+Alt+D");
+    expect(effectiveKeys(d, { toggleDesktopDog: "" })).toBe("");
+  });
+});

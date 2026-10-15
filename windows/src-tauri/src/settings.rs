@@ -124,6 +124,30 @@ pub struct Settings {
     /// ones the user changed; "" = off. Defaults live in hotkeys.rs.
     #[serde(default)]
     pub shortcuts: std::collections::BTreeMap<String, String>,
+    /// The dog on the desktop (desktop_dog.rs). Off by default; missing in
+    /// older settings.json → off.
+    #[serde(default)]
+    pub desktop_dog: DesktopDogPref,
+}
+
+/// `enabled` is the user's switch (Settings → General). The rest is written
+/// by Rust only: whether the dog lives on the desktop, and where, per monitor.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DesktopDogPref {
+    pub enabled: bool,
+    pub on_desktop: bool,
+    /// Monitor key → top-left of the dog window, logical px from the top-left
+    /// of that monitor's work area.
+    pub spots: std::collections::BTreeMap<String, DogSpot>,
+    /// The monitor the dog sat on last.
+    pub last: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct DogSpot {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -249,6 +273,7 @@ impl Default for Settings {
             microsoft_client_id: String::new(),
             github_client_id: String::new(),
             shortcuts: Default::default(),
+            desktop_dog: DesktopDogPref::default(),
         }
     }
 }
@@ -291,4 +316,29 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
     let json = serde_json::to_vec_pretty(settings)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(settings_path(), json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn older_settings_load_with_the_desktop_dog_off() {
+        let json = serde_json::to_value(Settings::default()).unwrap();
+        let mut obj = json.as_object().unwrap().clone();
+        obj.remove("desktopDog");
+        let s: Settings = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
+        assert_eq!(s.desktop_dog, DesktopDogPref::default());
+        assert!(!s.desktop_dog.enabled);
+    }
+
+    #[test]
+    fn a_partial_desktop_dog_entry_fills_in_the_rest() {
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        v["desktopDog"] = serde_json::json!({ "enabled": true });
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert!(s.desktop_dog.enabled);
+        assert!(!s.desktop_dog.on_desktop);
+        assert!(s.desktop_dog.spots.is_empty());
+    }
 }

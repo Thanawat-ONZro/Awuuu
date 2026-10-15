@@ -3,6 +3,7 @@
 mod adapters;
 mod claude;
 mod composio;
+mod desktop_dog;
 mod files;
 mod hooks;
 mod integrations;
@@ -83,9 +84,14 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
+fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) {
     let (screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
+        // Where the desktop dog lives is Rust's to write (desktop_dog.rs); a
+        // page's copy may be stale. Only `enabled` comes from the pages.
+        let enabled = settings.desktop_dog.enabled;
+        settings.desktop_dog = current.desktop_dog.clone();
+        settings.desktop_dog.enabled = enabled;
         let screen_changed = current.screen != settings.screen
             || current.position != settings.position
             || current.along != settings.along
@@ -104,7 +110,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
             eprintln!("[awuuu] autostart: {err}");
         }
     }
-    hotkeys::apply(&app, &settings.shortcuts);
+    hotkeys::apply(&app, &settings.shortcuts, settings.desktop_dog.enabled);
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings, collapsed);
@@ -898,6 +904,12 @@ pub fn run() {
             oauth::github_cli_login,
             oauth::github_device_start,
             oauth::github_device_wait,
+            desktop_dog::desktop_dog_pick_up,
+            desktop_dog::desktop_dog_drag_begin,
+            desktop_dog::desktop_dog_flight_begin,
+            desktop_dog::desktop_dog_set_position,
+            desktop_dog::desktop_dog_flight_end,
+            desktop_dog::desktop_dog_forget,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -907,6 +919,8 @@ pub fn run() {
             }
             // Before the island: see create_settings_window.
             create_settings_window(&handle);
+            // The desktop dog's window, parked off-screen until it is wanted.
+            desktop_dog::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 island::make_non_activating(&win);
@@ -915,7 +929,7 @@ pub fn run() {
             } else {
                 log::line("WARNING: island window not found by label");
             }
-            hotkeys::apply(&handle, &loaded.shortcuts);
+            hotkeys::apply(&handle, &loaded.shortcuts, loaded.desktop_dog.enabled);
             gate.collapsed.store(false, Ordering::Relaxed);
             gate.set_active(true);
             island::spawn_mouse_watch(handle.clone(), gate.clone());

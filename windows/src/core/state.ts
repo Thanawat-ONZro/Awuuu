@@ -252,6 +252,19 @@ export interface Settings {
   githubClientId: string;
   /** Global shortcuts: action -> accelerator, only what changed ("" = off). See core/shortcuts.ts. */
   shortcuts: Record<string, string>;
+  /**
+   * The dog on the desktop. The pages only change `enabled`; Rust writes the
+   * rest (desktop_dog.rs) and keeps its own copy when settings are saved.
+   */
+  desktopDog: DesktopDogPref;
+}
+
+export interface DesktopDogPref {
+  enabled: boolean;
+  onDesktop: boolean;
+  /** Monitor key → top-left, logical px from that monitor's work area. */
+  spots: Record<string, { x: number; y: number }>;
+  last: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -301,6 +314,7 @@ export const DEFAULT_SETTINGS: Settings = {
   microsoftClientId: "",
   githubClientId: "",
   shortcuts: {},
+  desktopDog: { enabled: false, onDesktop: false, spots: {}, last: "" },
 };
 
 type Listener = () => void;

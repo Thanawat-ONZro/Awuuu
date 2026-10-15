@@ -3,7 +3,7 @@
 // `npm run dev` alone.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
 import type { IslandLayout } from "./layout";
@@ -224,7 +224,32 @@ export const Bridge = {
     callOrThrow<{ userCode: string; verificationUri: string; expiresIn: number }>("github_device_start"),
   /** Step 2: resolves once the code was entered; throws when it expired or was cancelled. */
   githubDeviceWait: () => callOrThrow<SignInStatus>("github_device_wait"),
+
+  // ── The dog on the desktop (desktop_dog.rs) ───────────────────────────────
+  /** Dragging the dog out of the island: its window appears under the cursor and follows it. */
+  dogPickUp: () => call<boolean>("desktop_dog_pick_up"),
+  /** A drag started on the dog where it sits; Rust carries it until release. */
+  dogDragBegin: () => call<boolean>("desktop_dog_drag_begin"),
+  /** Start of a flight: the end points (window top-left, physical px), or null. */
+  dogFlightBegin: (kind: "out" | "home") =>
+    call<{ from: { x: number; y: number }; to: { x: number; y: number } }>("desktop_dog_flight_begin", { kind }),
+  /** One step of a flight. */
+  dogSetPosition: (x: number, y: number) => call<void>("desktop_dog_set_position", { x, y }),
+  /** End of a flight; `forget`: the user brought it home for good. */
+  dogFlightEnd: (kind: "out" | "home", forget: boolean) => call<void>("desktop_dog_flight_end", { kind, forget }),
+  /** It stays home from now on (the feature was switched off). */
+  dogForget: () => call<void>("desktop_dog_forget"),
 };
+
+/** An event for one window only (island ⇄ dog). No-op in a plain browser. */
+export async function emitToWindow(label: string, event: string, payload?: unknown) {
+  if (!IS_TAURI) return;
+  try {
+    await emitTo(label, event, payload);
+  } catch (err) {
+    console.error(`[awuuu] emit ${event} failed`, err);
+  }
+}
 
 /** One provider on the Integrations page. */
 export interface SignInStatus {

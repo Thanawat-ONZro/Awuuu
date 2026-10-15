@@ -16,6 +16,7 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- Dog on the desktop (Settings → General, off by default): drag the dog out of the island and it sits on your desktop in its outfit, watching your cursor. Double-click it, press Ctrl+Alt+D or drop it on the island to send it home; it also flies home when an agent needs you and goes back afterwards. Its spot is remembered per monitor. Not yet tried on a real Windows desktop, see `docs/DESKTOP-DOG.md`.
 - A thin coloured band tops each page of the Awuuu window, in the page's colour, with a few slow particles. It stands still with "reduce motion" or when the window is hidden.
 - Weekly recap (Stats page, tray menu): sessions, files, commands, top agent and project, busiest day and longest session for the week from Monday, with a shareable image (save or copy). Lines changed and permissions answered show a dash, because that data is not recorded yet.
 - Composio through Hermes (Integrations, off by default): adds Composio as an MCP server in Hermes's config after a diff, a backup and your confirmation. Your app data then goes through Composio's service; see `docs/HERMES-COMPOSIO.md`. The API key stays in Windows Credential Manager unless you also choose to write it to Hermes's `.env`.

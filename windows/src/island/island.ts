@@ -24,6 +24,8 @@ import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
 import { HoverOpen } from "./hover";
 import { Mover, type Edge } from "./move";
+import { DesktopDogLink } from "./desktop-dog";
+import { isDrag } from "../mochi/desktop-logic";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -108,6 +110,14 @@ export class Island {
   private botSize = new Spring(10);
 
   private engine = new BotEngine();
+  /** The dog on the desktop (Settings → General): its life cycle and the drag out. */
+  readonly desktopDog = new DesktopDogLink(() => {
+    this.dirty = true;
+    State.notify();
+    this.ensureRunning();
+  });
+  /** A press on the island's dog that may become a drag to the desktop. */
+  private dogPress: { x: number; y: number } | null = null;
   /** The owner's own dog (settings.dog); agents and integrations wear theirs. */
   private ownLook: DogLook = CLASSIC;
   private greeting = new Greeting();
@@ -179,6 +189,7 @@ export class Island {
       this.root,
     );
     this.wireInput();
+    void this.desktopDog.init();
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => this.fsm.greetComplete();
     State.subscribe(() => {
@@ -361,6 +372,9 @@ export class Island {
           if (State.mode === "expanded") this.collapse();
           else this.alert(State.defaultView(), true);
           break;
+        case "toggleDesktopDog":
+          this.desktopDog.toggle();
+          break;
       }
     });
 
@@ -415,6 +429,8 @@ export class Island {
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.keepVisible = () => State.isPinned || State.pendingApproval != null;
     this.fsm.onTransition = (from, to) => {
+      // The greeting is over, however it ended: the dog may go back to the desktop.
+      if (from === "coucou" && to !== "coucou") this.desktopDog.launch();
       switch (to) {
         case "hidden":
           this.setMode("hidden");
@@ -441,6 +457,8 @@ export class Island {
 
   launch() {
     this.fsm.launch();
+    // Should the greeting never end, the desktop dog still comes out.
+    window.setTimeout(() => this.desktopDog.launch(), 10000);
   }
 
   // ── Mode / view ─────────────────────────────────────────────────────────────
@@ -1035,7 +1053,24 @@ export class Island {
     // Alt + press anywhere on the island moves it.
     this.islandEl.addEventListener("pointerdown", (e) => {
       if (e.altKey && e.button === 0) void this.mover.begin(e, this.islandEl);
+      // A press on the dog in the open island may become a drag to the desktop.
+      else if (
+        e.button === 0 && State.mode === "expanded" && this.desktopDog.canPickUp() &&
+        this.isBotHit(e.clientX, e.clientY)
+      ) {
+        this.dogPress = { x: e.clientX, y: e.clientY };
+      }
     });
+    window.addEventListener("pointermove", (e) => {
+      const press = this.dogPress;
+      if (!press || !isDrag(press, { x: e.clientX, y: e.clientY })) return;
+      this.dogPress = null;
+      this.cancelBotHover();
+      this.desktopDog.pickUp();
+    });
+    const endPress = () => { this.dogPress = null; };
+    window.addEventListener("pointerup", endPress);
+    window.addEventListener("pointercancel", endPress);
 
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
@@ -1136,6 +1171,8 @@ export class Island {
   }
 
   private isBotHit(x: number, y: number): boolean {
+    // On the desktop, the island's dog isn't here at all.
+    if (this.desktopDog.away) return false;
     const rect = this.islandRect();
     const cx = rect.x + this.botCx.value;
     const cy = rect.y + this.botCy.value;
@@ -1276,7 +1313,7 @@ export class Island {
 
     const greetingActive = State.mode === "expanded" && State.view === "greeting";
     // The drop canvas draws its own Mochi; two of them would overlap.
-    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive;
+    const visible = p.opacity > 0 && !greetingActive && !this.uploadActive && !this.desktopDog.away;
     this.botCanvas.style.opacity = visible ? "1" : "0";
 
     if (State.mode === "expanded" && State.view !== "uploading" && !greetingActive && !this.uploadActive) {
@@ -1466,6 +1503,8 @@ export class Island {
       seen.set(s.id, s.state);
     }
     this.glowStates = seen;
+    // A finished task calls the desktop dog home for a moment.
+    if (flash === "glow-done") this.desktopDog.noteFinished();
     if (!flash || REDUCED_MOTION.matches) return;
     this.root.classList.remove("glow-done", "glow-error");
     void this.islandEl.offsetWidth; // restart the animation if one is still playing
@@ -1501,6 +1540,7 @@ export class Island {
     this.ownLook = normalizeLook(State.settings.dog);
     setOwnerLook(this.ownLook);
     setOutfitSelection(State.settings.outfit);
+    this.desktopDog.settingsChanged();
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     this.animateGeometry(false);

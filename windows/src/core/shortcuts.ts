@@ -9,7 +9,7 @@
 
 export type ShortcutId =
   | "openChat" | "goToAlert" | "jumpToTerminal" | "muteToggle" | "toggleIsland"
-  | "approvalAllow" | "approvalDeny";
+  | "toggleDesktopDog" | "approvalAllow" | "approvalDeny";
 
 export interface ShortcutDef {
   id: ShortcutId;
@@ -20,6 +20,8 @@ export interface ShortcutDef {
   defaultOn: boolean;
   /** Only registered while a permission card waits. */
   approvalOnly: boolean;
+  /** Only registered while Settings → General → Dog on desktop is on. */
+  desktopOnly?: boolean;
 }
 
 /** Same ids, order and defaults as ACTIONS in src-tauri/src/hotkeys.rs. */
@@ -29,6 +31,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: "jumpToTerminal", label: "Open the waiting session's terminal", hint: "Brings the terminal of the session that asks, or of the focused one.", defaultKeys: "Ctrl+Alt+T", defaultOn: true, approvalOnly: false },
   { id: "muteToggle", label: "Mute or unmute", hint: "Turns Awuuu's sounds off and on.", defaultKeys: "Ctrl+Alt+S", defaultOn: true, approvalOnly: false },
   { id: "toggleIsland", label: "Open or close the island", hint: "Off by default.", defaultKeys: "Ctrl+Alt+I", defaultOn: false, approvalOnly: false },
+  { id: "toggleDesktopDog", label: "Send the dog to the desktop, or home", hint: "Active only while Dog on desktop is on (General).", defaultKeys: "Ctrl+Alt+D", defaultOn: true, approvalOnly: false, desktopOnly: true },
   { id: "approvalAllow", label: "Allow (permission card)", hint: "Active only while a permission card waits.", defaultKeys: "Ctrl+Alt+Y", defaultOn: true, approvalOnly: true },
   { id: "approvalDeny", label: "Deny (permission card)", hint: "Active only while a permission card waits.", defaultKeys: "Ctrl+Alt+N", defaultOn: true, approvalOnly: true },
 ];

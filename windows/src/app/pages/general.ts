@@ -126,6 +126,17 @@ function generalSection(): HTMLElement {
       h("span", { class: "hint", text: "rest the pointer on the island to open it; click inside to keep it open" }),
     ),
     h("div", { class: "row" },
+      h("label", { text: "Dog on desktop" }),
+      toggle(settings.desktopDog?.enabled === true, (v) => {
+        settings.desktopDog = { ...settings.desktopDog, enabled: v };
+        void save();
+      }),
+      h("span", {
+        class: "hint",
+        text: "drag the dog out of the open island, or Ctrl+Alt+D; double-click it or drop it on the island to bring it home",
+      }),
+    ),
+    h("div", { class: "row" },
       h("label", { text: "Launch at startup" }),
       toggle(settings.autostart, (v) => { settings.autostart = v; void save(); }),
     ),

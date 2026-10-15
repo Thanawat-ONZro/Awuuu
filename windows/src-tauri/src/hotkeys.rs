@@ -5,6 +5,7 @@
 //   openChat, goToAlert, jumpToTerminal, muteToggle, toggleIsland  — always on
 //   approvalAllow, approvalDeny — only while an approval card waits, so the keys
 //   belong to other apps the rest of the time.
+//   toggleDesktopDog — only while "Dog on desktop" is on (Settings → General).
 // settings.shortcuts maps action -> accelerator; a missing entry is the default,
 // "" is off. A key another app already owns never crashes anything: the reason
 // is kept per action and shown on the Shortcuts page.
@@ -20,10 +21,12 @@ pub struct ActionDef {
     pub keys: &'static str,
     pub on_by_default: bool,
     pub approval_only: bool,
+    /// Registered only while the dog on the desktop is switched on.
+    pub desktop_only: bool,
 }
 
 const fn action(id: &'static str, keys: &'static str, on: bool, approval_only: bool) -> ActionDef {
-    ActionDef { id, keys, on_by_default: on, approval_only }
+    ActionDef { id, keys, on_by_default: on, approval_only, desktop_only: false }
 }
 
 /// Same ids, order and defaults as SHORTCUTS in src/core/shortcuts.ts.
@@ -33,6 +36,7 @@ pub const ACTIONS: &[ActionDef] = &[
     action("jumpToTerminal", "Ctrl+Alt+T", true, false),
     action("muteToggle", "Ctrl+Alt+S", true, false),
     action("toggleIsland", "Ctrl+Alt+I", false, false),
+    ActionDef { id: "toggleDesktopDog", keys: "Ctrl+Alt+D", on_by_default: true, approval_only: false, desktop_only: true },
     action("approvalAllow", "Ctrl+Alt+Y", true, true),
     action("approvalDeny", "Ctrl+Alt+N", true, true),
 ];
@@ -142,6 +146,7 @@ pub fn effective(def: &ActionDef, stored: &BTreeMap<String, String>) -> String {
 pub fn plan(
     stored: &BTreeMap<String, String>,
     approval_on: bool,
+    desktop_on: bool,
 ) -> (Vec<(&'static str, Shortcut)>, BTreeMap<String, String>) {
     let mut wanted: Vec<(&'static str, Shortcut)> = Vec::new();
     let mut errors = BTreeMap::new();
@@ -154,7 +159,7 @@ pub fn plan(
             errors.insert(def.id.to_string(), format!("“{keys}” is not a valid shortcut."));
             continue;
         };
-        if def.approval_only && !approval_on {
+        if (def.approval_only && !approval_on) || (def.desktop_only && !desktop_on) {
             continue;
         }
         if let Some((other, _)) = wanted.iter().find(|(_, s)| *s == sc) {
@@ -171,6 +176,7 @@ pub fn plan(
 struct Live {
     stored: BTreeMap<String, String>,
     approval_on: bool,
+    desktop_on: bool,
     registered: Vec<(&'static str, Shortcut)>,
     errors: BTreeMap<String, String>,
 }
@@ -178,6 +184,7 @@ struct Live {
 static LIVE: Mutex<Live> = Mutex::new(Live {
     stored: BTreeMap::new(),
     approval_on: false,
+    desktop_on: false,
     registered: Vec::new(),
     errors: BTreeMap::new(),
 });
@@ -215,11 +222,11 @@ pub fn plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
 /// Brings the registered keys in line with the settings and whether a card waits.
 /// A key that cannot be registered (another app has it) is recorded, not fatal.
 fn sync(app: &AppHandle) {
-    let (stored, approval_on, old) = {
+    let (stored, approval_on, desktop_on, old) = {
         let live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
-        (live.stored.clone(), live.approval_on, live.registered.clone())
+        (live.stored.clone(), live.approval_on, live.desktop_on, live.registered.clone())
     };
-    let (wanted, mut errors) = plan(&stored, approval_on);
+    let (wanted, mut errors) = plan(&stored, approval_on, desktop_on);
     let gs = app.global_shortcut();
     // Release what is no longer wanted (or moved to other keys).
     for (id, sc) in &old {
@@ -254,10 +261,12 @@ fn sync(app: &AppHandle) {
 }
 
 /// Settings changed (or the app started): register the new bindings.
-pub fn apply(app: &AppHandle, stored: &BTreeMap<String, String>) {
+/// `desktop_on`: the dog on the desktop is switched on.
+pub fn apply(app: &AppHandle, stored: &BTreeMap<String, String>, desktop_on: bool) {
     {
         let mut live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
         live.stored = stored.clone();
+        live.desktop_on = desktop_on;
     }
     sync(app);
 }
@@ -317,11 +326,11 @@ mod tests {
 
     #[test]
     fn default_plan_skips_approval_keys_and_island_toggle() {
-        let (w, e) = plan(&BTreeMap::new(), false);
+        let (w, e) = plan(&BTreeMap::new(), false, false);
         let ids: Vec<_> = w.iter().map(|(id, _)| *id).collect();
         assert_eq!(ids, ["openChat", "goToAlert", "jumpToTerminal", "muteToggle"]);
         assert!(e.is_empty());
-        let (w, _) = plan(&BTreeMap::new(), true);
+        let (w, _) = plan(&BTreeMap::new(), true, false);
         assert!(w.iter().any(|(id, sc)| *id == "approvalAllow" && *sc == ca(Code::KeyY)));
         assert!(w.iter().any(|(id, sc)| *id == "approvalDeny" && *sc == ca(Code::KeyN)));
     }
@@ -332,7 +341,7 @@ mod tests {
         s.insert("openChat".to_string(), "Ctrl+Alt+K".to_string());
         s.insert("muteToggle".to_string(), String::new());
         s.insert("toggleIsland".to_string(), "Ctrl+Alt+I".to_string());
-        let (w, e) = plan(&s, false);
+        let (w, e) = plan(&s, false, false);
         assert!(w.iter().any(|(id, sc)| *id == "openChat" && *sc == ca(Code::KeyK)));
         assert!(!w.iter().any(|(id, _)| *id == "muteToggle"));
         assert!(w.iter().any(|(id, _)| *id == "toggleIsland"));
@@ -344,9 +353,21 @@ mod tests {
         let mut s = BTreeMap::new();
         s.insert("muteToggle".to_string(), "Ctrl+Alt+A".to_string()); // goToAlert's
         s.insert("jumpToTerminal".to_string(), "T".to_string()); // bare key
-        let (w, e) = plan(&s, false);
+        let (w, e) = plan(&s, false, false);
         assert!(!w.iter().any(|(id, _)| *id == "muteToggle" || *id == "jumpToTerminal"));
         assert!(e.contains_key("muteToggle"));
         assert!(e.contains_key("jumpToTerminal"));
+    }
+
+    #[test]
+    fn desktop_dog_key_only_while_the_dog_feature_is_on() {
+        let (w, _) = plan(&BTreeMap::new(), false, false);
+        assert!(!w.iter().any(|(id, _)| *id == "toggleDesktopDog"), "off by default: Ctrl+Alt+D stays free");
+        let (w, _) = plan(&BTreeMap::new(), false, true);
+        assert!(w.iter().any(|(id, sc)| *id == "toggleDesktopDog" && *sc == ca(Code::KeyD)));
+        let mut s = BTreeMap::new();
+        s.insert("toggleDesktopDog".to_string(), String::new());
+        let (w, _) = plan(&s, false, true);
+        assert!(!w.iter().any(|(id, _)| *id == "toggleDesktopDog"), "the user can switch it off");
     }
 }
