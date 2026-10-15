@@ -62,7 +62,7 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
 
 /** Diameter of the droplet the island becomes while it is carried (move.ts). */
-const DROPLET = 48;
+const DROPLET = 480;
 
 export class Island {
   readonly fsm = new IslandStateMachine();
@@ -1315,7 +1315,7 @@ export class Island {
 
   private updateBotTargets() {
     const p = this.moveAt
-      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: 24, opacity: 1 }
+      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: DROPLET / 2, opacity: 1 }
       : botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
     this.botCx.target = p.cx;
     this.botCy.target = p.cy;

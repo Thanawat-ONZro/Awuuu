@@ -43,6 +43,7 @@ const REACH = 130; // an edge starts reaching for the island within this distanc
 const BRIDGE = 70; // …and joins it within this one
 const BEADS = 12;
 const DRAG_START = 3; // px of travel before a press becomes a move
+const FLAT = 0.3; // how thin the droplet gets pressed against an edge, as a share of its size
 const GRAB_MS = 180; // the pill slides from where it was grabbed to under the cursor
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) {
@@ -60,6 +61,21 @@ function nearestEdge(x: number, y: number, W: number, H: number): { edge: Edge; 
     { edge: "right", d: W - x, px: W, py: y },
   ];
   return c.reduce((a, b) => (b.d < a.d ? b : a));
+}
+
+/**
+ * How round the droplet still is `d` px from an edge (its centre to the
+ * edge): a full circle until it touches the edge, then pressed flatter and
+ * flatter as it is pushed in, always just touching, down to FLAT of its size.
+ */
+export function roundness(d: number, size: number): number {
+  return Math.min(1, Math.max(FLAT, (2 * d) / size));
+}
+
+/** The squash (along the edge, across it) for `k` roundness, in screen axes. */
+export function squash(edge: Edge, k: number): { sx: number; sy: number } {
+  const spread = 1 + (1 - k) * 0.3; // pressed, it spreads a little along the edge
+  return edge === "left" || edge === "right" ? { sx: k, sy: spread } : { sx: spread, sy: k };
 }
 
 function edgeAnchor(edge: Edge, along: number, W: number, H: number): { x: number; y: number } {
@@ -167,7 +183,7 @@ export class Mover {
     defs.append(filter);
     const g = svgEl("g", { filter: "url(#awuuu-goo)", fill: "#120f0c" });
     const source = svgEl("rect", { rx: 10 });
-    const blob = svgEl("rect", { rx: 24 });
+    const blob = svgEl("rect", {});
     const bulge = svgEl("circle", { r: 0 });
     const beads = Array.from({ length: BEADS }, () => svgEl("circle", { r: 0 }));
     const bridge = Array.from({ length: 6 }, () => svgEl("circle", { r: 0 }));
@@ -202,10 +218,10 @@ export class Mover {
       const along = near.edge === "top" || near.edge === "bottom" ? pos.x / W : pos.y / H;
       const pill = this.host.pillSize(near.edge);
       const to =
-        near.edge === "top" ? { x: pos.x, y: pill.h / 2 }
-        : near.edge === "bottom" ? { x: pos.x, y: H - pill.h / 2 }
-        : near.edge === "left" ? { x: pill.w / 2, y: pos.y }
-        : { x: W - pill.w / 2, y: pos.y };
+        near.edge === "top" ? { x: pos.x, y: (pill.h * FLAT) / 2 }
+        : near.edge === "bottom" ? { x: pos.x, y: H - (pill.h * FLAT) / 2 }
+        : near.edge === "left" ? { x: (pill.w * FLAT) / 2, y: pos.y }
+        : { x: W - (pill.w * FLAT) / 2, y: pos.y };
       release = { edge: near.edge, along: Math.min(1, Math.max(0, along)), t0: performance.now(), from: { ...pos }, to };
     };
 
@@ -248,8 +264,9 @@ export class Mover {
         const ny = pos.y + (aimY - pos.y) * Math.min(1, dt * 18);
         vel = { x: vel.x * 0.8 + ((nx - pos.x) / Math.max(dt, 1e-3)) * 0.2, y: vel.y * 0.8 + ((ny - pos.y) / Math.max(dt, 1e-3)) * 0.2 };
         // Most of the pill stays on screen, however hard it is pulled.
-        pos.x = Math.min(W - pill.w * 0.3, Math.max(pill.w * 0.3, nx));
-        pos.y = Math.min(H - pill.h * 0.3, Math.max(pill.h * 0.3, ny));
+        // It can be pushed in until it lies flat against an edge, no further.
+        pos.x = Math.min(W - (pill.w * FLAT) / 2, Math.max((pill.w * FLAT) / 2, nx));
+        pos.y = Math.min(H - (pill.h * FLAT) / 2, Math.max((pill.h * FLAT) / 2, ny));
       }
 
       // Neck from the source: thins with distance, snaps past BREAK.
@@ -301,11 +318,17 @@ export class Mover {
       const stretch = 1 + Math.min(0.32, speed / 3200) + reach * 0.12;
       const angle = speed > 40 ? Math.atan2(vel.y, vel.x) : near.edge === "left" || near.edge === "right" ? 0 : Math.PI / 2;
       const deg = (angle * 180) / Math.PI;
-      const transform = `rotate(${deg}deg) scale(${stretch}, ${1 / stretch}) rotate(${-deg}deg)`;
-      blob.setAttribute("x", String(pos.x - pill.w / 2));
-      blob.setAttribute("y", String(pos.y - pill.h / 2));
-      blob.setAttribute("width", String(pill.w));
-      blob.setAttribute("height", String(pill.h));
+      // Close to an edge it presses flat against it, the way a drop of water does.
+      const sq = squash(near.edge, roundness(near.d, Math.max(pill.w, pill.h)));
+      const transform = `rotate(${deg}deg) scale(${stretch}, ${1 / stretch}) rotate(${-deg}deg) scale(${sq.sx}, ${sq.sy})`;
+      const bw = pill.w * sq.sx;
+      const bh = pill.h * sq.sy;
+      blob.setAttribute("x", String(pos.x - bw / 2));
+      blob.setAttribute("y", String(pos.y - bh / 2));
+      blob.setAttribute("width", String(bw));
+      blob.setAttribute("height", String(bh));
+      blob.setAttribute("rx", String(bw / 2));
+      blob.setAttribute("ry", String(bh / 2));
       blob.setAttribute("transform", `rotate(${deg} ${pos.x} ${pos.y}) translate(${pos.x} ${pos.y}) scale(${stretch} ${1 / stretch}) translate(${-pos.x} ${-pos.y}) rotate(${-deg} ${pos.x} ${pos.y})`);
       this.host.setMoveOverride({ x: pos.x, y: pos.y, transform });
 
