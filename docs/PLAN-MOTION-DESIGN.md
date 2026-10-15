@@ -95,6 +95,16 @@
 
 ที่ผมแนะนำเพิ่มเข้าเฟส B: **G3 (Haiku 4.5, $0.5-1)** และ **G7 ปุ่มติดตั้ง hook ต่อ agent (Sonnet 5.5, $4-6)** ส่วน G1/G2/G4/G6 ผูกกับ F1 หรือทำต่อท้าย
 
+## 4c. การต่อแอปอื่น / Composio
+ของที่ Awuuu ต่อเองอยู่แล้ว (ทำงานในเครื่อง key อยู่ใน Credential Manager): Gmail/Outlook/IMAP, ปฏิทิน (Google/Microsoft/iCal), RSS, uptime, อากาศ, Todoist, GitHub, Stripe, Vercel, n8n, Resend, Notion, Cal.com
+
+**Composio**: บริการ cloud ที่ถือ OAuth ของแอปนับพัน (ฟรี 20K calls/เดือน, $29 = 200K ตามหน้า pricing ของเขา; ตัวเลขจากเว็บเปรียบเทียบไม่ตรงกัน ต้องเช็กหน้าทางการก่อนใช้จริง)
+- ข้อขัดกับกฎของ Awuuu: ทุกการเรียกและ token ของแอปผู้ใช้ผ่านเซิร์ฟเวอร์ Composio ซึ่งขัดกับ "No telemetry / 100% local / เรียกเฉพาะบริการที่ผู้ใช้ตั้งเอง" ใน CLAUDE.md จึง**ไม่ฝังใน Awuuu เป็นค่าเริ่มต้น**
+- ทางที่ลงตัว: ใส่ Composio เป็น MCP server ให้ **Hermes Agent** (ฝั่ง agent ไม่ใช่ฝั่ง Awuuu; ต้องยืนยันว่า Hermes รุ่นที่ Owen ใช้รองรับ MCP) Awuuu เห็นการเรียก `mcp__…` และขออนุมัติให้คลิกได้อยู่แล้ว (`island/hooks.ts:163`) จึงได้ "ผู้ช่วยทำงานข้ามแอปได้" โดย Awuuu ยังเป็นเครื่องมือในเครื่อง
+- ถ้าจะให้ Awuuu ตั้งค่าให้: ทำเป็นปุ่ม opt-in ในหน้า Integrations "เปิด Composio ผ่าน Hermes" พร้อมคำเตือนว่าข้อมูลผ่านบริการภายนอก (Task X1, Sonnet 5.5, $2-4, หลัง Owen ยืนยันว่า Hermes รองรับ MCP)
+
+**ต่อเองเพิ่ม (ตรงเป้า "ใช้งานได้จริง")**: ร่างตอบอีเมลจากแชท/Quick actions (ส่งออกต้องคลิกยืนยันเสมอ, roadmap 8.2), Linear, Slack/Discord แจ้งเตือนอย่างเดียว, Google Drive/Sheets อ่านอย่างเดียว (ตัวละ Sonnet 5.5 $3-5)
+
 ## 5. แตก task + worker + ค่าใช้จ่าย
 กติกา worker ตามที่ Owen สั่ง: ค่าเริ่มต้น **Sonnet 5.5 medium**; งานง่ายทำตามแผนได้เลย **Haiku (4.5)**; บั๊กหนัก/feature ใหญ่มาก **Opus 5.5 medium**
 ค่าใช้จ่ายเป็น**การประเมิน ไม่ใช่ค่าที่วัดจริง** (เทียบ PR ขนาดกลางใน ROADMAP ที่ $2-5; Haiku ถูกกว่าราว 3-4 เท่า, Opus แพงกว่าราว 1.5-2 เท่า)
