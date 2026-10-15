@@ -76,6 +76,25 @@
 
 ข้อสังเกตเรื่อง "friendly + ใช้งานได้จริง" ที่ coucou ไม่มีแต่ Awuuu ควรเหนือกว่า: ข้อความของน้องหมาเป็นภาษาไทยธรรมชาติ, สรุปงาน agent เป็นภาษาคน (story engine มีแล้ว), คำแนะนำเมื่อระบบพัง (`aw doctor` มีแล้ว) — งานรอบนี้จึงเน้น motion/สี (ส่วนที่ Owen ขอ) แล้วค่อย F1, F2, F5
 
+## 4b. Feature เพิ่มเติมของ coucou ที่แผนข้อ 4 ยังไม่ได้ลง (อ่านจาก README/windows ของ coucou)
+| # | Feature | หมายเหตุ | คุ้มไหม |
+|---|---|---|---|
+| G1 | Hotkey ทั่วเครื่อง: เปิดแชท (Ctrl+Alt+Space), ไปที่คำขออนุมัติ, เปิดเทอร์มินัลของ session, mute, เปิด/ปิด island | Awuuu มีแค่ Ctrl+Alt+Y/N รวมเข้า F1 | สูง |
+| G2 | Hotkey ใน island: Ctrl+1-9 สลับ pill, Ctrl+Enter ส่ง, Ctrl+K แชทใหม่, Ctrl+E เปิด diff | รวมเข้า F1/F4 | กลาง |
+| G3 | Open on hover: วางเมาส์บน island แล้วเปิดเอง พับเองเมื่อเมาส์ออก | งานเล็ก ควรทำ | สูง |
+| G4 | เลือกจอที่น้องหมาอยู่ / ตามจอที่ใช้อยู่ | Awuuu จัดการ multi-monitor แล้วแต่ไม่มีตัวเลือก | กลาง |
+| G5 | เมนู tray: Weekly recap, Wardrobe | Awuuu tray มี Pause/Update/Reset แล้ว | ต่ำ |
+| G6 | สีต่อ pill/น้องหมาแต่ละตัว (palette คลิกที่จุดสี) | Awuuu มี look ต่อ agent แล้ว แต่ยังเลือกเองไม่ได้ | กลาง |
+| G7 | Agent เพิ่ม: Codex, Copilot CLI, Muse, OpenCode, Amp, Antigravity, Cursor, Gemini ติดตั้ง hook ให้ในหน้า Settings | Awuuu มี payload ทั่วไปแล้ว แต่ยังไม่มีปุ่มติดตั้งอัตโนมัติ (roadmap 7.3 ที่เลื่อนไว้) | สูง |
+| G8 | Claude Desktop / Hermes plugin ติดตั้งผ่านปลั๊กอินของ agent เอง | Awuuu ต่อ Hermes ผ่าน API ตรงแล้ว | ต่ำ |
+| G9 | Plan usage ของ Codex | Awuuu มีของ Claude/Codex บางส่วนใน `usage.rs` (ตรวจ) | กลาง |
+| G10 | GitHub: PR ของฉัน, รอรีวิว, CI ของ default branch | Awuuu มีใน integrations แล้ว | มีแล้ว |
+| G11 | Flow dictation (กดค้างแล้วพูดวางที่ cursor), Pill ล่างจอ, Notetaker อัดประชุม, "OK Coucou" สั่งเสียงแบบ Jarvis | ใช้ Parakeet/WASAPI ใหญ่ ไม่ใช่แกนของ Awuuu | ต่ำ ไม่แนะนำ |
+| G12 | Relay/Phone link, Android app, Live Activity | ใหญ่มาก | ไม่แนะนำ |
+| G13 | Wardrobe ตามฤดูกาล (หมวกแม่มดเดือนตุลา ฯลฯ) | = F6 | ต่ำ-กลาง |
+
+ที่ผมแนะนำเพิ่มเข้าเฟส B: **G3 (Haiku 4.5, $0.5-1)** และ **G7 ปุ่มติดตั้ง hook ต่อ agent (Sonnet 5.5, $4-6)** ส่วน G1/G2/G4/G6 ผูกกับ F1 หรือทำต่อท้าย
+
 ## 5. แตก task + worker + ค่าใช้จ่าย
 กติกา worker ตามที่ Owen สั่ง: ค่าเริ่มต้น **Sonnet 5.5 medium**; งานง่ายทำตามแผนได้เลย **Haiku (4.5)**; บั๊กหนัก/feature ใหญ่มาก **Opus 5.5 medium**
 ค่าใช้จ่ายเป็น**การประเมิน ไม่ใช่ค่าที่วัดจริง** (เทียบ PR ขนาดกลางใน ROADMAP ที่ $2-5; Haiku ถูกกว่าราว 3-4 เท่า, Opus แพงกว่าราว 1.5-2 เท่า)
