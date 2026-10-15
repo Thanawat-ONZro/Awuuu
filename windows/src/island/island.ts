@@ -61,6 +61,8 @@ const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
 
+const DROP_SIZE = 56; // keep in step with DROP in move.ts
+
 export class Island {
   readonly fsm = new IslandStateMachine();
   /** Open on hover (Settings → General); the timing lives in hover.ts. */
@@ -94,6 +96,8 @@ export class Island {
   /** The drop flow pinned the island open (released when the flow is left). */
   private dropPinned = false;
   /** Set while the island is being moved (move.ts). */
+  /** Being carried: the island is a round drop (see targetSize). */
+  private carried = false;
   private moveAt: { x: number; y: number; transform: string } | null = null;
   private resizeGrip!: HTMLElement;
   private resizing: { sx: number; sy: number; w: number; h: number; chat: boolean } | null = null;
@@ -177,9 +181,13 @@ export class Island {
           this.fsm.pinned = true;
           if (State.mode !== "compact") this.collapse();
           this.fsm.pinned = true;
+          this.carried = true;
+          this.animateGeometry(false);
           return saved;
         },
         leaveMove: (saved) => {
+          this.carried = false;
+          this.animateGeometry(false);
           this.fsm.pinned = State.isPinned;
           if (saved.wasExpanded) {
             this.fsm.forceHome();
@@ -789,6 +797,7 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
+    if (this.carried) return { w: DROP_SIZE, h: DROP_SIZE, r: DROP_SIZE / 2 };
     const { w, h } = islandSize(
       State.mode,
       State.view,

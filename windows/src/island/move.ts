@@ -43,6 +43,7 @@ const REACH = 130; // an edge starts reaching for the island within this distanc
 const BRIDGE = 70; // …and joins it within this one
 const BEADS = 12;
 const DRAG_START = 3; // px of travel before a press becomes a move
+const DROP = 56; // the island is a round drop while it is carried
 const GRAB_MS = 180; // the pill slides from where it was grabbed to under the cursor
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) {
@@ -167,7 +168,7 @@ export class Mover {
     defs.append(filter);
     const g = svgEl("g", { filter: "url(#awuuu-goo)", fill: "#120f0c" });
     const source = svgEl("rect", { rx: 10 });
-    const blob = svgEl("rect", { rx: 16 });
+    const blob = svgEl("rect", { rx: DROP / 2 });
     const bulge = svgEl("circle", { r: 0 });
     const beads = Array.from({ length: BEADS }, () => svgEl("circle", { r: 0 }));
     const bridge = Array.from({ length: 6 }, () => svgEl("circle", { r: 0 }));
@@ -200,7 +201,7 @@ export class Mover {
       if (release) return;
       const near = nearestEdge(pos.x, pos.y, W, H);
       const along = near.edge === "top" || near.edge === "bottom" ? pos.x / W : pos.y / H;
-      const pill = this.host.pillSize(near.edge);
+      const pill = { w: DROP, h: DROP };
       const to =
         near.edge === "top" ? { x: pos.x, y: pill.h / 2 }
         : near.edge === "bottom" ? { x: pos.x, y: H - pill.h / 2 }
@@ -224,7 +225,7 @@ export class Mover {
         shape = ahead;
         this.host.previewEdge(shape);
       }
-      const pill = this.host.pillSize(shape);
+      const pill = { w: DROP, h: DROP };
 
       if (release) {
         // Flow into place: an overshooting ease toward the dock point.
