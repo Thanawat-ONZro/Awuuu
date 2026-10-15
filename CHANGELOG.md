@@ -6,12 +6,14 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-15
+
 ### Added
 - Settings → General can pin the island to a specific display ("Display 1…N", counted from the left); an unplugged one falls back to the main display.
 - Tray menu: "Wardrobe…" opens Appearance.
 
 ### Changed
-- Moving the island: it now becomes a round droplet with just the dog while you carry it (instead of a small capsule), and rounds back into the pill when it docks.
+- Moving the island is rebuilt: no more display-sized overlay (which made it jump). It becomes a round droplet with just the dog in a small window that follows the cursor, water rises from the nearest screen edge to meet it (the dog is never squashed), and it lands on the edge and becomes the pill again.
 
 ### Changed
 - The dog notices tab changes: a short tail wag and a lean toward the new tab, ears up when an alert rises, a hop when an agent finishes. Off with "reduce motion".
