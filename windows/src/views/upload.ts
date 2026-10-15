@@ -15,6 +15,7 @@ import { VIEW_LAYOUTS, type IslandViewName } from "../core/layout";
 import { State, type PendingFile } from "../core/state";
 import { dropTitle, uploadLabel } from "../upload/canvas";
 import type { ViewActions, ViewHost } from "./views";
+import { t } from "../i18n/i18n";
 
 /** The card starts this far inside the island (#content's padding). */
 const CARD_INSET = 10;
@@ -52,7 +53,7 @@ export function fileChip(file: PendingFile, onRemove?: () => void): HTMLElement 
     h("span", { class: "chip-name", text: file.name }),
   );
   if (onRemove) {
-    const x = h("button", { class: "chip-x", title: `Remove ${file.name}` }, svg(ICONS.xmark, 9));
+    const x = h("button", { class: "chip-x", title: t("Remove {name}", { name: file.name }) }, svg(ICONS.xmark, 9));
     x.addEventListener("mousedown", (e) => e.stopPropagation());
     x.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -107,7 +108,7 @@ export function buildUpload(): ViewHost {
   const tags = h(
     "div",
     { class: "drop-tags" },
-    ...["PDF", "Images", "Code", "Docs"].map((t) => h("span", { text: t })),
+    h("span", { text: t("PDF") }), h("span", { text: t("Images") }), h("span", { text: t("Code") }), h("span", { text: t("Docs") }),
   );
   // Reached with "Add more": the files already there are one click away.
   const back = h("button", { class: "btn secondary drop-back", onclick: () => nav?.setView("choose") });
@@ -123,7 +124,7 @@ export function buildUpload(): ViewHost {
       title.textContent = dropTitle();
       const n = State.droppedFiles.length;
       back.style.display = n > 0 ? "" : "none";
-      back.textContent = n === 1 ? "Back to 1 file" : `Back to ${n} files`;
+      back.textContent = n === 1 ? t("Back to 1 file") : t("Back to {n} files", { n });
     },
   };
 }
@@ -146,7 +147,7 @@ export function buildUploading(): ViewHost {
     sync() {
       const done = State.uploadProgress >= 0.999;
       const pct = Math.round(State.uploadProgress * 100);
-      label.textContent = done ? `✓  ${uploadLabel().replace(/^Uploading /, "")}` : uploadLabel();
+      label.textContent = done ? `✓  ${uploadLabel(true)}` : uploadLabel();
       label.classList.toggle("done", done);
       percent.textContent = done ? "" : `${pct} %`;
       // Percentages of the track, which is as wide as the card allows.
@@ -172,8 +173,8 @@ export function buildChoose(actions: ViewActions): ViewHost {
     "div",
     { class: "actions" },
     ask,
-    h("button", { class: "btn secondary", text: "Add more", onclick: () => actions.setView("upload") }),
-    h("button", { class: "btn secondary", text: "Cancel", onclick: cancel }),
+    h("button", { class: "btn secondary", text: t("Add more"), onclick: () => actions.setView("upload") }),
+    h("button", { class: "btn secondary", text: t("Cancel"), onclick: cancel }),
   );
   const stack = h("div", { class: "stack choose-stack" }, title, chips, row);
   stack.style.paddingLeft = `${clearOfDog("choose")}px`;
@@ -184,17 +185,17 @@ export function buildChoose(actions: ViewActions): ViewHost {
     sync() {
       const n = State.droppedFiles.length;
       clear(title);
-      title.append(h("b", { text: n === 1 ? "1 file is ready." : `${n} files are ready.` }));
+      title.append(h("b", { text: n === 1 ? t("1 file is ready.") : t("{n} files are ready.", { n }) }));
       title.append(
         State.dropError
           ? h("span", { class: "choose-error", text: ` ${State.dropError}` })
-          : h("span", { class: "choose-sub", text: n === 1 ? " What do you want to do with it?" : " What do you want to do with them?" }),
+          : h("span", { class: "choose-sub", text: n === 1 ? t(" What do you want to do with it?") : t(" What do you want to do with them?") }),
       );
       // Taking the last one out is the same as cancelling.
       syncFileChips(chips, true, () => {
         if (State.droppedFiles.length === 0 && State.view === "choose") cancel();
       });
-      ask.textContent = n === 1 ? "Ask about this" : "Ask about these";
+      ask.textContent = n === 1 ? t("Ask about this") : t("Ask about these");
     },
   };
 }

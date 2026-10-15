@@ -8,13 +8,14 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
+import { t } from "../i18n/i18n";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
   const date = typeof value === "number" ? new Date(value) : new Date(String(value));
   const diff = (Date.now() - date.getTime()) / 1000;
   if (!Number.isFinite(diff)) return "";
-  if (diff < 60) return "just now";
+  if (diff < 60) return t("just now");
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
   return `${Math.floor(diff / 86400)}d`;
@@ -25,7 +26,7 @@ function header(color: string, name: string, kind: string, extra?: Node, id?: st
   if (extra) row.append(extra);
   if (id) {
     // Refresh now instead of waiting for the next poll.
-    const refresh = h("button", { class: "int-refresh", title: "Refresh" }, svg(ICONS.refresh, 9, { stroke: 2.2 }));
+    const refresh = h("button", { class: "int-refresh", title: t("Refresh") }, svg(ICONS.refresh, 9, { stroke: 2.2 }));
     refresh.addEventListener("click", (e) => {
       e.stopPropagation();
       refresh.classList.add("spin");
@@ -77,7 +78,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   const info = State.integrations[task.id];
   const configured = info?.configured ?? false;
   const error = info?.error ?? null;
-  const label = error ?? (configured ? "Connected · loading…" : "Key not configured");
+  const label = error ?? (configured ? t("Connected · loading…") : t("Key not configured"));
   const statusColor = error || !configured ? "#F0645A" : "#22C55E";
 
   const actions = h("div", { class: "int-actions" });
@@ -86,7 +87,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       h("button", {
         class: "link-btn",
         style: `color:${task.color}d9`,
-        text: "Open n8n",
+        text: t("Open n8n"),
         onclick: () => void Bridge.openN8n(),
       }),
     );
@@ -95,7 +96,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       h("button", {
         class: "link-btn",
         style: `color:${task.color}d9`,
-        text: `Open ${task.name}`,
+        text: t("Open {name}", { name: task.name }),
         onclick: () => void Bridge.openUrl(OPEN_URLS[task.id]),
       }),
     );
@@ -105,20 +106,20 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       h("button", {
         class: "link-btn",
         style: `color:${task.color}d9`,
-        text: "Refresh",
+        text: t("Refresh"),
         onclick: () => void Bridge.refreshIntegration(task.id),
       }),
     );
   } else {
     actions.append(
-      h("button", { class: "link-btn", style: "color:#a29484", text: "Settings…", onclick: openSettings }),
+      h("button", { class: "link-btn", style: "color:#a29484", text: t("Settings…"), onclick: openSettings }),
     );
   }
 
   return h(
     "div",
     { class: "int-card" },
-    header(task.color, task.name, "Integration"),
+    header(task.color, task.name, t("Integration")),
     h("div", { class: "int-status" }, dot(statusColor, 5), h("span", { text: label })),
     actions,
   );
@@ -136,7 +137,7 @@ function vercelCard(onDetail: () => void): HTMLElement {
     if (i === 0) {
       const more = h(
         "button",
-        { class: "int-more", title: "Details", onclick: onDetail },
+        { class: "int-more", title: t("Details"), onclick: onDetail },
         svg(ICONS.ellipsis, 8),
       );
       rows.append(listRow(accent, true, name, ago, more));
@@ -144,14 +145,14 @@ function vercelCard(onDetail: () => void): HTMLElement {
       rows.append(listRow(accent, false, name, ago));
     }
   });
-  return h("div", { class: "int-card" }, header("#7C5CFF", "Vercel", "Deployments"), rows);
+  return h("div", { class: "int-card" }, header("#7C5CFF", "Vercel", t("Deployments")), rows);
 }
 
 function vercelDetail(onBack: () => void): HTMLElement {
   const d = arr("integration_vercel", "deployments")[0] ?? {};
   const success = d.state === "READY";
   const accent = success ? "#22C55E" : "#F0645A";
-  const status = success ? "Ready" : d.state === "CANCELED" ? "Canceled" : "Error";
+  const status = success ? t("Ready") : d.state === "CANCELED" ? t("Canceled") : t("Error");
   const body = h("div", { class: "int-detail-body" });
   if (d.commitMessage) body.append(h("div", { class: "int-commit", text: String(d.commitMessage) }));
   const meta = h("div", { class: "int-meta" });
@@ -205,7 +206,7 @@ function resendCard(): HTMLElement {
     if (bad) cells.push(h("span", { class: "int-tag bad", text: String(e.lastEvent) }));
     rows.append(linked(listRow(accent, i === 0, ...cells), e.id ? `https://resend.com/emails/${e.id}` : null));
   });
-  return h("div", { class: "int-card" }, header("#22C55E", "Resend", "Emails", extra, "integration_resend"), rows);
+  return h("div", { class: "int-card" }, header("#22C55E", "Resend", t("Emails"), extra, "integration_resend"), rows);
 }
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
@@ -229,9 +230,9 @@ function githubCard(): HTMLElement {
   const stats = h(
     "div",
     { class: "int-stats" },
-    linked(statRow(ICONS.star, "#F5A524", "Total stars", fmt(stars)), login ? `https://github.com/${login}?tab=repositories` : null),
-    linked(statRow(ICONS.stack, "#7D7062", "Repositories", String(repos)), login ? `https://github.com/${login}` : null),
-    linked(statRow(ICONS.bang, "#60A5FA", "Notifications", String(Number(d.notifications ?? 0))), "https://github.com/notifications"),
+    linked(statRow(ICONS.star, "#F5A524", t("Total stars"), fmt(stars)), login ? `https://github.com/${login}?tab=repositories` : null),
+    linked(statRow(ICONS.stack, "#7D7062", t("Repositories"), String(repos)), login ? `https://github.com/${login}` : null),
+    linked(statRow(ICONS.bang, "#60A5FA", t("Notifications"), String(Number(d.notifications ?? 0))), "https://github.com/notifications"),
   );
   const failing = Array.isArray(d.failingRuns) ? (d.failingRuns as Record<string, unknown>[]) : [];
   for (const f of failing.slice(0, 2)) {
@@ -271,7 +272,7 @@ function stripeCard(): HTMLElement {
   return h(
     "div",
     { class: "int-card" },
-    header("#0570DE", "Stripe", "Payments", undefined, "integration_stripe"),
+    header("#0570DE", "Stripe", t("Payments"), undefined, "integration_stripe"),
     h("div", { class: "int-balance" }, h("span", { text: balance }), h("i", { text: currency })),
     rows,
   );
@@ -299,7 +300,7 @@ function notionCard(): HTMLElement {
       ),
     );
   }
-  return h("div", { class: "int-card" }, header("#E8E8E8", "Notion", "Recent", undefined, "integration_notion"), rows);
+  return h("div", { class: "int-card" }, header("#E8E8E8", "Notion", t("Recent"), undefined, "integration_notion"), rows);
 }
 
 // ── Cal.com ───────────────────────────────────────────────────────────────────
@@ -310,7 +311,7 @@ function calcomCard(): HTMLElement {
     .sort((a, b) => new Date(String(a.start)).getTime() - new Date(String(b.start)).getTime());
   const rows = h("div", { class: "int-rows tight" });
   if (bookings.length === 0) {
-    rows.append(h("div", { class: "int-empty", text: "No calls scheduled" }));
+    rows.append(h("div", { class: "int-empty", text: t("No calls scheduled") }));
   }
   for (const b of bookings.slice(0, 3)) {
     const when = new Date(String(b.start));
@@ -332,7 +333,7 @@ function calcomCard(): HTMLElement {
       ),
     );
   }
-  return h("div", { class: "int-card" }, header("#C9956A", "Cal.com", "Schedule", undefined, "integration_calcom"), rows);
+  return h("div", { class: "int-card" }, header("#C9956A", "Cal.com", t("Schedule"), undefined, "integration_calcom"), rows);
 }
 
 // ── n8n ───────────────────────────────────────────────────────────────────────
@@ -345,7 +346,7 @@ function n8nCard(task: AgentTask, onDetail: () => void, openSettings: () => void
   return h(
     "div",
     { class: "int-card" },
-    header("#F29B38", "n8n", "Workflow"),
+    header("#F29B38", "n8n", t("Workflow")),
     h(
       "div",
       { class: "int-actions" },
@@ -380,14 +381,14 @@ function n8nDetail(task: AgentTask, onBack: () => void): HTMLElement {
       h("span", {
         class: "int-badge",
         style: `color:${accent};background:${accent}24`,
-        text: success ? "Success" : "Failed",
+        text: success ? t("Success") : t("Failed"),
       }),
     ),
     detail
       ? h("pre", { class: "int-detail-text", text: detail })
       : h("div", {
           class: "int-status",
-          text: success ? "Completed successfully." : "No error details available.",
+          text: success ? t("Completed successfully.") : t("No error details available."),
         }),
   );
 }

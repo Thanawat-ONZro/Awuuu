@@ -21,6 +21,7 @@ import {
   searchSession, sessionMarkdown, summarizeSessions, turnMarkdown, turnSummary,
   type Facts, type FileTouch, type SessionSummary, type Turn,
 } from "../recap";
+import { t } from "../../i18n/i18n";
 
 const LIST_PAGE = 60;
 const TURN_PAGE = 30;
@@ -79,30 +80,30 @@ export function page(): HTMLElement {
 
   // ── Skeleton ─────────────────────────────────────────────────────────────
   const search = h("input", {
-    type: "text", class: "dash-search", placeholder: "Search prompts, commands, output, files…", spellcheck: "false",
+    type: "text", class: "dash-search", placeholder: t("Search prompts, commands, output, files…"), spellcheck: "false",
   }) as HTMLInputElement;
   const matchInfo = h("span", { class: "hint match-info" });
   const agentPick = dropdown({
-    title: "Agent",
+    title: t("Agent"),
     options: () => [
-      { value: "", label: "All agents" },
+      { value: "", label: t("All agents") },
       ...[...new Set(all.map((s) => s.agent))].sort().map((a) => ({ value: a, label: agentMeta(a).name })),
     ],
     get: () => agent,
     set: (v) => { agent = v; listCap = LIST_PAGE; render(); },
   });
   const rangePick = dropdown({
-    title: "Dates",
+    title: t("Dates"),
     options: () => [
-      { value: "today", label: "Today" },
-      { value: "7", label: "7 days" },
-      { value: "all", label: "All" },
+      { value: "today", label: t("Today") },
+      { value: "7", label: t("7 days") },
+      { value: "all", label: t("All") },
     ],
     get: () => range,
     set: (v) => { range = v as Range; listCap = LIST_PAGE; render(); },
   });
-  const refreshBtn = h("button", { text: "Refresh", title: "Read the history again", onclick: () => void load() });
-  const exportAllBtn = h("button", { text: "Export all", title: "Save every listed session as one .md and one .json in Downloads" });
+  const refreshBtn = h("button", { text: t("Refresh"), title: t("Read the history again"), onclick: () => void load() });
+  const exportAllBtn = h("button", { text: t("Export all"), title: t("Save every listed session as one .md and one .json in Downloads") });
   exportAllBtn.addEventListener("click", () => {
     void doExport(exportAll(visible), `${plural(visible.length, "session")} exported`, exportAllBtn);
   });
@@ -116,7 +117,7 @@ export function page(): HTMLElement {
   const panes = h("div", { class: "sess-panes" }, listEl, detailEl);
   const body = h("div", { class: "sess-body" });
 
-  const root = pageOf("Sessions", "Everything your agents did on this PC, kept locally.", toolbar, status, offNote, body);
+  const root = pageOf(t("Sessions"), t("Everything your agents did on this PC, kept locally."), toolbar, status, offNote, body);
   root.classList.add("wide", "dash");
 
   let debounce = 0;
@@ -177,14 +178,14 @@ export function page(): HTMLElement {
       const paths = await exportFiles(bundle.name, bundle.markdown, bundle.json);
       const box = h("div", { class: "notice ok export-done" },
         h("div", { class: "row" },
-          h("strong", { text: `${what} to Downloads.` }),
+          h("strong", { text: t("{what} to Downloads.", { what }) }),
           h("span", { class: "spacer" }),
-          paths.length > 0 ? h("button", { text: "Show in folder", onclick: () => void Bridge.revealFile(paths[0]) }) : null,
-          h("button", { text: "Close", onclick: () => clear(status) })),
+          paths.length > 0 ? h("button", { text: t("Show in folder"), onclick: () => void Bridge.revealFile(paths[0]) }) : null,
+          h("button", { text: t("Close"), onclick: () => clear(status) })),
         ...paths.map((p) => h("div", { class: "path", text: p })));
       status.append(box);
     } catch (err) {
-      status.append(h("div", { class: "notice err", text: `Could not export: ${String(err).replace(/^Error:\s*/, "")}` }));
+      status.append(h("div", { class: "notice err", text: t("Could not export: {v}", { v: String(err).replace(/^Error:\s*/, "") }) }));
     }
     btn.disabled = false;
     status.scrollIntoView({ block: "nearest" });
@@ -196,34 +197,34 @@ export function page(): HTMLElement {
     clear(offNote);
     clear(body);
     const off = settings.historyEnabled === false;
-    const privacyLink = h("button", { text: "Open Privacy & history", onclick: () => void navigate("privacy") });
+    const privacyLink = h("button", { text: t("Open Privacy & history"), onclick: () => void navigate("privacy") });
 
     exportAllBtn.disabled = visible.length === 0;
     matchInfo.textContent = "";
 
     if (!loaded) {
-      body.append(h("section", {}, h("div", { class: "empty-state" }, h("span", { text: "Reading the history…" }))));
+      body.append(h("section", {}, h("div", { class: "empty-state" }, h("span", { text: t("Reading the history…") }))));
       return;
     }
     if (loadError) {
-      body.append(h("section", {}, h("div", { class: "notice err", text: `The history could not be read: ${loadError}` })));
+      body.append(h("section", {}, h("div", { class: "notice err", text: t("The history could not be read: {loadError}", { loadError }) })));
       return;
     }
     if (all.length === 0) {
       body.append(h("section", {}, off
         ? h("div", { class: "empty-state" },
-          h("strong", { text: "History is turned off." }),
-          h("span", { text: "Awuuu is not recording what your agents do. Turn it on to see sessions here." }),
+          h("strong", { text: t("History is turned off.") }),
+          h("span", { text: t("Awuuu is not recording what your agents do. Turn it on to see sessions here.") }),
           privacyLink)
         : h("div", { class: "empty-state" },
-          h("strong", { text: "Nothing recorded yet." }),
-          h("span", { text: "Start a session in a connected agent and it shows up here." }),
-          h("button", { text: "Connect an agent", onclick: () => void navigate("agents") }))));
+          h("strong", { text: t("Nothing recorded yet.") }),
+          h("span", { text: t("Start a session in a connected agent and it shows up here.") }),
+          h("button", { text: t("Connect an agent"), onclick: () => void navigate("agents") }))));
       return;
     }
     if (off) {
       offNote.append(h("div", { class: "notice warn row" },
-        h("span", { text: "History is turned off — nothing new is recorded. What you see is what was kept before." }),
+        h("span", { text: t("History is turned off — nothing new is recorded. What you see is what was kept before.") }),
         h("span", { class: "spacer" }), privacyLink));
     }
 
@@ -236,17 +237,17 @@ export function page(): HTMLElement {
         if (c > 0) inSessions++;
       }
       matchInfo.textContent = visible.length === 0
-        ? "No matches"
+        ? t("No matches")
         : `${plural(n, "match", "matches")} in ${plural(inSessions, "session")}${visible.length > inSessions ? ` · ${visible.length - inSessions} by name` : ""}`;
     }
 
     if (visible.length === 0) {
       const filtered = query || agent || range !== "all";
       body.append(h("section", {}, h("div", { class: "empty-state" },
-        h("strong", { text: query ? `Nothing matches “${query}”.` : "No sessions in this view." }),
-        h("span", { text: `${plural(all.length, "session")} kept in total. Try another search, agent or date range.` }),
+        h("strong", { text: query ? t("Nothing matches “{query}”.", { query }) : t("No sessions in this view.") }),
+        h("span", { text: t("{v} kept in total. Try another search, agent or date range.", { v: plural(all.length, "session") }) }),
         filtered ? h("button", {
-          text: "Clear filters",
+          text: t("Clear filters"),
           onclick: () => {
             query = "";
             search.value = "";
@@ -284,7 +285,7 @@ export function page(): HTMLElement {
           h("span", { class: "sess-agent", text: meta.short }),
           s.state === "running" ? h("span", { class: "st st-running", text: "running" })
             : s.state === "waiting" ? h("span", { class: "st st-waiting", text: "waiting" })
-              : s.state === "failed" ? h("span", { class: "st st-failed", text: `${s.facts.failures} failed` }) : null,
+              : s.state === "failed" ? h("span", { class: "st st-failed", text: t("{failures} failed", { failures: s.facts.failures }) }) : null,
           h("span", { class: "spacer" }),
           h("span", { class: "sess-when", text: relTime(s.last, now), title: rangeLabel(s.first, s.last) })),
         s.cwd ? h("div", { class: "sess-folder", title: s.cwd }, highlight(folderOf(s.cwd, 3), query)) : null,
@@ -306,7 +307,7 @@ export function page(): HTMLElement {
     if (visible.length > listCap) {
       listEl.append(h("button", {
         class: "more",
-        text: `Show ${Math.min(LIST_PAGE, visible.length - listCap)} more (${visible.length - listCap} left)`,
+        text: t("Show {v} more ({v2} left)", { v: Math.min(LIST_PAGE, visible.length - listCap), v2: visible.length - listCap }),
         onclick: () => { listCap += LIST_PAGE; renderList(); },
       }));
     }
@@ -342,7 +343,7 @@ export function page(): HTMLElement {
           else pre.textContent = e.detail;
           bodyEl.append(pre);
         } else if (!e.files?.length) {
-          bodyEl.append(h("div", { class: "hint", text: "Nothing more was recorded for this step." }));
+          bodyEl.append(h("div", { class: "hint", text: t("Nothing more was recorded for this step.") }));
         }
         el.append(bodyEl);
       }
@@ -367,7 +368,7 @@ export function page(): HTMLElement {
       if (entries.length > cap) {
         box.append(h("button", {
           class: "more",
-          text: `Show ${Math.min(page * 2, entries.length - cap)} more (${entries.length - cap} left)`,
+          text: t("Show {v} more ({v2} left)", { v: Math.min(page * 2, entries.length - cap), v2: entries.length - cap }),
           onclick: () => { caps.set(key, cap + page * 2); draw(); },
         }));
       }
@@ -387,32 +388,32 @@ export function page(): HTMLElement {
           h("span", { class: "path" }, highlight(relPath(f.path, cwd), query))));
       }
       if (files.length > cap) {
-        box.append(h("button", { class: "more", text: `Show all ${files.length} files`, onclick: () => { caps.set(key, files.length); draw(); } }));
+        box.append(h("button", { class: "more", text: t("Show all {length} files", { length: files.length }), onclick: () => { caps.set(key, files.length); draw(); } }));
       }
     };
     draw();
     return box;
   }
 
-  function turnBlock(s: SessionSummary, t: Turn, isNewest: boolean, found: Set<HistoryEntry> | null): HTMLElement {
-    const key = `${s.id}#${t.index}`;
-    const steps = found ? t.steps.filter((e) => found.has(e)) : t.steps;
-    const promptText = t.prompt ? (t.prompt.detail?.trim() || t.prompt.title) : "";
-    const first = t.prompt?.at ?? t.steps[0]?.at ?? t.end?.at ?? s.first;
-    const waiting = t.steps.some((e) => e.status === "waiting");
+  function turnBlock(s: SessionSummary, turn: Turn, isNewest: boolean, found: Set<HistoryEntry> | null): HTMLElement {
+    const key = `${s.id}#${turn.index}`;
+    const steps = found ? turn.steps.filter((e) => found.has(e)) : turn.steps;
+    const promptText = turn.prompt ? (turn.prompt.detail?.trim() || turn.prompt.title) : "";
+    const first = turn.prompt?.at ?? turn.steps[0]?.at ?? turn.end?.at ?? s.first;
+    const waiting = turn.steps.some((e) => e.status === "waiting");
     const el = h("div", { class: "turn" });
     const head = h("div", { class: "turn-head" },
       h("i", { class: "caret" }),
-      h("span", { class: "turn-n", text: t.prompt ? `#${s.turns.slice(0, t.index + 1).filter((x) => x.prompt).length}` : "–" }),
-      h("span", { class: "turn-title" }, highlight(t.prompt ? (t.prompt.title.split(/\r?\n/)[0] || "(empty request)") : "Before the first recorded request", query)),
-      found ? h("span", { class: "sess-hits", text: plural(steps.length + (t.prompt && found.has(t.prompt) ? 1 : 0) + (t.end && found.has(t.end) ? 1 : 0), "match", "matches") }) : null,
+      h("span", { class: "turn-n", text: turn.prompt ? `#${s.turns.slice(0, turn.index + 1).filter((x) => x.prompt).length}` : "–" }),
+      h("span", { class: "turn-title" }, highlight(turn.prompt ? (turn.prompt.title.split(/\r?\n/)[0] || "(empty request)") : "Before the first recorded request", query)),
+      found ? h("span", { class: "sess-hits", text: plural(steps.length + (turn.prompt && found.has(turn.prompt) ? 1 : 0) + (turn.end && found.has(turn.end) ? 1 : 0), "match", "matches") }) : null,
       h("span", { class: "step-time", text: clock(first, false) }),
-      h("span", { class: "step-ms", text: t.facts.ms >= 1000 ? formatDuration(t.facts.ms) : "" }),
-      t.end?.kind === "error" ? h("span", { class: "st st-failed", text: "error" })
+      h("span", { class: "step-ms", text: turn.facts.ms >= 1000 ? formatDuration(turn.facts.ms) : "" }),
+      turn.end?.kind === "error" ? h("span", { class: "st st-failed", text: "error" })
         : waiting && isNewest && s.state === "waiting" ? h("span", { class: "st st-waiting", text: "waiting" })
-          : !t.end && isNewest && s.state === "running" ? h("span", { class: "st st-running", text: "running" })
-            : t.facts.failures > 0 ? h("span", { class: "st st-failed", text: `${t.facts.failures} failed` })
-              : t.end ? h("span", { class: "st st-ok", text: "done" }) : h("span", { class: "st" }));
+          : !turn.end && isNewest && s.state === "running" ? h("span", { class: "st st-running", text: "running" })
+            : turn.facts.failures > 0 ? h("span", { class: "st st-failed", text: t("{failures} failed", { failures: turn.facts.failures }) })
+              : turn.end ? h("span", { class: "st st-ok", text: "done" }) : h("span", { class: "st" }));
     let bodyEl: HTMLElement | null = null;
     const isOpen = () => turnOpen.get(key) ?? (found ? true : isNewest);
     const draw = () => {
@@ -421,20 +422,20 @@ export function page(): HTMLElement {
       if (!open || bodyEl) return;
       bodyEl = h("div", { class: "turn-body" });
       if (promptText) bodyEl.append(h("pre", { class: "prompt" }, highlight(promptText, query)));
-      bodyEl.append(factChips(t.facts));
-      const story = turnStory(t);
+      bodyEl.append(factChips(turn.facts));
+      const story = turnStory(turn);
       const storyEl = h("div", { class: `story t-${story.tests ?? "none"}` }, h("span", { class: "story-line", text: story.line }));
-      const run = story.tests === "unclear" || story.tests === "no-tests" ? lastTestRun(t) : null;
+      const run = story.tests === "unclear" || story.tests === "no-tests" ? lastTestRun(turn) : null;
       if (run) {
         // A second opinion, only on a click: the output's end goes to Hermes, redacted.
-        const ask = h("button", { class: "story-ask", text: "Ask Hermes", title: "Send the end of this test output (keys and e-mails removed) to Hermes for a verdict" });
+        const ask = h("button", { class: "story-ask", text: t("Ask Hermes"), title: t("Send the end of this test output (keys and e-mails removed) to Hermes for a verdict") });
         ask.addEventListener("click", async (e) => {
           e.stopPropagation();
           ask.setAttribute("disabled", "");
-          ask.textContent = "Asking…";
+          ask.textContent = t("Asking…");
           try {
             const word = await Bridge.judgeTests(redact(run.title), redact(run.detail ?? ""));
-            ask.textContent = word === "passed" ? "Hermes: passed" : word === "failed" ? "Hermes: failed" : "Hermes: can't tell";
+            ask.textContent = word === "passed" ? t("Hermes: passed") : word === "failed" ? "Hermes: failed" : "Hermes: can't tell";
           } catch (err) {
             ask.textContent = String(err).replace(/^Error:\s*/, "");
           }
@@ -443,27 +444,27 @@ export function page(): HTMLElement {
       }
       bodyEl.append(storyEl);
       for (const w of story.warnings) bodyEl.append(h("div", { class: "notice warn", text: `⚠ ${w}` }));
-      const summary = turnSummary(t);
+      const summary = turnSummary(turn);
       if (summary) {
         bodyEl.append(h("div", { class: "summary" },
-          h("div", { class: "label", text: `${agentMeta(s.agent).short}'s summary` }),
+          h("div", { class: "label", text: t("{short}'s summary", { short: agentMeta(s.agent).short }) }),
           h("pre", { class: "summary-text" }, highlight(summary, query))));
       }
-      if (t.end?.kind === "error") {
-        bodyEl.append(h("div", { class: "notice err" }, highlight(`Ended with an error: ${t.end.detail?.trim() || t.end.title}`, query)));
+      if (turn.end?.kind === "error") {
+        bodyEl.append(h("div", { class: "notice err" }, highlight(`Ended with an error: ${turn.end.detail?.trim() || turn.end.title}`, query)));
       }
-      if (t.facts.changed.length > 0) {
-        bodyEl.append(h("div", { class: "label", text: `Changed files (${t.facts.changed.length})` }), fileList(t.facts.changed, s.cwd, `f:${key}`));
+      if (turn.facts.changed.length > 0) {
+        bodyEl.append(h("div", { class: "label", text: t("Changed files ({length})", { length: turn.facts.changed.length }) }), fileList(turn.facts.changed, s.cwd, `f:${key}`));
       }
       if (steps.length > 0) {
         bodyEl.append(
-          h("div", { class: "label", text: found ? `Matching steps (${steps.length} of ${t.steps.length})` : `Steps (${steps.length})` }),
+          h("div", { class: "label", text: found ? t("Matching steps ({length} of {length2})", { length: steps.length, length2: turn.steps.length }) : t("Steps ({length})", { length: steps.length }) }),
           stepList(`s:${key}:${found ? query : ""}`, steps, s.cwd, STEP_PAGE));
       } else if (!found) {
-        bodyEl.append(h("div", { class: "hint", text: "No steps were recorded for this request." }));
+        bodyEl.append(h("div", { class: "hint", text: t("No steps were recorded for this request.") }));
       }
-      const copy = h("button", { text: "Copy recap", title: "Copy this request as Markdown" }) as HTMLButtonElement;
-      copy.addEventListener("click", () => void copyText(turnMarkdown(t, s), copy, status).then((ok) => {
+      const copy = h("button", { text: t("Copy recap"), title: t("Copy this request as Markdown") }) as HTMLButtonElement;
+      copy.addEventListener("click", () => void copyText(turnMarkdown(turn, s), copy, status).then((ok) => {
         if (!ok) status.scrollIntoView({ block: "nearest" });
       }));
       bodyEl.append(h("div", { class: "row turn-actions" }, copy));
@@ -488,19 +489,19 @@ export function page(): HTMLElement {
     const found = query && hit && hit.hits.size > 0 ? hit.hits : null;
     const work = s.turns.reduce((sum, t) => sum + t.facts.ms, 0);
 
-    const copy = h("button", { class: "primary", text: "Copy recap", title: "Copy the whole session as Markdown, ready for a PR" }) as HTMLButtonElement;
+    const copy = h("button", { class: "primary", text: t("Copy recap"), title: t("Copy the whole session as Markdown, ready for a PR") }) as HTMLButtonElement;
     copy.addEventListener("click", () => void copyText(sessionMarkdown(s), copy, status).then((ok) => {
       if (!ok) status.scrollIntoView({ block: "nearest" });
     }));
-    const handoff = h("button", { text: "Copy handoff", title: "Copy a note another agent can continue from: what was asked, what changed, how the tests stand" }) as HTMLButtonElement;
+    const handoff = h("button", { text: t("Copy handoff"), title: t("Copy a note another agent can continue from: what was asked, what changed, how the tests stand") }) as HTMLButtonElement;
     handoff.addEventListener("click", () => void copyText(handoffNote(s), handoff, status).then((ok) => {
       if (!ok) status.scrollIntoView({ block: "nearest" });
     }));
-    const exp = h("button", { text: "Export .md + .json", title: "Save this session to Downloads" }) as HTMLButtonElement;
+    const exp = h("button", { text: t("Export .md + .json"), title: t("Save this session to Downloads") }) as HTMLButtonElement;
     exp.addEventListener("click", () => void doExport(exportSession(s), "Session exported", exp));
     const logBtn = h("button", {
-      class: fullLog ? "seg on" : "seg", text: "Full log", "aria-pressed": fullLog,
-      title: "Every entry of this session in one flat list",
+      class: fullLog ? "seg on" : "seg", text: t("Full log"), "aria-pressed": fullLog,
+      title: t("Every entry of this session in one flat list"),
       onclick: () => { fullLog = !fullLog; renderDetail(); },
     });
 
@@ -510,7 +511,7 @@ export function page(): HTMLElement {
         h("h2", {}, highlight(s.name, query)),
         h("span", { class: "sess-agent", text: meta.name }),
         s.state === "running" ? h("span", { class: "st st-running", text: "running" })
-          : s.state === "waiting" ? h("span", { class: "st st-waiting", text: "waiting for you" }) : null),
+          : s.state === "waiting" ? h("span", { class: "st st-waiting", text: t("waiting for you") }) : null),
       s.cwd ? h("div", { class: "path" }, highlight(s.cwd, query)) : null,
       h("div", { class: "hint", text: `${rangeLabel(s.first, s.last)}${work >= 1000 ? ` · ${formatDuration(work)} of work` : ""} · ${plural(s.entries.length, "entry", "entries")}` }),
       factChips(s.facts, s.requests),
@@ -519,14 +520,14 @@ export function page(): HTMLElement {
 
     if (query) {
       detailEl.append(h("div", { class: "hint found-note", text: found
-        ? `Showing the ${plural(found.size, "entry", "entries")} matching “${query}” in this session. Clear the search to see everything.`
-        : `This session matches “${query}” by its name or folder; no entry inside matches.` }));
+        ? t("Showing the {v} matching “{query}” in this session. Clear the search to see everything.", { v: plural(found.size, "entry", "entries"), query })
+        : t("This session matches “{query}” by its name or folder; no entry inside matches.", { query }) }));
     }
 
     if (fullLog) {
       const entries = found ? s.entries.filter((e) => found.has(e)) : s.entries;
       detailEl.append(h("section", { class: "log-flat" },
-        h("div", { class: "label", text: found ? `Full log — ${entries.length} of ${s.entries.length} entries` : `Full log — ${plural(entries.length, "entry", "entries")}, oldest first` }),
+        h("div", { class: "label", text: found ? t("Full log — {length} of {length2} entries", { length: entries.length, length2: s.entries.length }) : t("Full log — {v}, oldest first", { v: plural(entries.length, "entry", "entries") }) }),
         stepList(`log:${s.id}:${found ? query : ""}`, entries, s.cwd, LOG_PAGE)));
       return;
     }
@@ -543,7 +544,7 @@ export function page(): HTMLElement {
       for (const t of turns.slice(0, cap)) box.append(turnBlock(s, t, t === newest, found));
       if (turns.length > cap) {
         box.append(h("button", {
-          class: "more", text: `Show ${Math.min(TURN_PAGE, turns.length - cap)} older requests (${turns.length - cap} left)`,
+          class: "more", text: t("Show {v} older requests ({v2} left)", { v: Math.min(TURN_PAGE, turns.length - cap), v2: turns.length - cap }),
           onclick: () => { caps.set(capKey, cap + TURN_PAGE); draw(); },
         }));
       }

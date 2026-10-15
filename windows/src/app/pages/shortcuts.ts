@@ -9,6 +9,7 @@ import {
 } from "../../core/shortcuts";
 import { h } from "../../views/dom";
 import { card, pageOf, save, settings } from "../ui";
+import { t } from "../../i18n/i18n";
 
 function row(def: ShortcutDef, redrawAll: () => void, errors: Record<string, string>): HTMLElement {
   const keys = () => effectiveKeys(def, settings.shortcuts);
@@ -22,7 +23,7 @@ function row(def: ShortcutDef, redrawAll: () => void, errors: Record<string, str
   // Registration failure from Rust (taken by another app), then conflicts here.
   const own = conflictWith(settings.shortcuts, def.id, keys());
   if (errors[def.id]) say(errors[def.id]);
-  else if (own) say(`Same keys as “${SHORTCUTS.find((s) => s.id === own)?.label}”. Only one of them will work.`);
+  else if (own) say(t("Same keys as “{label}”. Only one of them will work.", { label: t(SHORTCUTS.find((s) => s.id === own)?.label ?? "") }));
 
   const record = h("button", { style: "min-width:150px" }) as HTMLButtonElement;
   const paint = () => (record.textContent = displayKeys(keys()));
@@ -42,7 +43,7 @@ function row(def: ShortcutDef, redrawAll: () => void, errors: Record<string, str
   record.addEventListener("click", () => {
     if (stop) return finish();
     record.style.outline = "2px solid var(--accent, #e8a03e)";
-    record.textContent = "Press the keys…";
+    record.textContent = t("Press the keys…");
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -51,13 +52,13 @@ function row(def: ShortcutDef, redrawAll: () => void, errors: Record<string, str
         case "pending": return;
         case "cancel": finish(); say(null); return;
         case "clear": finish(); commit(""); return;
-        case "needsModifier": say("Hold Ctrl, Alt or the Windows key together with the key."); return;
-        case "unsupported": say("That key can't be used."); return;
+        case "needsModifier": say(t("Hold Ctrl, Alt or the Windows key together with the key.")); return;
+        case "unsupported": say(t("That key can't be used.")); return;
         case "keys": {
           const clash = conflictWith(settings.shortcuts, def.id, r.keys);
           finish();
           if (clash) {
-            say(`“${displayKeys(r.keys)}” is already used by “${SHORTCUTS.find((s) => s.id === clash)?.label}”.`);
+            say(t("“{v}” is already used by “{label}”.", { v: displayKeys(r.keys), label: t(SHORTCUTS.find((s) => s.id === clash)?.label ?? "") }));
             return;
           }
           commit(r.keys);
@@ -75,24 +76,24 @@ function row(def: ShortcutDef, redrawAll: () => void, errors: Record<string, str
 
   const actions: (HTMLElement | null)[] = [record];
   if (keys() === "" && def.defaultKeys) {
-    actions.push(h("button", { text: `Use ${displayKeys(def.defaultKeys)}`, onclick: () => commit(def.defaultKeys) }));
+    actions.push(h("button", { text: t("Use {v}", { v: displayKeys(def.defaultKeys) }), onclick: () => commit(def.defaultKeys) }));
   } else {
-    actions.push(h("button", { text: "Off", title: "Switch this shortcut off", onclick: () => commit("") }));
+    actions.push(h("button", { text: t("Off"), title: t("Switch this shortcut off"), onclick: () => commit("") }));
   }
-  const reset = h("button", { text: "Reset", title: `Default: ${def.defaultOn ? displayKeys(def.defaultKeys) : "off"}`, onclick: () => commit(def.defaultOn ? def.defaultKeys : "") }) as HTMLButtonElement;
+  const reset = h("button", { text: t("Reset"), title: t("Default: {v}", { v: def.defaultOn ? displayKeys(def.defaultKeys) : "off" }), onclick: () => commit(def.defaultOn ? def.defaultKeys : "") }) as HTMLButtonElement;
   reset.disabled = isDefault();
   actions.push(reset);
 
   return h("div", { style: "display:flex;flex-direction:column;gap:6px" },
-    h("div", { class: "row" }, h("label", { text: def.label }), ...actions),
-    h("div", { class: "hint", text: def.hint }),
+    h("div", { class: "row" }, h("label", { text: t(def.label) }), ...actions),
+    h("div", { class: "hint", text: t(def.hint) }),
     msg);
 }
 
 export function page(): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
-  const root = pageOf("Shortcuts",
-    "Global keys that work from any app. Awuuu never takes focus from the app you are in, except in the chat's text field.",
+  const root = pageOf(t("Shortcuts"),
+    t("Global keys that work from any app. Awuuu never takes focus from the app you are in, except in the chat's text field."),
     body);
 
   const draw = async () => {
@@ -100,9 +101,9 @@ export function page(): HTMLElement {
     const group = (title: string, defs: ShortcutDef[]) =>
       card(title, h("div", { style: "display:flex;flex-direction:column;gap:14px" }, ...defs.map((d) => row(d, () => void draw(), errors))));
     body.replaceChildren(
-      group("Anywhere", SHORTCUTS.filter((d) => !d.approvalOnly)),
-      group("Permission card", SHORTCUTS.filter((d) => d.approvalOnly)),
-      h("div", { class: "hint", text: "Click a key box, then press the new combination. Esc cancels, Backspace switches it off. A shortcut needs Ctrl, Alt or the Windows key. If another app already uses a combination, the row says so and you can pick another." }),
+      group(t("Anywhere"), SHORTCUTS.filter((d) => !d.approvalOnly)),
+      group(t("Permission card"), SHORTCUTS.filter((d) => d.approvalOnly)),
+      h("div", { class: "hint", text: t("Click a key box, then press the new combination. Esc cancels, Backspace switches it off. A shortcut needs Ctrl, Alt or the Windows key. If another app already uses a combination, the row says so and you can pick another.") }),
     );
   };
   void draw();

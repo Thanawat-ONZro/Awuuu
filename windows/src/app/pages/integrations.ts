@@ -8,6 +8,7 @@ import { h } from "../../views/dom";
 import { composioSection } from "./composio-card";
 import { dropdown } from "../../ui/select";
 import { listField, pageOf, save, settings, testRow, textField } from "../ui";
+import { t } from "../../i18n/i18n";
 
 const GUIDE = "https://github.com/Thanawat-ONZro/Awuuu/blob/main/docs/OAUTH-SETUP.md";
 
@@ -53,7 +54,7 @@ function chip(isOn: () => boolean): HTMLElement {
   watch(() => {
     const on = isOn();
     el.classList.toggle("on", on);
-    el.textContent = on ? "Connected" : "Not set up";
+    el.textContent = on ? t("Connected") : t("Not set up");
   });
   return el;
 }
@@ -85,7 +86,7 @@ function secretRow(label: string, key: string, placeholder: string, secret = tru
   const input = h("input", { type: secret ? "password" : "text", placeholder, autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   const stored = () => (input.placeholder = "••••••••  (stored)");
   void Bridge.secretPresent(key).then((has) => has && stored());
-  const saveBtn = h("button", { text: "Save" });
+  const saveBtn = h("button", { text: t("Save") });
   const note = h("span", { class: "hint" });
   saveBtn.addEventListener("click", async () => {
     const value = input.value.trim();
@@ -94,7 +95,7 @@ function secretRow(label: string, key: string, placeholder: string, secret = tru
       input.value = "";
       if (value) stored();
       else input.placeholder = placeholder;
-      note.textContent = value ? "Saved." : "Removed.";
+      note.textContent = value ? t("Saved.") : t("Removed.");
       note.style.color = "";
       void sync();
     } catch (err) {
@@ -128,13 +129,13 @@ function openAdvanced(anchor: string) {
 
 // ── Google and Microsoft ──────────────────────────────────────────────────────
 
-const ACCOUNTS: Record<Account, { name: string; mark: string; color: string; what: string }> = {
-  google: { name: "Google", mark: "G", color: "#4285F4", what: "Gmail · Google Calendar" },
-  microsoft: { name: "Microsoft", mark: "M", color: "#0A7CD6", what: "Outlook mail · calendar" },
-};
+const accounts = (): Record<Account, { name: string; mark: string; color: string; what: string }> => ({
+  google: { name: "Google", mark: "G", color: "#4285F4", what: t("Gmail · Google Calendar") },
+  microsoft: { name: "Microsoft", mark: "M", color: "#0A7CD6", what: t("Outlook mail · calendar") },
+});
 
 function accountTile(id: Account): HTMLElement {
-  const def = ACCOUNTS[id];
+  const def = accounts()[id];
   const body = h("div", { class: "int-body" });
   let busy = false;
   let error = "";
@@ -158,10 +159,10 @@ function accountTile(id: Account): HTMLElement {
     body.replaceChildren();
     if (s.connected) {
       body.append(
-        h("div", { class: "int-who" }, "Signed in", s.account ? " as " : "", s.account ? h("strong", { text: s.account }) : null),
+        h("div", { class: "int-who" }, t("Signed in"), s.account ? " as " : "", s.account ? h("strong", { text: s.account }) : null),
         h("div", { class: "row" },
           h("button", {
-            text: "Sign out",
+            text: t("Sign out"),
             onclick: async () => {
               try {
                 await Bridge.oauthSignOut(id);
@@ -175,16 +176,16 @@ function accountTile(id: Account): HTMLElement {
       );
     } else if (busy) {
       body.append(
-        h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), "Finish signing in in your browser…"),
-        h("div", { class: "row" }, h("button", { text: "Cancel", onclick: () => void Bridge.oauthCancel() })),
+        h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), t("Finish signing in in your browser…")),
+        h("div", { class: "row" }, h("button", { text: t("Cancel"), onclick: () => void Bridge.oauthCancel() })),
       );
     } else {
-      body.append(h("div", { class: "row" }, h("button", { class: "primary", text: `Sign in with ${def.name}`, onclick: () => void signIn() })));
+      body.append(h("div", { class: "row" }, h("button", { class: "primary", text: t("Sign in with {name}", { name: def.name }), onclick: () => void signIn() })));
       if (s.needsClientId) {
         body.append(
           h("div", { class: "int-need" },
-            `Needs a ${def.name} client ID first — a one-time setup. `,
-            link("Set it up in Advanced", () => openAdvanced(`client-${id}`)),
+            t("Needs a {name} client ID first — a one-time setup. ", { name: def.name }),
+            link(t("Set it up in Advanced"), () => openAdvanced(`client-${id}`)),
           ),
         );
       }
@@ -201,30 +202,30 @@ function sourceLine(id: "integration_mail" | "integration_calendar", fallback: s
   watch(() => {
     const from = (["google", "microsoft"] as Account[])
       .filter((a) => live[a].connected)
-      .map((a) => (live[a].account ? `${ACCOUNTS[a].name} (${live[a].account})` : ACCOUNTS[a].name));
+      .map((a) => (live[a].account ? `${accounts()[a].name} (${live[a].account})` : accounts()[a].name));
     el.textContent = from.length
-      ? `From ${from.join(" and ")}.`
+      ? t("From {v}.", { v: from.join(t(" and ")) })
       : live.on.has(id)
-        ? `From ${fallback} (Advanced).`
-        : "Sign in above to turn this on.";
+        ? t("From {fallback} (Advanced).", { fallback })
+        : t("Sign in above to turn this on.");
   });
   return el;
 }
 
 function mailAndCalendar(): HTMLElement {
   return h("section", { id: "everyday" },
-    h("h2", {}, h("span", { text: "Mail & calendar" })),
-    h("div", { class: "hint", text: "Sign in once in your browser: no password is typed into Awuuu, and it can only read. Unread mail and today's meetings then show in Today." }),
+    h("h2", {}, h("span", { text: t("Mail & calendar") })),
+    h("div", { class: "hint", text: t("Sign in once in your browser: no password is typed into Awuuu, and it can only read. Unread mail and today's meetings then show in Today.") }),
     h("div", { class: "int-grid" }, accountTile("google"), accountTile("microsoft")),
     h("div", { class: "int-grid" },
-      tile({ mark: "✉", color: "#EA4335", name: "Mail", what: "Unread mail, with a nudge for new messages", on: () => live.on.has("integration_mail") },
-        sourceLine("integration_mail", "your app password"), testRow("integration_mail")),
-      tile({ mark: "▦", color: "#34A0F4", name: "Calendar", what: "Today's meetings with Join, 10 minutes' notice", on: () => live.on.has("integration_calendar") },
-        sourceLine("integration_calendar", "your iCal link"), testRow("integration_calendar")),
+      tile({ mark: "✉", color: "#EA4335", name: "Mail", what: t("Unread mail, with a nudge for new messages"), on: () => live.on.has("integration_mail") },
+        sourceLine("integration_mail", t("your app password")), testRow("integration_mail")),
+      tile({ mark: "▦", color: "#34A0F4", name: "Calendar", what: t("Today's meetings with Join, 10 minutes' notice"), on: () => live.on.has("integration_calendar") },
+        sourceLine("integration_calendar", t("your iCal link")), testRow("integration_calendar")),
     ),
     h("div", { class: "hint" },
-      "No account to sign in with? ",
-      link("Use an app password or an iCal link", () => openAdvanced("adv-imap")),
+      t("No account to sign in with? "),
+      link(t("Use an app password or an iCal link"), () => openAdvanced("adv-imap")),
       ".",
     ),
   );
@@ -283,10 +284,10 @@ function githubSection(): HTMLElement {
     body.replaceChildren();
     if (s.connected) {
       body.append(
-        h("div", { class: "int-who" }, "Connected", s.account ? " as " : "", s.account ? h("strong", { text: s.account }) : null),
+        h("div", { class: "int-who" }, t("Connected"), s.account ? " as " : "", s.account ? h("strong", { text: s.account }) : null),
         h("div", { class: "row" },
           h("button", {
-            text: "Sign out",
+            text: t("Sign out"),
             onclick: async () => {
               try {
                 await Bridge.oauthSignOut("github");
@@ -302,40 +303,40 @@ function githubSection(): HTMLElement {
       const shown = code;
       const copied = h("span", { class: "hint" });
       body.append(
-        h("div", { class: "hint", text: "Type this code on GitHub to connect Awuuu:" }),
+        h("div", { class: "hint", text: t("Type this code on GitHub to connect Awuuu:") }),
         h("div", { class: "int-code" },
           h("code", { text: shown.userCode }),
           h("button", {
-            text: "Copy",
+            text: t("Copy"),
             onclick: async () => {
-              copied.textContent = (await copyText(shown.userCode)) ? "Copied." : "Select the code and press Ctrl+C.";
+              copied.textContent = (await copyText(shown.userCode)) ? t("Copied.") : t("Select the code and press Ctrl+C.");
             },
           }),
-          h("button", { class: "primary", text: "Open GitHub", onclick: () => void Bridge.openUrl(shown.verificationUri) }),
+          h("button", { class: "primary", text: t("Open GitHub"), onclick: () => void Bridge.openUrl(shown.verificationUri) }),
           copied,
         ),
-        h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), "Waiting for you to enter it…",
-          h("button", { text: "Cancel", onclick: () => void Bridge.oauthCancel() })),
+        h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), t("Waiting for you to enter it…"),
+          h("button", { text: t("Cancel"), onclick: () => void Bridge.oauthCancel() })),
       );
     } else if (busy) {
-      body.append(h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), busy === "cli" ? "Asking the GitHub CLI…" : "Asking GitHub for a code…"));
+      body.append(h("div", { class: "int-wait" }, h("i", { class: "int-spin" }), busy === "cli" ? t("Asking the GitHub CLI…") : t("Asking GitHub for a code…")));
     } else {
       body.append(
         h("div", { class: "row" },
-          live.githubCli ? h("button", { class: "primary", text: "Use GitHub CLI login", title: "Takes the login `gh` already has on this PC", onclick: () => void withCli() }) : null,
-          h("button", { class: live.githubCli ? "" : "primary", text: "Sign in with a code", onclick: () => void withCode() }),
+          live.githubCli ? h("button", { class: "primary", text: t("Use GitHub CLI login"), title: t("Takes the login `gh` already has on this PC"), onclick: () => void withCli() }) : null,
+          h("button", { class: live.githubCli ? "" : "primary", text: t("Sign in with a code"), onclick: () => void withCode() }),
         ),
       );
       if (!live.githubCli) {
-        body.append(h("div", { class: "hint", text: "With the GitHub CLI installed and signed in (gh auth login), one click is enough: a \"Use GitHub CLI login\" button appears here." }));
+        body.append(h("div", { class: "hint", text: t("With the GitHub CLI installed and signed in (gh auth login), one click is enough: a \"Use GitHub CLI login\" button appears here.") }));
       }
       if (s.needsClientId) {
         body.append(
           h("div", { class: "int-need" },
-            "Signing in with a code needs a GitHub client ID first. ",
-            link("Set it up in Advanced", () => openAdvanced("client-github")),
+            t("Signing in with a code needs a GitHub client ID first. "),
+            link(t("Set it up in Advanced"), () => openAdvanced("client-github")),
             " — or ",
-            link("paste a token", () => openAdvanced("adv-github")),
+            link(t("paste a token"), () => openAdvanced("adv-github")),
             ".",
           ),
         );
@@ -348,7 +349,7 @@ function githubSection(): HTMLElement {
 
   return h("section", {},
     h("h2", {}, h("span", { text: "GitHub" })),
-    tile({ mark: "GH", color: "#6E5494", name: "GitHub", what: "Reviews waiting for you, failing runs", on: () => live.on.has("integration_github") }, body),
+    tile({ mark: "GH", color: "#6E5494", name: "GitHub", what: t("Reviews waiting for you, failing runs"), on: () => live.on.has("integration_github") }, body),
   );
 }
 
@@ -356,16 +357,16 @@ function githubSection(): HTMLElement {
 
 function simpleSection(): HTMLElement {
   return h("section", {},
-    h("h2", {}, h("span", { text: "No account needed" })),
+    h("h2", {}, h("span", { text: t("No account needed") })),
     h("div", { class: "int-grid" },
-      tile({ mark: "N", color: "#F59E0B", name: "News", what: "RSS or Atom feeds, one URL per line", on: () => live.on.has("integration_feeds") },
+      tile({ mark: "N", color: "#F59E0B", name: "News", what: t("RSS or Atom feeds, one URL per line"), on: () => live.on.has("integration_feeds") },
         listField(() => settings.rssFeeds ?? [], (v) => { settings.rssFeeds = v; window.setTimeout(() => void sync(), 150); }, "https://github.com/tauri-apps/tauri/releases.atom"),
         testRow("integration_feeds")),
-      tile({ mark: "↑", color: "#22C55E", name: "Uptime", what: "Sites checked every 5 minutes, one URL per line", on: () => live.on.has("integration_uptime") },
+      tile({ mark: "↑", color: "#22C55E", name: "Uptime", what: t("Sites checked every 5 minutes, one URL per line"), on: () => live.on.has("integration_uptime") },
         listField(() => settings.uptimeUrls ?? [], (v) => { settings.uptimeUrls = v; window.setTimeout(() => void sync(), 150); }, "https://your-site.com"),
         testRow("integration_uptime")),
-      tile({ mark: "☀", color: "#38BDF8", name: "Weather", what: "Today's weather and the chance of rain (Open-Meteo)", on: () => live.on.has("integration_weather") },
-        settingRow("City", () => settings.weatherCity ?? "", (v) => (settings.weatherCity = v), "Bangkok"),
+      tile({ mark: "☀", color: "#38BDF8", name: "Weather", what: t("Today's weather and the chance of rain (Open-Meteo)"), on: () => live.on.has("integration_weather") },
+        settingRow(t("City"), () => settings.weatherCity ?? "", (v) => (settings.weatherCity = v), t("Bangkok")),
         testRow("integration_weather")),
     ),
   );
@@ -374,21 +375,21 @@ function simpleSection(): HTMLElement {
 // ── Advanced / other providers ────────────────────────────────────────────────
 
 /** Services that are a key and nothing else. */
-const SERVICES: { id: string; name: string; mark: string; color: string; what: string; fields: [label: string, key: string, placeholder: string, secret?: boolean][] }[] = [
-  { id: "integration_todoist", name: "Todoist", mark: "T", color: "#E44332", what: "Tasks due today or overdue — Settings → Integrations → Developer → API token",
-    fields: [["API token", "todoist-token", "token"]] },
-  { id: "integration_stripe", name: "Stripe", mark: "S", color: "#635BFF", what: "Balance and the latest payments",
-    fields: [["Secret key", "stripe-api-key", "sk_live_…"]] },
-  { id: "integration_vercel", name: "Vercel", mark: "▲", color: "#7C5CFF", what: "Deployments, and the ones that fail",
-    fields: [["Token", "vercel-token", "…"]] },
-  { id: "integration_n8n", name: "n8n", mark: "n8", color: "#F29B38", what: "Workflow runs",
-    fields: [["Instance URL", "n8n-url", "https://n8n.example.com", false], ["API key", "n8n-api-key", "…"]] },
-  { id: "integration_resend", name: "Resend", mark: "R", color: "#22C55E", what: "Emails sent and bounced",
-    fields: [["API key", "resend-api-key", "re_…"]] },
-  { id: "integration_notion", name: "Notion", mark: "N", color: "#8C8C8C", what: "Recently edited pages",
-    fields: [["Integration token", "notion-api-key", "ntn_…"]] },
-  { id: "integration_calcom", name: "Cal.com", mark: "C", color: "#C9956A", what: "Upcoming bookings",
-    fields: [["API key", "calcom-api-key", "cal_…"]] },
+const serviceDefs = (): { id: string; name: string; mark: string; color: string; what: string; fields: [label: string, key: string, placeholder: string, secret?: boolean][] }[] => [
+  { id: "integration_todoist", name: "Todoist", mark: "T", color: "#E44332", what: t("Tasks due today or overdue — Settings → Integrations → Developer → API token"),
+    fields: [[t("API token"), "todoist-token", "token"]] },
+  { id: "integration_stripe", name: "Stripe", mark: "S", color: "#635BFF", what: t("Balance and the latest payments"),
+    fields: [[t("Secret key"), "stripe-api-key", "sk_live_…"]] },
+  { id: "integration_vercel", name: "Vercel", mark: "▲", color: "#7C5CFF", what: t("Deployments, and the ones that fail"),
+    fields: [[t("Token"), "vercel-token", "…"]] },
+  { id: "integration_n8n", name: "n8n", mark: "n8", color: "#F29B38", what: t("Workflow runs"),
+    fields: [[t("Instance URL"), "n8n-url", "https://n8n.example.com", false], [t("API key"), "n8n-api-key", "…"]] },
+  { id: "integration_resend", name: "Resend", mark: "R", color: "#22C55E", what: t("Emails sent and bounced"),
+    fields: [[t("API key"), "resend-api-key", "re_…"]] },
+  { id: "integration_notion", name: "Notion", mark: "N", color: "#8C8C8C", what: t("Recently edited pages"),
+    fields: [[t("Integration token"), "notion-api-key", "ntn_…"]] },
+  { id: "integration_calcom", name: "Cal.com", mark: "C", color: "#C9956A", what: t("Upcoming bookings"),
+    fields: [[t("API key"), "calcom-api-key", "cal_…"]] },
 ];
 
 function block(id: string, title: string, ...children: (Node | null | false)[]): HTMLElement {
@@ -404,10 +405,10 @@ function imapBlock(): HTMLElement {
   const service = dropdown({
     options: () => [
       { value: "gmail", label: "Gmail" },
-      { value: "outlook", label: "Outlook / Hotmail" },
-      { value: "icloud", label: "iCloud" },
-      { value: "yahoo", label: "Yahoo" },
-      { value: "custom", label: "Other (IMAP host)" },
+      { value: "outlook", label: t("Outlook / Hotmail") },
+      { value: "icloud", label: t("iCloud") },
+      { value: "yahoo", label: t("Yahoo") },
+      { value: "custom", label: t("Other (IMAP host)") },
     ],
     get: () => mode,
     set: (v) => {
@@ -419,17 +420,17 @@ function imapBlock(): HTMLElement {
       }
     },
   });
-  return block("adv-imap", "Mail with an app password (IMAP)",
-    h("div", { class: "hint", text: "Used only when no Google or Microsoft account is signed in. Gmail: turn on 2-step verification, create an app password (myaccount.google.com/apppasswords) and paste it here — not your normal password." }),
-    h("div", { class: "row int-field" }, h("label", { text: "Service" }), service, custom),
-    settingRow("Email", () => settings.mailUser ?? "", (v) => (settings.mailUser = v), "you@gmail.com"),
-    secretRow("App password", "mail-password", "xxxx xxxx xxxx xxxx"),
+  return block("adv-imap", t("Mail with an app password (IMAP)"),
+    h("div", { class: "hint", text: t("Used only when no Google or Microsoft account is signed in. Gmail: turn on 2-step verification, create an app password (myaccount.google.com/apppasswords) and paste it here — not your normal password.") }),
+    h("div", { class: "row int-field" }, h("label", { text: t("Service") }), service, custom),
+    settingRow(t("Email"), () => settings.mailUser ?? "", (v) => (settings.mailUser = v), "you@gmail.com"),
+    secretRow(t("App password"), "mail-password", "xxxx xxxx xxxx xxxx"),
   );
 }
 
 function advancedSection(): HTMLElement {
   const services = h("div", { class: "int-grid" });
-  for (const s of SERVICES) {
+  for (const s of serviceDefs()) {
     services.append(
       tile({ mark: s.mark, color: s.color, name: s.name, what: s.what, on: () => live.on.has(s.id) },
         ...s.fields.map(([label, key, placeholder, secret]) => secretRow(label, key, placeholder, secret ?? true)),
@@ -438,51 +439,51 @@ function advancedSection(): HTMLElement {
   }
 
   advanced = h("details", { class: "int-adv", id: "advanced" },
-    h("summary", {}, h("span", { text: "Advanced / other providers" }), h("small", { text: "Client IDs, app passwords, tokens and seven more services" })),
+    h("summary", {}, h("span", { text: t("Advanced / other providers") }), h("small", { text: t("Client IDs, app passwords, tokens and seven more services") })),
 
-    block("adv-clients", "OAuth client IDs",
+    block("adv-clients", t("OAuth client IDs"),
       h("div", { class: "hint" },
-        "The Sign in buttons need an app ID that you create once, for free, with each provider — Awuuu ships none, so your data only ever passes between this PC and them. ",
-        webLink("Step-by-step guide", GUIDE),
+        t("The Sign in buttons need an app ID that you create once, for free, with each provider — Awuuu ships none, so your data only ever passes between this PC and them. "),
+        webLink(t("Step-by-step guide"), GUIDE),
         "."),
       h("div", { class: "int-client", id: "client-google" },
         h("strong", { text: "Google" }),
         h("p", { class: "hint" },
-          "In Google Cloud Console, create a project, enable the Gmail API and the Google Calendar API, set up the consent screen (add yourself as a test user), then create an OAuth client of type \"Desktop app\". Paste its client ID, and its client secret too — for desktop apps Google does not treat that secret as confidential. ",
-          webLink("Open Google Cloud credentials", "https://console.cloud.google.com/apis/credentials")),
-        settingRow("Client ID", () => settings.googleClientId ?? "", (v) => (settings.googleClientId = v), "1234567890-abc….apps.googleusercontent.com"),
-        secretRow("Client secret", "google-client-secret", "GOCSPX-…  (optional)"),
+          t("In Google Cloud Console, create a project, enable the Gmail API and the Google Calendar API, set up the consent screen (add yourself as a test user), then create an OAuth client of type \"Desktop app\". Paste its client ID, and its client secret too — for desktop apps Google does not treat that secret as confidential. "),
+          webLink(t("Open Google Cloud credentials"), "https://console.cloud.google.com/apis/credentials")),
+        settingRow(t("Client ID"), () => settings.googleClientId ?? "", (v) => (settings.googleClientId = v), "1234567890-abc….apps.googleusercontent.com"),
+        secretRow(t("Client secret"), "google-client-secret", "GOCSPX-…  (optional)"),
       ),
       h("div", { class: "int-client", id: "client-microsoft" },
         h("strong", { text: "Microsoft" }),
         h("p", { class: "hint" },
-          "In the Microsoft Entra admin center, register an app for \"any organizational directory and personal Microsoft accounts\", add the \"Mobile and desktop applications\" redirect http://localhost/callback, and allow public client flows. Paste its Application (client) ID; there is no secret. ",
-          webLink("Open app registrations", "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade")),
-        settingRow("Client ID", () => settings.microsoftClientId ?? "", (v) => (settings.microsoftClientId = v), "00000000-0000-0000-0000-000000000000"),
+          t("In the Microsoft Entra admin center, register an app for \"any organizational directory and personal Microsoft accounts\", add the \"Mobile and desktop applications\" redirect http://localhost/callback, and allow public client flows. Paste its Application (client) ID; there is no secret. "),
+          webLink(t("Open app registrations"), "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade")),
+        settingRow(t("Client ID"), () => settings.microsoftClientId ?? "", (v) => (settings.microsoftClientId = v), "00000000-0000-0000-0000-000000000000"),
       ),
       h("div", { class: "int-client", id: "client-github" },
         h("strong", { text: "GitHub" }),
         h("p", { class: "hint" },
-          "Only for \"Sign in with a code\" — the GitHub CLI login needs none. In GitHub → Settings → Developer settings → OAuth Apps, create an app (any homepage and callback URL), tick \"Enable Device Flow\", and paste its client ID. ",
-          webLink("Open GitHub developer settings", "https://github.com/settings/developers")),
-        settingRow("Client ID", () => settings.githubClientId ?? "", (v) => (settings.githubClientId = v), "Ov23li…"),
+          t("Only for \"Sign in with a code\" — the GitHub CLI login needs none. In GitHub → Settings → Developer settings → OAuth Apps, create an app (any homepage and callback URL), tick \"Enable Device Flow\", and paste its client ID. "),
+          webLink(t("Open GitHub developer settings"), "https://github.com/settings/developers")),
+        settingRow(t("Client ID"), () => settings.githubClientId ?? "", (v) => (settings.githubClientId = v), "Ov23li…"),
       ),
     ),
 
     imapBlock(),
 
-    block("adv-ical", "Calendar from an iCal link",
-      h("div", { class: "hint", text: "Used only when no account is signed in. Google Calendar: Settings → your calendar → \"Secret address in iCal format\". Outlook: Calendar → Shared calendars → Publish → ICS." }),
-      secretRow("iCal link", "ical-url", "https://calendar.google.com/calendar/ical/…/basic.ics"),
+    block("adv-ical", t("Calendar from an iCal link"),
+      h("div", { class: "hint", text: t("Used only when no account is signed in. Google Calendar: Settings → your calendar → \"Secret address in iCal format\". Outlook: Calendar → Shared calendars → Publish → ICS.") }),
+      secretRow(t("iCal link"), "ical-url", "https://calendar.google.com/calendar/ical/…/basic.ics"),
     ),
 
-    block("adv-github", "GitHub with a personal access token",
-      h("div", { class: "hint", text: "A classic token with the repo, read:org and notifications scopes, instead of signing in." }),
+    block("adv-github", t("GitHub with a personal access token"),
+      h("div", { class: "hint", text: t("A classic token with the repo, read:org and notifications scopes, instead of signing in.") }),
       secretRow("Token", "github-token", "ghp_…"),
     ),
 
-    block("adv-services", "Other services",
-      h("div", { class: "hint", text: "Each turns on as soon as its key is saved and off when you save it empty. Keys are stored in the Windows Credential Manager, never on disk." }),
+    block("adv-services", t("Other services"),
+      h("div", { class: "hint", text: t("Each turns on as soon as its key is saved and off when you save it empty. Keys are stored in the Windows Credential Manager, never on disk.") }),
       services,
     ),
   ) as HTMLDetailsElement;
@@ -491,7 +492,7 @@ function advancedSection(): HTMLElement {
 
 export async function page(): Promise<HTMLElement> {
   watchers = [];
-  const el = pageOf("Integrations", "What Awuuu brings to the Today page. Each one turns on when it is set up and off when you remove it.",
+  const el = pageOf(t("Integrations"), t("What Awuuu brings to the Today page. Each one turns on when it is set up and off when you remove it."),
     mailAndCalendar(), githubSection(), simpleSection(), composioSection(), advancedSection());
   await sync();
   return el;

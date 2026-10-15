@@ -7,6 +7,7 @@ import { agentMeta, formatDuration } from "./recap";
 import { plural } from "./dash-ui";
 import { weeklyRecap, type WeeklyRecap } from "./weekly";
 import type { HistoryData } from "../core/bridge";
+import { t } from "../i18n/i18n";
 
 export const SHARE_W = 1080;
 export const SHARE_H = 1920;
@@ -149,9 +150,9 @@ export function weeklyCard(data: HistoryData | null, now = Date.now()): HTMLElem
   const save = async () => {
     try {
       saveBlob(await render(), fileName);
-      say("Image saved (look in Downloads).");
+      say(t("Image saved (look in Downloads)."));
     } catch (err) {
-      say(`Could not save the image: ${String(err).replace(/^Error:\s*/, "")}`);
+      say(t("Could not save the image: {v}", { v: String(err).replace(/^Error:\s*/, "") }));
     }
   };
   const copy = async () => {
@@ -159,9 +160,9 @@ export function weeklyCard(data: HistoryData | null, now = Date.now()): HTMLElem
       const blob = await render();
       if (!navigator.clipboard || typeof ClipboardItem === "undefined") throw new Error("no clipboard images");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      say("Image copied.");
+      say(t("Image copied."));
     } catch {
-      say("The clipboard refused the image, so it was saved instead.");
+      say(t("The clipboard refused the image, so it was saved instead."));
       void save();
     }
   };
@@ -171,12 +172,12 @@ export function weeklyCard(data: HistoryData | null, now = Date.now()): HTMLElem
     list.append(h("span", { class: "who", text: label }), h("span", { text: value, style: "text-align:left" }));
   }
   return h("section", { id: "weekly-recap" },
-    h("h2", {}, h("span", { text: "Weekly recap" }), h("span", { class: "plan", text: rangeText(r) })),
-    r.any ? list : h("div", { class: "hint", text: "Nothing recorded yet this week." }),
+    h("h2", {}, h("span", { text: t("Weekly recap") }), h("span", { class: "plan", text: rangeText(r) })),
+    r.any ? list : h("div", { class: "hint", text: t("Nothing recorded yet this week.") }),
     r.any && (r.linesAdded == null || r.permissions == null)
-      ? h("div", { class: "hint", text: "Lines changed and permissions answered are not kept in history, so they show a dash." }) : null,
+      ? h("div", { class: "hint", text: t("Lines changed and permissions answered are not kept in history, so they show a dash.") }) : null,
     h("div", { class: "row" },
-      h("button", { class: "primary", text: "Save image", disabled: !r.any, onclick: () => void save() }),
-      h("button", { text: "Copy image", disabled: !r.any, onclick: () => void copy() })),
+      h("button", { class: "primary", text: t("Save image"), disabled: !r.any, onclick: () => void save() }),
+      h("button", { text: t("Copy image"), disabled: !r.any, onclick: () => void copy() })),
     status);
 }

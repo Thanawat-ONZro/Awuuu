@@ -16,6 +16,7 @@ import { OUTFITS, normalizeOutfit, setOutfitSelection, type OutfitSelection } fr
 import { h } from "../../views/dom";
 import { onLeave } from "../shell";
 import { card, pageOf, save, settings } from "../ui";
+import { t } from "../../i18n/i18n";
 
 const STAGE_W = 300;
 const STAGE_H = 230;
@@ -39,17 +40,17 @@ function still(look: DogLook, size: number): HTMLCanvasElement {
   return canvas;
 }
 
-const LABELS: Record<string, string> = {
-  shiba: "Shiba", mask: "Mask", saddle: "Tan points", spots: "Spots", solid: "Solid", tricolor: "Tricolor",
-  pointed: "Pointed", floppy: "Floppy", round: "Round",
-  curl: "Curl", straight: "Straight", fluffy: "Fluffy",
-  dot: "Classic", sparkle: "Sparkle", sleepy: "Sleepy",
-  none: "None", collar: "Collar", bandana: "Bandana",
-};
+const labels = (): Record<string, string> => ({
+  shiba: t("Shiba"), mask: t("Mask"), saddle: t("Tan points"), spots: t("Spots"), solid: t("Solid"), tricolor: t("Tricolor"),
+  pointed: t("Pointed"), floppy: t("Floppy"), round: t("Round"),
+  curl: t("Curl"), straight: t("Straight"), fluffy: t("Fluffy"),
+  dot: t("Classic"), sparkle: t("Sparkle"), sleepy: t("Sleepy"),
+  none: t("None"), collar: t("Collar"), bandana: t("Bandana"),
+});
 
-const STATES: [string, BotStateName][] = [
-  ["Idle", "idle"], ["Working", "working"], ["Thinking", "thinking"], ["Needs you", "approval"],
-  ["Done", "finished"], ["Asleep", "sleeping"],
+const states = (): [string, BotStateName][] => [
+  [t("Idle"), "idle"], [t("Working"), "working"], [t("Thinking"), "thinking"], [t("Needs you"), "approval"],
+  [t("Done"), "finished"], [t("Asleep"), "sleeping"],
 ];
 
 export function page(): HTMLElement {
@@ -122,7 +123,7 @@ export function page(): HTMLElement {
   });
 
   const stateRow = h("div", { class: "dog-states" });
-  for (const [label, state] of STATES) {
+  for (const [label, state] of states()) {
     const b = h("button", { class: "chip", text: label });
     b.addEventListener("click", () => {
       engine.setState(state);
@@ -179,7 +180,7 @@ export function page(): HTMLElement {
   const segmented = <K extends "pattern" | "ears" | "tail" | "eyes" | "collar">(key: K, all: readonly DogLook[K][]) => {
     const box = h("span", { class: "seg" });
     for (const v of all) {
-      const b = h("button", { text: LABELS[v] ?? v });
+      const b = h("button", { text: labels()[v] ?? v });
       b.addEventListener("click", () => apply({ ...look, [key]: v }));
       syncers.push(() => b.classList.toggle("on", look[key] === v));
       box.append(b);
@@ -187,7 +188,7 @@ export function page(): HTMLElement {
     return box;
   };
 
-  const plainEyes = h("button", { class: "chip", text: "Plain dark" });
+  const plainEyes = h("button", { class: "chip", text: t("Plain dark") });
   plainEyes.addEventListener("click", () => apply({ ...look, eyeColor: "" }));
   syncers.push(() => plainEyes.classList.toggle("on", !look.eyeColor));
 
@@ -197,7 +198,7 @@ export function page(): HTMLElement {
   // Outfit: Auto (by season), None, or one of the outfits. Draws straight away.
   const outfitRow = h("div", { class: "dog-states" });
   const outfitChoices: [string, OutfitSelection][] = [
-    ["Auto", "auto"], ["None", "none"], ...OUTFITS.map((o) => [o.name, o.id] as [string, OutfitSelection]),
+    [t("Auto"), "auto"], [t("None"), "none"], ...OUTFITS.map((o) => [o.name, o.id] as [string, OutfitSelection]),
   ];
   for (const [label, sel] of outfitChoices) {
     const b = h("button", { class: "chip", text: label });
@@ -212,34 +213,34 @@ export function page(): HTMLElement {
     outfitRow.append(b);
   }
 
-  const surprise = h("button", { class: "primary", text: "Surprise me" });
+  const surprise = h("button", { class: "primary", text: t("Surprise me") });
   surprise.addEventListener("click", () => {
     apply(randomLook(), false, true);
     engine.triggerEmote("happy");
     kick();
   });
-  const reset = h("button", { text: "Reset to classic" });
+  const reset = h("button", { text: t("Reset to classic") });
   reset.addEventListener("click", () => apply(CLASSIC, false, true));
 
   const controls = h("div", { class: "dog-controls" },
-    h("div", { class: "row" }, h("label", { text: "Coat" }), color("coat")),
-    h("div", { class: "row" }, h("label", { text: "Markings" }), color("patch")),
-    h("div", { class: "row" }, h("label", { text: "Accent" }), color("accent"),
-      h("span", { class: "hint", text: "inner ear, small details" })),
-    h("div", { class: "row" }, h("label", { text: "Pattern" }), segmented("pattern", PATTERNS)),
-    h("div", { class: "row" }, h("label", { text: "Ears" }), segmented("ears", EARS)),
-    h("div", { class: "row" }, h("label", { text: "Tail" }), segmented("tail", TAILS)),
-    h("div", { class: "row" }, h("label", { text: "Eyes" }), segmented("eyes", EYES)),
-    h("div", { class: "row" }, h("label", { text: "Eye colour" }), color("eyeColor"), plainEyes),
-    h("div", { class: "row" }, h("label", { text: "Collar" }), segmented("collar", COLLARS), collarColor),
-    h("div", { class: "row" }, h("label", { text: "Outfit" }), outfitRow),
+    h("div", { class: "row" }, h("label", { text: t("Coat") }), color("coat")),
+    h("div", { class: "row" }, h("label", { text: t("Markings") }), color("patch")),
+    h("div", { class: "row" }, h("label", { text: t("Accent") }), color("accent"),
+      h("span", { class: "hint", text: t("inner ear, small details") })),
+    h("div", { class: "row" }, h("label", { text: t("Pattern") }), segmented("pattern", PATTERNS)),
+    h("div", { class: "row" }, h("label", { text: t("Ears") }), segmented("ears", EARS)),
+    h("div", { class: "row" }, h("label", { text: t("Tail") }), segmented("tail", TAILS)),
+    h("div", { class: "row" }, h("label", { text: t("Eyes") }), segmented("eyes", EYES)),
+    h("div", { class: "row" }, h("label", { text: t("Eye colour") }), color("eyeColor"), plainEyes),
+    h("div", { class: "row" }, h("label", { text: t("Collar") }), segmented("collar", COLLARS), collarColor),
+    h("div", { class: "row" }, h("label", { text: t("Outfit") }), outfitRow),
   );
 
   // ── Agent dogs ──────────────────────────────────────────────────────────────
 
   const agents = h("div", { class: "dog-agents" });
   const others: [string, string, string][] = [
-    ["integration", "GitHub", "#F0645A"], ["integration", "Mail", "#EA4335"], ["integration", "Weather", "#38BDF8"],
+    ["integration", "GitHub", "#F0645A"], ["integration", t("Mail"), "#EA4335"], ["integration", t("Weather"), "#38BDF8"],
   ];
   const strip: [string, string, string][] = [
     ...Object.entries(AGENT_INFO).map(([id, a]) => [id, a.short, a.color] as [string, string, string]),
@@ -255,15 +256,15 @@ export function page(): HTMLElement {
   sync();
   kick();
 
-  return pageOf("Appearance", "Make Awuuu yours. Changes show on the island straight away.",
+  return pageOf(t("Appearance"), t("Make Awuuu yours. Changes show on the island straight away."),
     h("section", { class: "dog-top" },
       h("div", { class: "dog-preview" }, stage, stateRow,
         h("div", { class: "row-buttons" }, surprise, reset)),
       controls,
     ),
-    card("Breeds", presets),
-    card("Agent dogs",
-      h("p", { class: "hint", text: "Each agent and integration wears its own dog, in its own colour — in the hub's pills, and on the island while you look at it." }),
+    card(t("Breeds"), presets),
+    card(t("Agent dogs"),
+      h("p", { class: "hint", text: t("Each agent and integration wears its own dog, in its own colour — in the hub's pills, and on the island while you look at it.") }),
       agents),
   );
 }

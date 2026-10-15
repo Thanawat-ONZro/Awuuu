@@ -98,6 +98,9 @@ pub struct Settings {
     /// Automatic update checks: None = not asked yet (asked once at launch).
     #[serde(default)]
     pub update_check: Option<bool>,
+    /// Interface language: "auto" (Thai when Windows is Thai), "en" or "th".
+    #[serde(default = "default_language")]
+    pub language: String,
     /// Keep what the agents did (history.json) for the dashboard, and for how
     /// many days (1–90).
     #[serde(default = "yes")]
@@ -218,6 +221,10 @@ impl Settings {
     }
 }
 
+fn default_language() -> String {
+    "auto".to_string()
+}
+
 fn default_model() -> String {
     crate::claude::DEFAULT_MODEL.to_string()
 }
@@ -264,6 +271,7 @@ impl Default for Settings {
             model: default_model(),
             hide_after: default_hide_after(),
             update_check: None,
+            language: default_language(),
             history_enabled: true,
             history_days: default_history_days(),
             chat_height: 0.0,

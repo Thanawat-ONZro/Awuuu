@@ -4,6 +4,7 @@ import { Bridge } from "../../core/bridge";
 import type { ChatProvider } from "../../core/state";
 import { h, clear } from "../../views/dom";
 import { pageOf, save, select, settings, statusDot, textField } from "../ui";
+import { t } from "../../i18n/i18n";
 
 // ── Agent / API section ────────────────────────────────────────────────────────
 
@@ -20,28 +21,28 @@ function hermesSection(): HTMLElement {
   dot.style.background = "#a89a8a";
   const state = h("span", {
     class: "hint",
-    text: "Awuuu chats with your local Hermes Agent. The key is read from API_SERVER_KEY in %LOCALAPPDATA%\\hermes\\.env unless you set one here.",
+    text: t("Awuuu chats with your local Hermes Agent. The key is read from API_SERVER_KEY in %LOCALAPPDATA%\\hermes\\.env unless you set one here."),
   });
 
   const url = h("input", {
     type: "text",
-    placeholder: "http://127.0.0.1:8642  (default)",
+    placeholder: t("http://127.0.0.1:8642  (default)"),
     style: "flex:1 1 auto;min-width:0",
     spellcheck: "false",
   }) as HTMLInputElement;
-  const saveUrl = h("button", { text: "Save" });
+  const saveUrl = h("button", { text: t("Save") });
 
   const key = h("input", {
     type: "password",
-    placeholder: "Optional — overrides the .env key",
+    placeholder: t("Optional — overrides the .env key"),
     style: "flex:1 1 auto;min-width:0",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
-  const saveKey = h("button", { text: "Save" });
-  const clearKey = h("button", { class: "danger", text: "Remove" });
+  const saveKey = h("button", { text: t("Save") });
+  const clearKey = h("button", { class: "danger", text: t("Remove") });
 
-  const test = h("button", { class: "primary", text: "Test connection" });
+  const test = h("button", { class: "primary", text: t("Test connection") });
   const feedback = h("div", {});
 
   function say(kind: "ok" | "err", text: string) {
@@ -51,7 +52,7 @@ function hermesSection(): HTMLElement {
 
   async function refreshKey() {
     const present = (await Bridge.secretPresent("hermes-api-key")) ?? false;
-    key.placeholder = present ? "••••••••••••  (stored)" : "Optional — overrides the .env key";
+    key.placeholder = present ? "••••••••••••  (stored)" : t("Optional — overrides the .env key");
     clearKey.style.display = present ? "" : "none";
   }
 
@@ -59,9 +60,9 @@ function hermesSection(): HTMLElement {
     try {
       // Empty clears it, which falls back to the default local gateway.
       await Bridge.secretSet("hermes-url", url.value.trim());
-      say("ok", url.value.trim() ? "Server saved." : "Back to the default local gateway.");
+      say("ok", url.value.trim() ? t("Server saved.") : t("Back to the default local gateway."));
     } catch (err) {
-      say("err", `Could not save: ${String(err)}`);
+      say("err", t("Could not save: {v}", { v: String(err) }));
     }
   });
 
@@ -71,32 +72,32 @@ function hermesSection(): HTMLElement {
     try {
       await Bridge.secretSet("hermes-api-key", value);
       key.value = "";
-      say("ok", "Key saved in the Windows Credential Manager.");
+      say("ok", t("Key saved in the Windows Credential Manager."));
       await refreshKey();
     } catch (err) {
-      say("err", `Could not save: ${String(err)}`);
+      say("err", t("Could not save: {v}", { v: String(err) }));
     }
   });
 
   clearKey.addEventListener("click", async () => {
     try {
       await Bridge.secretClear("hermes-api-key");
-      say("ok", "Key removed — the .env key is used again.");
+      say("ok", t("Key removed — the .env key is used again."));
       await refreshKey();
     } catch (err) {
-      say("err", `Could not remove: ${String(err)}`);
+      say("err", t("Could not remove: {v}", { v: String(err) }));
     }
   });
 
   test.addEventListener("click", async () => {
     test.setAttribute("disabled", "");
-    say("ok", "Sniffing for Hermes…");
+    say("ok", t("Sniffing for Hermes…"));
     try {
       const models = await Bridge.hermesStatus();
       dot.style.background = "var(--state-done)";
       say("ok", models.length
-        ? `Connected — ${models.length} model${models.length > 1 ? "s" : ""}: ${models.slice(0, 6).join(", ")}`
-        : "Connected.");
+        ? t("Connected — {length} model{v}: {v2}", { length: models.length, v: models.length > 1 ? "s" : "", v2: models.slice(0, 6).join(", ") })
+        : t("Connected."));
       if (models.length > 0) {
         for (const m of models) {
           if (!Array.from(model.options).some((opt) => opt.value === m)) {
@@ -131,7 +132,7 @@ function hermesSection(): HTMLElement {
     ["LM Studio", "http://127.0.0.1:1234/v1/chat/completions"],
     ["OpenRouter", "https://openrouter.ai/api/v1/chat/completions"],
   ];
-  presetsRow.append(h("span", { class: "hint", style: "font-size:11px;align-self:center", text: "Presets:" }));
+  presetsRow.append(h("span", { class: "hint", style: "font-size:11px;align-self:center", text: t("Presets:") }));
   for (const [name, pUrl] of presets) {
     presetsRow.append(h("button", {
       text: name,
@@ -147,12 +148,12 @@ function hermesSection(): HTMLElement {
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Chat & Gateway — Hermes Agent" })),
+    h("h2", {}, dot, h("span", { text: t("Chat & Gateway — Hermes Agent") })),
     state,
-    h("div", { class: "row" }, h("label", { text: "Model" }), model),
-    h("div", { class: "row" }, h("label", { text: "Server" }), url, saveUrl),
+    h("div", { class: "row" }, h("label", { text: t("Model") }), model),
+    h("div", { class: "row" }, h("label", { text: t("Server") }), url, saveUrl),
     presetsRow,
-    h("div", { class: "row" }, h("label", { text: "API key" }), key, saveKey, clearKey),
+    h("div", { class: "row" }, h("label", { text: t("API key") }), key, saveKey, clearKey),
     h("div", { class: "row" }, test),
     feedback,
   );
@@ -186,19 +187,19 @@ function providersSection(): HTMLElement {
   function draw() {
     clear(body);
     const active = h("select", {}) as HTMLSelectElement;
-    active.append(h("option", { value: "", text: "Hermes Agent / Claude (model above)" }));
+    active.append(h("option", { value: "", text: t("Hermes Agent / Claude (model above)") }));
     for (const p of settings.providers) active.append(h("option", { value: p.id, text: `${p.name} — ${p.model}` }));
     active.value = settings.chatProvider ?? "";
     active.addEventListener("change", () => {
       settings.chatProvider = active.value;
       void save();
     });
-    body.append(h("div", { class: "row" }, h("label", { text: "Island chat uses" }), active));
+    body.append(h("div", { class: "row" }, h("label", { text: t("Island chat uses") }), active));
 
     for (const p of settings.providers) body.append(providerRow(p));
 
     const add = h("select", {}) as HTMLSelectElement;
-    add.append(h("option", { value: "", text: "Add a provider…" }));
+    add.append(h("option", { value: "", text: t("Add a provider…") }));
     for (const preset of PROVIDER_PRESETS) add.append(h("option", { value: preset.name, text: preset.name }));
     add.addEventListener("change", () => {
       const preset = PROVIDER_PRESETS.find((x) => x.name === add.value);
@@ -207,12 +208,12 @@ function providersSection(): HTMLElement {
       void save();
       draw();
     });
-    const detect = h("button", { text: "Detect local (Ollama, LM Studio)" });
+    const detect = h("button", { text: t("Detect local (Ollama, LM Studio)") });
     detect.addEventListener("click", async () => {
-      say("ok", "Looking on 11434 and 1234…");
+      say("ok", t("Looking on 11434 and 1234…"));
       const found = (await Bridge.detectLocalProviders()) ?? [];
       if (found.length === 0) {
-        say("err", "Nothing answered on the usual local ports.");
+        say("err", t("Nothing answered on the usual local ports."));
         return;
       }
       for (const f of found) {
@@ -220,7 +221,7 @@ function providersSection(): HTMLElement {
         settings.providers = [...settings.providers, { id: providerId(f.name), name: f.name, baseUrl: f.baseUrl, model: f.models[0] ?? "" }];
       }
       await save();
-      say("ok", `Found: ${found.map((f) => `${f.name} (${f.models.length} models)`).join(", ")}`);
+      say("ok", t("Found: {list}", { list: found.map((f) => t("{name} ({n} models)", { name: f.name, n: f.models.length })).join(", ") }));
       draw();
     });
     body.append(h("div", { class: "row" }, add, detect), feedback);
@@ -238,7 +239,7 @@ function providersSection(): HTMLElement {
     const models = h("datalist", { id: `models-${p.id}` });
     const model = field(p.model, "model", (v) => (p.model = v), "180px");
     model.setAttribute("list", `models-${p.id}`);
-    const key = h("input", { type: "password", placeholder: "API key (optional)", autocomplete: "off", style: "width:150px" }) as HTMLInputElement;
+    const key = h("input", { type: "password", placeholder: t("API key (optional)"), autocomplete: "off", style: "width:150px" }) as HTMLInputElement;
     void Bridge.secretPresent(`provider-key:${p.id}`).then((has) => {
       if (has) key.placeholder = "••••••  (stored)";
     });
@@ -247,23 +248,23 @@ function providersSection(): HTMLElement {
         await Bridge.secretSet(`provider-key:${p.id}`, key.value.trim());
         key.value = "";
         key.placeholder = "••••••  (stored)";
-        say("ok", `${p.name}: key saved in the Credential Manager.`);
+        say("ok", t("{name}: key saved in the Credential Manager.", { name: p.name }));
       } catch (err) {
         say("err", String(err));
       }
     });
-    const test = h("button", { text: "Test" });
+    const test = h("button", { text: t("Test") });
     test.addEventListener("click", async () => {
       try {
         const list = (await Bridge.providerModels(p.baseUrl, p.id)) ?? [];
         clear(models);
         for (const m of list) models.append(h("option", { value: m }));
-        say("ok", `${p.name}: connected — ${list.length} models${list.length ? ` (${list.slice(0, 5).join(", ")}…)` : ""}`);
+        say("ok", t("{name}: connected — {n} models{some}", { name: p.name, n: list.length, some: list.length ? ` (${list.slice(0, 5).join(", ")}…)` : "" }));
       } catch (err) {
         say("err", `${p.name}: ${String(err).replace(/^Error:\s*/, "")}`);
       }
     });
-    const remove = h("button", { class: "danger", text: "Remove" });
+    const remove = h("button", { class: "danger", text: t("Remove") });
     remove.addEventListener("click", async () => {
       settings.providers = settings.providers.filter((x) => x.id !== p.id);
       if (settings.chatProvider === p.id) settings.chatProvider = "";
@@ -279,14 +280,14 @@ function providersSection(): HTMLElement {
 
   draw();
   return h("section", {},
-    h("h2", {}, h("span", { text: "Chat providers" })),
-    h("div", { class: "hint", text: "Any OpenAI-compatible server — OpenAI, OpenRouter, Ollama, LM Studio or your own. Keys stay in the Windows Credential Manager. Switch providers from the chat too." }),
+    h("h2", {}, h("span", { text: t("Chat providers") })),
+    h("div", { class: "hint", text: t("Any OpenAI-compatible server — OpenAI, OpenRouter, Ollama, LM Studio or your own. Keys stay in the Windows Credential Manager. Switch providers from the chat too.") }),
     body);
 }
 
 function apiSection(hasKey: boolean): HTMLElement {
   const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No Claude key yet." });
+  const state = h("span", { class: "hint", text: hasKey ? t("Key saved in the Windows Credential Manager.") : t("No Claude key yet.") });
 
   const field = h("input", {
     type: "password",
@@ -296,16 +297,16 @@ function apiSection(hasKey: boolean): HTMLElement {
     spellcheck: "false",
   }) as HTMLInputElement;
 
-  const saveBtn = h("button", { class: "primary", text: "Save key" });
-  const clearBtn = h("button", { class: "danger", text: "Remove" });
+  const saveBtn = h("button", { class: "primary", text: t("Save key") });
+  const clearBtn = h("button", { class: "danger", text: t("Remove") });
   const feedback = h("div", {});
 
   async function refresh() {
     const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
     dot.style.background = present ? "var(--state-done)" : "var(--state-error)";
     state.textContent = present
-      ? "Key saved in the Windows Credential Manager."
-      : "No Claude key yet.";
+      ? t("Key saved in the Windows Credential Manager.")
+      : t("No Claude key yet.");
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -317,10 +318,10 @@ function apiSection(hasKey: boolean): HTMLElement {
     try {
       await Bridge.secretSet("anthropic-api-key", value);
       field.value = "";
-      feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
+      feedback.append(h("div", { class: "notice ok", text: t("Saved. It never touches disk.") }));
       await refresh();
     } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not save: ${String(err)}` }));
+      feedback.append(h("div", { class: "notice err", text: t("Could not save: {v}", { v: String(err) }) }));
     }
   });
 
@@ -328,10 +329,10 @@ function apiSection(hasKey: boolean): HTMLElement {
     clear(feedback);
     try {
       await Bridge.secretClear("anthropic-api-key");
-      feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
+      feedback.append(h("div", { class: "notice ok", text: t("Key removed.") }));
       await refresh();
     } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not remove: ${String(err)}` }));
+      feedback.append(h("div", { class: "notice err", text: t("Could not remove: {v}", { v: String(err) }) }));
     }
   });
 
@@ -340,10 +341,10 @@ function apiSection(hasKey: boolean): HTMLElement {
   return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Claude API" })),
+    h("h2", {}, dot, h("span", { text: t("Claude API") })),
     state,
-    h("div", { class: "hint", text: "Only needed when a Claude model is picked above." }),
-    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
+    h("div", { class: "hint", text: t("Only needed when a Claude model is picked above.") }),
+    h("div", { class: "row" }, h("label", { text: t("API key") }), field, saveBtn, clearBtn),
     feedback,
   );
 }
@@ -351,25 +352,25 @@ function apiSection(hasKey: boolean): HTMLElement {
 
 // ── Personality: how Awuuu talks ───────────────────────────────────────────────
 
-const TONES: [string, string][] = [
-  ["playful", "Playful: warm, a little silly"],
-  ["calm", "Calm: few words, no chatter"],
-  ["pro", "Professional: straight to the point"],
+const tones = (): [string, string][] => [
+  ["playful", t("Playful: warm, a little silly")],
+  ["calm", t("Calm: few words, no chatter")],
+  ["pro", t("Professional: straight to the point")],
 ];
 
 function personalitySection(): HTMLElement {
   return h("section", {},
-    h("h2", {}, h("span", { text: "Personality" })),
-    h("div", { class: "row" }, h("label", { text: "Tone" }),
-      select(TONES, () => settings.chatTone || "playful", (v) => (settings.chatTone = v))),
-    h("div", { class: "row" }, h("label", { text: "Call me" }),
-      textField(() => settings.userName ?? "", (v) => (settings.userName = v), "Your first name (default: from your Windows account)")),
-    h("div", { class: "hint", text: "Awuuu replies in the language you write in. Hermes keeps its own memory; this only sets the voice." }),
+    h("h2", {}, h("span", { text: t("Personality") })),
+    h("div", { class: "row" }, h("label", { text: t("Tone") }),
+      select(tones(), () => settings.chatTone || "playful", (v) => (settings.chatTone = v))),
+    h("div", { class: "row" }, h("label", { text: t("Call me") }),
+      textField(() => settings.userName ?? "", (v) => (settings.userName = v), t("Your first name (default: from your Windows account)"))),
+    h("div", { class: "hint", text: t("Awuuu replies in the language you write in. Hermes keeps its own memory; this only sets the voice.") }),
   );
 }
 
 export async function page(): Promise<HTMLElement> {
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-  return pageOf("Chat & models", "The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server.",
+  return pageOf(t("Chat & models"), t("The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server."),
     personalitySection(), hermesSection(), providersSection(), apiSection(hasKey));
 }

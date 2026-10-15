@@ -7,6 +7,7 @@ import { Bridge, type ComposioStatus } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
 import { copyText } from "../dash-ui";
 import { renderDiff } from "../ui";
+import { t } from "../../i18n/i18n";
 
 const KEY = "composio-api-key";
 const PLACEHOLDER_URL = "https://backend.composio.dev/v3/mcp/<SERVER_ID>?user_id=<USER_ID>";
@@ -32,7 +33,7 @@ export function composioSection(): HTMLElement {
   const card = h("div", { class: "int-card", id: "composio" },
     h("div", { class: "int-head" },
       h("span", { class: "int-mark", style: "background:#7C3AED", text: "C" }),
-      h("div", { class: "int-title" }, h("strong", { text: "Composio (via Hermes)" }), h("span", { text: "Lets Hermes act in your other apps through Composio's cloud" })),
+      h("div", { class: "int-title" }, h("strong", { text: t("Composio (via Hermes)") }), h("span", { text: t("Lets Hermes act in your other apps through Composio's cloud") })),
       chip),
     body, panel);
 
@@ -40,7 +41,7 @@ export function composioSection(): HTMLElement {
     status = (await Bridge.composioStatus()) ?? null;
     if (status?.url && !url) url = status.url;
     chip.classList.toggle("on", !!status?.configInstalled);
-    chip.textContent = status?.configInstalled ? "On" : "Off";
+    chip.textContent = status?.configInstalled ? t("On") : t("Off");
     draw();
   }
 
@@ -51,16 +52,16 @@ export function composioSection(): HTMLElement {
     const agree = h("input", { type: "checkbox" }) as HTMLInputElement;
     agree.checked = on;
     agree.disabled = on;
-    body.append(h("label", { class: "row" }, agree, h("span", { text: " I understand my app data will go through Composio, and I want to turn this on." })));
+    body.append(h("label", { class: "row" }, agree, h("span", { text: t(" I understand my app data will go through Composio, and I want to turn this on.") })));
     const form = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
     form.style.display = agree.checked ? "" : "none";
     agree.addEventListener("change", () => (form.style.display = agree.checked ? "" : "none"));
     body.append(form);
 
     const urlInput = h("input", { type: "text", placeholder: PLACEHOLDER_URL, autocomplete: "off", spellcheck: "false", value: url }) as HTMLInputElement;
-    const keyInput = h("input", { type: "password", placeholder: status?.keySaved ? "••••••••  (stored)" : "Composio API key", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+    const keyInput = h("input", { type: "password", placeholder: status?.keySaved ? "••••••••  (stored)" : t("Composio API key"), autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
     const note = h("span", { class: "hint" });
-    const saveKey = h("button", { text: "Save key" });
+    const saveKey = h("button", { text: t("Save key") });
     saveKey.addEventListener("click", async () => {
       try {
         await Bridge.secretSet(KEY, keyInput.value.trim());
@@ -73,20 +74,20 @@ export function composioSection(): HTMLElement {
     const pre = h("pre", { class: "path", style: "white-space:pre-wrap;user-select:text", text: fragment(url) });
     urlInput.addEventListener("input", () => { url = urlInput.value.trim(); pre.textContent = fragment(url); });
     const fallback = h("div");
-    const copy = h("button", { text: "Copy" }) as HTMLButtonElement;
+    const copy = h("button", { text: t("Copy") }) as HTMLButtonElement;
     copy.addEventListener("click", () => void copyText(pre.textContent ?? "", copy, fallback));
 
     form.append(
-      h("div", { class: "hint", text: "Paste the MCP URL from your Composio dashboard, and your API key. The key is kept in the Windows Credential Manager. Hermes reads it from the environment (${COMPOSIO_API_KEY}), so the config file never holds the key; the only copy outside Awuuu is the one you choose to put in Hermes' .env below." }),
-      h("div", { class: "row int-field" }, h("label", { text: "MCP URL" }), urlInput),
-      h("div", { class: "row int-field" }, h("label", { text: "API key" }), keyInput, saveKey, note),
-      h("div", { class: "hint", text: "What gets added (copy it if you prefer to edit the files yourself):" }),
+      h("div", { class: "hint", text: t("Paste the MCP URL from your Composio dashboard, and your API key. The key is kept in the Windows Credential Manager. Hermes reads it from the environment (${COMPOSIO_API_KEY}), so the config file never holds the key; the only copy outside Awuuu is the one you choose to put in Hermes' .env below.") }),
+      h("div", { class: "row int-field" }, h("label", { text: t("MCP URL") }), urlInput),
+      h("div", { class: "row int-field" }, h("label", { text: t("API key") }), keyInput, saveKey, note),
+      h("div", { class: "hint", text: t("What gets added (copy it if you prefer to edit the files yourself):") }),
       pre, h("div", { class: "row" }, copy), fallback,
       h("div", { class: "row" },
-        h("button", { class: "primary", text: on ? "Update Hermes config…" : "Add to Hermes config…", onclick: () => void review("config", true) }),
-        h("button", { text: status?.envInstalled ? "Key already in .env" : "Add key to Hermes .env…", disabled: !status?.keySaved || !!status?.envInstalled, title: status?.keySaved ? "" : "Save your API key first", onclick: () => void review("env", true) }),
-        on || status?.envInstalled ? h("button", { class: "danger", text: "Turn off…", onclick: () => void turnOff() }) : null),
-      h("div", { class: "hint", text: `Hermes files: ${status?.configPath ?? "config.yaml"} and ${status?.envPath ?? ".env"}. Restart Hermes after a change (or /reload-mcp). Tool calls Hermes makes through Composio still ask for your approval here in the island.` }),
+        h("button", { class: "primary", text: on ? t("Update Hermes config…") : t("Add to Hermes config…"), onclick: () => void review("config", true) }),
+        h("button", { text: status?.envInstalled ? t("Key already in .env") : t("Add key to Hermes .env…"), disabled: !status?.keySaved || !!status?.envInstalled, title: status?.keySaved ? "" : t("Save your API key first"), onclick: () => void review("env", true) }),
+        on || status?.envInstalled ? h("button", { class: "danger", text: t("Turn off…"), onclick: () => void turnOff() }) : null),
+      h("div", { class: "hint", text: t("Hermes files: {v} and {v2}. Restart Hermes after a change (or /reload-mcp). Tool calls Hermes makes through Composio still ask for your approval here in the island.", { v: status?.configPath ?? "config.yaml", v2: status?.envPath ?? ".env" }) }),
     );
   }
 
@@ -101,31 +102,31 @@ export function composioSection(): HTMLElement {
     try {
       preview = await Bridge.composioPreview(target, install, url);
     } catch (err) {
-      panel.append(h("div", { class: "notice err", text: reason(err) }), h("div", { class: "row" }, h("button", { text: "Close", onclick: () => clear(panel) })));
+      panel.append(h("div", { class: "notice err", text: reason(err) }), h("div", { class: "row" }, h("button", { text: t("Close"), onclick: () => clear(panel) })));
       return;
     }
     const what = target === "config" ? "config.yaml" : ".env (this file is plain text: the key will be readable there by anything that can read your Hermes folder)";
     panel.append(
-      h("div", { class: "hint", text: install ? `This is exactly what will change in ${what}. Everything else is left untouched.` : `This removes Awuuu's Composio entry only from ${what}.` }),
+      h("div", { class: "hint", text: install ? t("This is exactly what will change in {what}. Everything else is left untouched.", { what }) : t("This removes Awuuu's Composio entry only from {what}.", { what }) }),
       renderDiff(preview.diff),
-      h("div", { class: "row" }, h("span", { class: "path", text: `Backup → ${preview.backup}` })));
-    const confirm = h("button", { class: install ? "primary" : "danger", text: install ? "Back up and write" : "Back up and remove" });
+      h("div", { class: "row" }, h("span", { class: "path", text: t("Backup → {backup}", { backup: preview.backup }) })));
+    const confirm = h("button", { class: install ? "primary" : "danger", text: install ? t("Back up and write") : t("Back up and remove") });
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
       try {
         const backup = await Bridge.composioApply(target, install, url, preview.fingerprint);
         clear(panel);
-        panel.append(h("div", { class: "notice ok", text: `Done. Previous file saved as ${backup}. Restart Hermes to pick it up.` }));
+        panel.append(h("div", { class: "notice ok", text: t("Done. Previous file saved as {backup}. Restart Hermes to pick it up.", { backup }) }));
         await refresh();
         then?.();
       } catch (err) {
         confirm.disabled = false;
-        panel.append(h("div", { class: "notice err", text: `Could not write: ${reason(err)}` }));
+        panel.append(h("div", { class: "notice err", text: t("Could not write: {v}", { v: reason(err) }) }));
       }
     });
-    panel.append(h("div", { class: "row" }, confirm, h("button", { text: "Cancel", onclick: () => clear(panel) })));
+    panel.append(h("div", { class: "row" }, confirm, h("button", { text: t("Cancel"), onclick: () => clear(panel) })));
   }
 
   void refresh();
-  return h("section", {}, h("h2", {}, h("span", { text: "Optional · uses an outside service" })), h("div", { class: "int-grid" }, card));
+  return h("section", {}, h("h2", {}, h("span", { text: t("Optional · uses an outside service") })), h("div", { class: "int-grid" }, card));
 }

@@ -9,8 +9,9 @@ import { Bridge, onEvent } from "../core/bridge";
 import type { Settings } from "../core/state";
 import { layoutRefreshers, settings } from "./ui";
 import { applyAccent } from "../core/accent";
+import { setLanguage, currentLanguage } from "../i18n/i18n";
 import { setOutfitSelection } from "../mochi/outfits";
-import { mountShell, navigateFromEvent, type PageId } from "./shell";
+import { mountShell, rebuildShell, navigateFromEvent, type PageId } from "./shell";
 
 async function main() {
   const boot = await Bridge.boot();
@@ -23,6 +24,7 @@ async function main() {
   } catch {
     /* private mode */
   }
+  setLanguage(settings.language);
   applyAccent(settings.dog);
   setOutfitSelection(settings.outfit);
   mountShell(document.getElementById("settings-root")!, boot?.version ?? "", first);
@@ -32,6 +34,8 @@ async function main() {
 
   void onEvent<Settings>("settings-changed", (s) => {
     Object.assign(settings, s);
+    const before = currentLanguage();
+    if (setLanguage(settings.language) !== before) rebuildShell();
     applyAccent(settings.dog);
     setOutfitSelection(settings.outfit);
     layoutRefreshers.forEach((f) => f());

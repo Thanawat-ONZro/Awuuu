@@ -235,6 +235,8 @@ export interface Settings {
   quietHours: string;
   /** Automatic update checks; null = not asked yet. */
   updateCheck: boolean | null;
+  /** Interface language: "auto" follows Windows (Thai when it is Thai). */
+  language: "auto" | "en" | "th";
   /** Always-allowed tool commands or patterns. */
   alwaysAllowedRules: string[];
   /** Keep what the agents did for the dashboard, and for how many days. */
@@ -304,6 +306,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hideAfter: 5,
   quietHours: "",
   updateCheck: null,
+  language: "auto",
   alwaysAllowedRules: [],
   historyEnabled: true,
   historyDays: 7,

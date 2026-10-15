@@ -1,6 +1,6 @@
 # แผน: Motion, ดีไซน์ของ Awuuu เอง และ feature ที่ยังขาด (เทียบ coucou)
 
-สถานะ: **ร่างให้ Owen ตรวจ ยังไม่แก้โค้ดใดๆ** · ฐาน: main `cbcffba` (v0.8.0) · อ่าน coucou `Louis-CFM/coucou` (MIT) ณ 15 ต.ค. 2026
+สถานะ: Owen อนุมัติให้ทำทั้งหมด (15 ต.ค.) ทำเสร็จใน PR #8 ยกเว้น F10, F11, F12 ที่ไม่ทำ และ Copilot CLI ของ G7 ที่ข้าม; ดู CHANGELOG · ฐาน: main `cbcffba` (v0.8.0) · อ่าน coucou `Louis-CFM/coucou` (MIT) ณ 15 ต.ค. 2026
 
 ## 0. ข้อควรรู้ก่อนอ่าน
 - **ไม่มี REA MCP (reverse engineering anything) ใน session นี้** จึงอ่านโค้ด coucou ตรงๆ แทน (clone แล้วเทียบกับ Awuuu ไฟล์ต่อไฟล์) ถ้า Owen ต่อ REA MCP ภายหลัง งาน M/D ด้านล่างไม่ต้องแก้แผน
@@ -62,7 +62,7 @@
 | # | ช่องว่าง | coucou มี | Awuuu ตอนนี้ | คุ้มไหม |
 |---|---|---|---|---|
 | F1 | **ปรับ shortcut เองได้** | `core/shortcuts.ts` + `shortcuts.rs`, หน้า Settings → Shortcuts | `hotkeys.rs` ตายตัว (Ctrl+Alt+Y/N) | สูง งานกลาง |
-| F2 | **สลับโมเดลแชทจากหัวแชท** | คลิกชื่อโมเดลเหนือช่องแชทเพื่อเปลี่ยน provider | มี provider แต่ต้องไปตั้งในหน้า Chat (ตรวจ `views/chat.ts` ก่อน) | สูง งานเล็ก |
+| F2 | ~~สลับโมเดลแชทจากหัวแชท~~ | คลิกชื่อโมเดลเหนือช่องแชทเพื่อเปลี่ยน provider | **มีอยู่แล้ว** (dropdown ใน chat-head ของ `views/chat.ts`; ตรวจแล้ว 15 ต.ค. แผนเดิมผิด) | ไม่ต้องทำ |
 | F3 | **อนุมัติ + ถามกลับ (AskUserQuestion) ครบ** | ตัวเลือก 1-4 คำถาม single/multi บน island | `hooks.ts` อ่าน AskUserQuestion แล้ว แต่ต้องตรวจว่า UI รองรับ multi-select และ "Always" ครบ | กลาง ตรวจก่อน |
 | F4 | **ดู diff เต็มจาก ticker** | แตะไฟล์ใน ticker อ่าน diff | มี diff ใน handoff/sessions แต่ไม่มีบน island | กลาง |
 | F5 | **ภาษา TH/EN (+10 ภาษาของ coucou)** | `i18n/` ไฟล์ JSON 10 ภาษา (MIT) | ไม่มี (roadmap 8.5 ถูกเลื่อน) | สูงสำหรับผู้ใช้ไทย งานกลาง |

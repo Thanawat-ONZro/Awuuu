@@ -1,7 +1,7 @@
 // The Awuuu window: a sidebar on the left, one page on the right.
 //
 // A page is a file in pages/ exporting `page()`; it is rebuilt every time it is
-// opened, so what it shows is never stale. Add a page by adding it to PAGES.
+// opened, so what it shows is never stale. Add a page by adding it to groups().
 
 import { h, svg, clear } from "../views/dom";
 import { MOTION } from "../core/anim";
@@ -18,6 +18,7 @@ import { page as generalPage } from "./pages/general";
 import { page as shortcutsPage } from "./pages/shortcuts";
 import { page as privacyPage } from "./pages/privacy";
 import { page as aboutPage } from "./pages/about";
+import { t } from "../i18n/i18n";
 
 export type PageId =
   | "sessions" | "stats"
@@ -48,42 +49,42 @@ const I = {
   about: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 7.5h.01",
 };
 
-const GROUPS: { title: string; pages: PageDef[] }[] = [
+const groups = (): { title: string; pages: PageDef[] }[] => [
   {
-    title: "Activity",
+    title: t("Activity"),
     pages: [
-      { id: "sessions", label: "Sessions", icon: I.sessions, build: sessionsPage },
-      { id: "stats", label: "Stats & limits", icon: I.stats, build: statsPage },
+      { id: "sessions", label: t("Sessions"), icon: I.sessions, build: sessionsPage },
+      { id: "stats", label: t("Stats & limits"), icon: I.stats, build: statsPage },
     ],
   },
   {
-    title: "Set up",
+    title: t("Set up"),
     pages: [
-      { id: "welcome", label: "Getting started", icon: I.welcome, build: welcomePage },
-      { id: "agents", label: "Agents", icon: I.agents, build: agentsPage },
-      { id: "chat", label: "Chat & models", icon: I.chat, build: chatPage },
-      { id: "integrations", label: "Integrations", icon: I.integrations, build: integrationsPage },
+      { id: "welcome", label: t("Getting started"), icon: I.welcome, build: welcomePage },
+      { id: "agents", label: t("Agents"), icon: I.agents, build: agentsPage },
+      { id: "chat", label: t("Chat & models"), icon: I.chat, build: chatPage },
+      { id: "integrations", label: t("Integrations"), icon: I.integrations, build: integrationsPage },
     ],
   },
   {
-    title: "Look & feel",
+    title: t("Look & feel"),
     pages: [
-      { id: "appearance", label: "Appearance", icon: I.appearance, build: appearancePage },
-      { id: "island", label: "Island", icon: I.island, build: islandPage },
-      { id: "general", label: "Sound & behaviour", icon: I.general, build: generalPage },
-      { id: "shortcuts", label: "Shortcuts", icon: I.shortcuts, build: shortcutsPage },
+      { id: "appearance", label: t("Appearance"), icon: I.appearance, build: appearancePage },
+      { id: "island", label: t("Island"), icon: I.island, build: islandPage },
+      { id: "general", label: t("Sound & behaviour"), icon: I.general, build: generalPage },
+      { id: "shortcuts", label: t("Shortcuts"), icon: I.shortcuts, build: shortcutsPage },
     ],
   },
   {
     title: "Awuuu",
     pages: [
-      { id: "privacy", label: "Privacy & history", icon: I.privacy, build: privacyPage },
-      { id: "about", label: "About & aw", icon: I.about, build: aboutPage },
+      { id: "privacy", label: t("Privacy & history"), icon: I.privacy, build: privacyPage },
+      { id: "about", label: t("About & aw"), icon: I.about, build: aboutPage },
     ],
   },
 ];
 
-const PAGES = GROUPS.flatMap((g) => g.pages);
+const pages = () => groups().flatMap((g) => g.pages);
 
 let appVersion = "";
 let currentId: PageId | null = null;
@@ -138,7 +139,7 @@ export function onLeave(fn: () => void) {
  * (`agent-claude`, …).
  */
 export async function navigate(id: PageId, anchor?: string) {
-  const def = PAGES.find((p) => p.id === id) ?? PAGES[0];
+  const def = pages().find((p) => p.id === id) ?? pages()[0];
   const mine = ++seq;
   for (const fn of leaveHandlers.splice(0)) {
     try {
@@ -159,7 +160,7 @@ export async function navigate(id: PageId, anchor?: string) {
   try {
     el = await def.build();
   } catch (err) {
-    el = h("div", { class: "page" }, h("div", { class: "notice err", text: `This page could not load: ${String(err)}` }));
+    el = h("div", { class: "page" }, h("div", { class: "notice err", text: t("This page could not load: {v}", { v: String(err) }) }));
   }
   if (mine !== seq) return; // another page was opened meanwhile
   // Everything but the hero band is swapped; only `el` animates, never the band.
@@ -194,13 +195,21 @@ export async function navigate(id: PageId, anchor?: string) {
 
 /** `settings-focus` payloads: a page id, "welcome", or an agent id. */
 export function navigateFromEvent(target: string) {
-  if (PAGES.some((p) => p.id === target)) void navigate(target as PageId);
+  if (pages().some((p) => p.id === target)) void navigate(target as PageId);
   else if (target === "dashboard") void navigate("sessions");
   else if (target === "settings") void navigate(currentId ?? "agents");
   else void navigate("agents", `agent-${target}`);
 }
 
+let shellRoot: HTMLElement | null = null;
+
+/** Build the sidebar and page again (the language changed). */
+export function rebuildShell() {
+  if (shellRoot) mountShell(shellRoot, appVersion, currentId ?? "general");
+}
+
 export function mountShell(root: HTMLElement, ver: string, first: PageId) {
+  shellRoot = root;
   appVersion = ver;
   thumb = h("div", { class: "side-thumb", "aria-hidden": "true" });
   thumbY = null;
@@ -212,7 +221,7 @@ export function mountShell(root: HTMLElement, ver: string, first: PageId) {
       h("span", { class: "brand-ver", text: ver }),
     ),
   );
-  for (const g of GROUPS) {
+  for (const g of groups()) {
     nav.append(h("div", { class: "side-group", text: g.title }));
     for (const p of g.pages) {
       const b = h("button", { class: "side-item", onclick: () => void navigate(p.id) },

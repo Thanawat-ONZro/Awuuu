@@ -26,6 +26,7 @@ import { HoverOpen } from "./hover";
 import { Mover, type Edge } from "./move";
 import { DesktopDogLink } from "./desktop-dog";
 import { isDrag } from "../mochi/desktop-logic";
+import { t } from "../i18n/i18n";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -328,7 +329,7 @@ export class Island {
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
     this.countdown = h("div", { id: "countdown" });
-    this.resizeGrip = h("div", { id: "resize-grip", title: "Drag to resize" });
+    this.resizeGrip = h("div", { id: "resize-grip", title: t("Drag to resize") });
     this.wireResize();
 
     // Ctrl+Alt+Y / Ctrl+Alt+N answer the card; the keys are held only while one waits.
@@ -701,7 +702,7 @@ export class Island {
     }
     if (fresh.length === 0) {
       // Nothing new: straight back to the files that are already there.
-      State.dropError = items.length > 1 ? "Those files are already here." : "That file is already here.";
+      State.dropError = items.length > 1 ? t("Those files are already here.") : t("That file is already here.");
       this.engine.animateMorph(0);
       this.setView("choose");
       return;

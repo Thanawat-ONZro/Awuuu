@@ -7,6 +7,7 @@ import { Bridge } from "../core/bridge";
 import { State } from "../core/state";
 import { baseName, diffCounts, type FileDiff } from "../core/diff";
 import type { ViewActions, ViewHost } from "./views";
+import { t } from "../i18n/i18n";
 
 let current: FileDiff | null = null;
 
@@ -16,11 +17,11 @@ export function showDiff(diff: FileDiff) {
 }
 
 export function buildDiffView(actions: ViewActions): ViewHost {
-  const back = h("button", { class: "diff-btn", title: "Back (Esc)", onclick: () => { actions.blip(); actions.setView("agents"); } },
+  const back = h("button", { class: "diff-btn", title: t("Back (Esc)"), onclick: () => { actions.blip(); actions.setView("agents"); } },
     svg(ICONS.chevronLeft, 12, { stroke: 2.4 }));
   const name = h("span", { class: "diff-name" });
   const counts = h("span", { class: "diff-counts" });
-  const open = h("button", { class: "diff-btn", title: "Open in VS Code", onclick: () => {
+  const open = h("button", { class: "diff-btn", title: t("Open in VS Code"), onclick: () => {
     if (current) void Bridge.openInVSCode(current.path);
   } }, svg(ICONS.arrowUpRight, 12, { stroke: 2 }));
   const body = h("div", { class: "diff-body" });
@@ -38,7 +39,7 @@ export function buildDiffView(actions: ViewActions): ViewHost {
       if (!shown) return;
       name.textContent = baseName(shown.path);
       name.title = shown.path;
-      counts.textContent = `${shown.isNew ? "new file · " : ""}${diffCounts(shown)}`;
+      counts.textContent = `${shown.isNew ? t("new file · ") : ""}${diffCounts(shown)}`;
       shown.hunks.forEach((hk, i) => {
         if (i > 0) body.append(h("div", { class: "diff-gap", text: "⋯" }));
         body.append(h("div", { class: "diff-hunk", text: `@@ -${hk.oldStart} +${hk.newStart} @@` }));
@@ -48,7 +49,7 @@ export function buildDiffView(actions: ViewActions): ViewHost {
         }
       });
       if (shown.truncated) {
-        body.append(h("div", { class: "diff-note", text: shown.hunks.length ? "Diff cut short: too big to show in full." : "Too big to show; only the counts are kept." }));
+        body.append(h("div", { class: "diff-note", text: shown.hunks.length ? t("Diff cut short: too big to show in full.") : t("Too big to show; only the counts are kept.") }));
       }
     },
   };

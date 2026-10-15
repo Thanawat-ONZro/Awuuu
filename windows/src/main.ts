@@ -7,6 +7,7 @@ import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, type Settings } from "./core/state";
 import { applyAccent } from "./core/accent";
+import { setLanguage } from "./i18n/i18n";
 import { Island } from "./island/island";
 import type { IslandLayout } from "./core/layout";
 import { registerHookHandlers } from "./island/hooks";
@@ -31,6 +32,7 @@ async function main() {
   if (boot) {
     State.settings = { ...State.settings, ...boot.settings };
   }
+  setLanguage(State.settings.language);
   island.applySettings();
   applyAccent(State.settings.dog);
   if (boot?.layout) island.setLayout(boot.layout);
@@ -82,6 +84,7 @@ async function main() {
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
     State.settings = { ...State.settings, ...s };
+    setLanguage(State.settings.language);
     island.applySettings();
     applyAccent(State.settings.dog);
     State.loadIntegrationTasks();

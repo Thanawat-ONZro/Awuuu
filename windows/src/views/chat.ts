@@ -14,6 +14,7 @@ import { dropdown, type SelectOption } from "../ui/select";
 import { clearOfDog, syncFileChips } from "./upload";
 import type { ViewHost } from "./views";
 import "./drop-chat.css";
+import { t } from "../i18n/i18n";
 
 let nextId = 1;
 
@@ -78,19 +79,19 @@ const hermesWatch = new HermesWatch({
   },
 });
 
-const HEALTH_TITLE: Record<string, string> = {
-  online: "Hermes is answering",
-  offline: "Hermes isn't answering. Awuuu keeps checking while the chat is open.",
-  nokey: "Hermes needs its API key (Settings → Chat)",
-  unknown: "Checking Hermes…",
-};
+const healthTitle = (): Record<string, string> => ({
+  online: t("Hermes is answering"),
+  offline: t("Hermes isn't answering. Awuuu keeps checking while the chat is open."),
+  nokey: t("Hermes needs its API key (Settings → Chat)"),
+  unknown: t("Checking Hermes…"),
+});
 
 const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
-const EFFORTS: SelectOption[] = [
-  { value: "", label: "Effort: auto" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
+const efforts = (): SelectOption[] => [
+  { value: "", label: t("Effort: auto") },
+  { value: "low", label: t("Low") },
+  { value: "medium", label: t("Medium") },
+  { value: "high", label: t("High") },
 ];
 
 type BackendKind = "hermes" | "claude" | "custom";
@@ -158,10 +159,10 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   const input = h("input", {
     type: "text",
     class: "chat-input",
-    placeholder: "Ask Awuuu (Hermes Agent)…",
+    placeholder: t("Ask Awuuu (Hermes Agent)…"),
     spellcheck: "false",
   }) as HTMLInputElement;
-  const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
+  const send = h("button", { class: "send-btn", title: t("Send") }, svg(ICONS.arrowUp, 11));
 
   let hermesOptions: Awaited<ReturnType<typeof Bridge.hermesModelOptions>> | null = null;
   let headKey = "";
@@ -200,7 +201,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     const kind = kindOf(chosen());
     if (kind === "hermes") {
       const out: SelectOption[] = [
-        { value: "", label: hermesOptions ? `Default · ${hermesOptions.model}` : "Default model" },
+        { value: "", label: hermesOptions ? t("Default · {model}", { model: hermesOptions.model }) : t("Default model") },
       ];
       for (const p of hermesOptions?.providers ?? []) {
         for (const m of p.models) out.push({ value: `${p.slug}|${m}`, label: m, group: p.name });
@@ -264,7 +265,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   };
   const providerPick = dropdown({
     class: "chat-pick",
-    title: "Who answers",
+    title: t("Who answers"),
     host,
     options: usable,
     get: chosen,
@@ -274,7 +275,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   });
   const modelPick = dropdown({
     class: "chat-pick wide",
-    title: "Model",
+    title: t("Model"),
     host,
     options: modelOptions,
     get: modelValue,
@@ -298,9 +299,9 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
   });
   const effortPick = dropdown({
     class: "chat-pick",
-    title: "Reasoning effort",
+    title: t("Reasoning effort"),
     host,
-    options: () => EFFORTS,
+    options: () => efforts(),
     get: () => State.settings.reasoningEffort ?? "",
     set: (v) => {
       State.settings.reasoningEffort = v;
@@ -310,15 +311,15 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     onClose: menuClosed,
   });
   const picks = [providerPick, modelPick, effortPick];
-  const usedChip = h("span", { class: "chat-used", title: "What answered the last message" });
+  const usedChip = h("span", { class: "chat-used", title: t("What answered the last message") });
   const connect = h("button", {
     class: "btn secondary chat-connect",
-    text: "Connect a model…",
-    title: "Nothing can answer yet: connect Hermes, Claude or another provider",
+    text: t("Connect a model…"),
+    title: t("Nothing can answer yet: connect Hermes, Claude or another provider"),
     onclick: () => void Bridge.openSettingsWindow("chat"),
   });
   connect.addEventListener("mousedown", (e) => e.stopPropagation());
-  const hermesDot = h("span", { class: "hermes-dot unknown", title: HEALTH_TITLE.unknown });
+  const hermesDot = h("span", { class: "hermes-dot unknown", title: healthTitle().unknown });
   const head = h("div", { class: "chat-head" }, ...picks, hermesDot, connect, usedChip);
 
   // A list left open must not outlive the chat it belongs to.
@@ -350,7 +351,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     connect.style.display = none ? "" : "none";
     hermesDot.style.display = !none && kind === "hermes" ? "" : "none";
     hermesDot.className = `hermes-dot ${State.hermesHealth}`;
-    hermesDot.title = HEALTH_TITLE[State.hermesHealth];
+    hermesDot.title = healthTitle()[State.hermesHealth];
     // Effort: Hermes only (Claude and OpenAI-compatible servers take the defaults).
     if (kind !== "hermes") effortPick.style.display = "none";
     for (const p of picks) p.refresh();
@@ -372,7 +373,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
     const query = input.value.trim();
     if (!query || sending) return;
     if (State.chatBackends && usable().length === 0) {
-      notice = "Nothing is connected to answer yet. Use “Connect a model…” above to add Hermes, a Claude API key or another provider, then ask again.";
+      notice = t("Nothing is connected to answer yet. Use “Connect a model…” above to add Hermes, a Claude API key or another provider, then ask again.");
       Sound.play("error");
       State.notify();
       return;
@@ -451,7 +452,7 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
         for (const m of State.chatHistory) log.append(bubble(m));
         if (thinking) log.append(typingDots());
         if (notice) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: notice })));
-        if (down) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: "Hermes isn't answering right now. Start Hermes Agent (its gateway listens on :8642) and the dot turns green on its own." })));
+        if (down) log.append(h("div", { class: "chat-row" }, h("div", { class: "chat-note", text: t("Hermes isn't answering right now. Start Hermes Agent (its gateway listens on :8642) and the dot turns green on its own.") })));
         log.scrollTop = log.scrollHeight;
       }
 
@@ -459,8 +460,8 @@ export function buildPrompt(onHeightChange: () => void): ViewHost {
 
       const files = State.droppedFiles.length;
       input.placeholder = State.chatHistory.length > 0
-        ? "Continue…"
-        : files === 1 ? "Ask about this file…" : files > 1 ? "Ask about these files…" : "Ask Awuuu anything…";
+        ? t("Continue…")
+        : files === 1 ? t("Ask about this file…") : files > 1 ? t("Ask about these files…") : t("Ask Awuuu anything…");
       input.disabled = sending;
     },
     focus() {

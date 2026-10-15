@@ -6,6 +6,7 @@ import { applyAccent } from "../core/accent";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h } from "../views/dom";
 import { dropdown } from "../ui/select";
+import { t } from "../i18n/i18n";
 
 /** The one copy of the settings this window edits (mutated in place). */
 export const settings: Settings = { ...DEFAULT_SETTINGS };
@@ -53,9 +54,9 @@ export function renderDiff(text: string): HTMLElement {
 
 export function testRow(id: string): HTMLElement {
   const result = h("span", { class: "hint", style: "font-size:11.5px" });
-  const btn = h("button", { text: "Test" });
+  const btn = h("button", { text: t("Test") });
   btn.addEventListener("click", async () => {
-    result.textContent = "Testing…";
+    result.textContent = t("Testing…");
     result.style.color = "";
     try {
       result.textContent = await Bridge.integrationTest(id);
@@ -73,7 +74,7 @@ export function secretField(key: string, placeholder: string): HTMLElement {
   void Bridge.secretPresent(key).then((has) => {
     if (has) input.placeholder = "••••••••  (stored)";
   });
-  const saveBtn = h("button", { text: "Save" });
+  const saveBtn = h("button", { text: t("Save") });
   saveBtn.addEventListener("click", async () => {
     await Bridge.secretSet(key, input.value.trim());
     input.placeholder = input.value.trim() ? "••••••••  (stored)" : placeholder;
