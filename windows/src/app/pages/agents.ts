@@ -5,21 +5,28 @@ import { Bridge, type HookAgentId, type HookStatus } from "../../core/bridge";
 import { h, clear } from "../../views/dom";
 import { pageOf, renderDiff, statusDot } from "../ui";
 
+/** Not found / Not connected / Connected. `present` null = unknown (shows by hooks only). */
+function agentChip(installed: boolean, present: boolean | null): HTMLElement {
+  const text = installed ? "Connected" : present === false ? "Not found" : "Not connected";
+  return h("span", { class: installed ? "chip" : "chip bad", style: "margin-left:8px", text });
+}
+
 // ── Multi-Agent Hooks section (Claude, AGY, Hermes, OpenCode) ──────────
 
 function agentHooksSection(
-  agent: "claude" | "agy" | "hermes" | "opencode" | "codex",
+  agent: HookAgentId,
   title: string,
   fileName: string,
   descInstalled: string,
   descNotInstalled: string,
   status: HookStatus,
+  present: boolean | null = null,
 ): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
     { id: `agent-${agent}` },
-    h("h2", {}, statusDot(status.installed), h("span", { text: title })),
+    h("h2", {}, statusDot(status.installed), h("span", { text: title }), agentChip(status.installed, present)),
     body,
   );
 
@@ -30,7 +37,7 @@ function agentHooksSection(
     draw();
     const head = section.querySelector("h2")!;
     clear(head);
-    head.append(statusDot(status.installed), h("span", { text: title }));
+    head.append(statusDot(status.installed), h("span", { text: title }), agentChip(status.installed, present));
   };
 
   function draw() {
@@ -60,7 +67,7 @@ function agentHooksSection(
     const actions = h("div", { class: "row" });
     const install = h("button", {
       class: "primary",
-      text: status.installed ? "Reinstall hooks…" : "Install hooks…",
+      text: status.installed ? "Reinstall hooks…" : "Connect…",
       onclick: () => showPreview(true),
     });
     if (!status.hookReady) {
@@ -71,7 +78,7 @@ function agentHooksSection(
     if (status.installed) {
       actions.append(h("button", {
         class: "danger",
-        text: "Uninstall hooks…",
+        text: "Disconnect…",
         onclick: () => showPreview(false),
       }));
     }
@@ -370,13 +377,21 @@ const AGENTS: [HookAgentId, string, string, string, string][] = [
   ["codex", "Codex CLI — Experimental", "hooks.json",
     "Awuuu's hooks are in ~/.codex/hooks.json. Codex asks once to trust new hooks: run /hooks in Codex. Approvals show in the island (Allow / Deny — Codex can't keep an \"Always\" rule from a hook); if nobody answers, Codex asks itself after about two minutes.",
     "Experimental: not yet tried against a live Codex session. Installs Awuuu's hooks in ~/.codex/hooks.json (config.toml is never touched); Codex then asks you to trust them with /hooks."],
+  ["gemini", "Gemini CLI", "settings.json",
+    "Awuuu's hooks are in ~/.gemini/settings.json. Tool calls and prompts show in the island; Gemini CLI asks for permissions in its own terminal. Start a new Gemini session after connecting.",
+    "Connect to see your Gemini CLI sessions in the island. Adds Awuuu's hooks to ~/.gemini/settings.json and leaves your other hooks and settings alone."],
+  ["cursor", "Cursor Agent", "hooks.json",
+    "Awuuu's hooks are in ~/.cursor/hooks.json. Sessions show in the island; Cursor asks for permissions itself. Restart Cursor after connecting.",
+    "Connect to see your Cursor Agent sessions in the island. Adds Awuuu's hooks to ~/.cursor/hooks.json and leaves your other hooks alone."],
 ];
 
 export async function page(): Promise<HTMLElement> {
   const blank: HookStatus = { installed: false, settingsPath: "", hookPath: "", hookReady: false };
   const cards: HTMLElement[] = [];
+  const found = (await Bridge.detectAgents()) ?? [];
   for (const [id, title, file, on, off] of AGENTS) {
-    cards.push(agentHooksSection(id, title, file, on, off, (await Bridge.agentHooksStatus(id)) ?? { ...blank }));
+    const present = found.find((f) => f.id === id)?.present ?? null;
+    cards.push(agentHooksSection(id, title, file, on, off, (await Bridge.agentHooksStatus(id)) ?? { ...blank }, present));
     // Claude's limits come through its status line: its card sits right after.
     if (id === "claude") cards.push(statuslineSection((await Bridge.statuslineStatus()) ?? { ...blank }));
   }

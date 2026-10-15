@@ -16,6 +16,10 @@ Plan for the next versions: [docs/ROADMAP.md](docs/ROADMAP.md).
 - The hook pipe drops a client that connects and sends nothing within 5 seconds, and refuses connections from other machines.
 
 ### Added
+- Shortcuts page (Awuuu window): rebind or turn off Ctrl+Alt+Space (open the chat from any app), Ctrl+Alt+A (go to the waiting question), Ctrl+Alt+T (open the session's terminal), Ctrl+Alt+S (mute) and Ctrl+Alt+I (open/close the island, off by default). Allow/Deny stay approval-only. A key another app already owns is reported in its row.
+- Connect Gemini CLI and Cursor Agent from the Agents page, with the same backup, diff and confirm as Claude Code. Copilot CLI is not included yet.
+- Click an edit in the session ticker to read its diff in the island (Esc goes back; an Open in VS Code button).
+- Outfits for the dog (Settings → Appearance): party hat, witch hat, Santa hat, bow tie, sunglasses, flower crown, scarf, halo. Auto dresses the dog for the season.
 - Open on hover (Settings → General, off by default): rest the pointer on the small island and it opens; it folds a moment after the pointer leaves unless you clicked inside.
 - The accent colour follows the dog you pick (Settings → Appearance); the default Shiba keeps the caramel it always had, and every breed is kept readable on the dark island.
 - With "reduce motion" on in Windows, all movement becomes a short fade and the looping animations stand still. The island also stops its frame loop while it is not visible.

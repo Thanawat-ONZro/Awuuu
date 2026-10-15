@@ -9,7 +9,7 @@ import type { Settings } from "./state";
 import type { IslandLayout } from "./layout";
 
 /** Agents whose hooks Awuuu installs (Rust hooks::HookAgent). */
-export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex";
+export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex" | "gemini" | "cursor";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -148,6 +148,8 @@ export const Bridge = {
   hermesStatus: () => callOrThrow<string[]>("hermes_status"),
   judgeTests: (command: string, output: string) => callOrThrow<"passed" | "failed" | "unclear">("judge_tests", { command, output }),
   setApprovalKeys: (on: boolean) => call<void>("set_approval_keys", { on }),
+  /** Shortcuts page: action -> why its keys could not be registered. */
+  shortcutErrors: () => call<Record<string, string>>("shortcut_errors"),
   doctor: () => call<{ name: string; level: "ok" | "warn" | "fail"; detail: string; fix?: string | null }[]>("doctor"),
   gitSnapshot: (cwd: string) => call<import("../island/ground").GitSnapshot | null>("git_snapshot", { cwd }),
   /** Check GitHub for a newer Awuuu now; Rust shows the result natively. */

@@ -12,6 +12,7 @@ import {
   lookForAgent, normalizeLook, randomLook, sameLook, type DogLook,
 } from "../../mochi/looks";
 import type { BotStateName } from "../../core/layout";
+import { OUTFITS, normalizeOutfit, setOutfitSelection, type OutfitSelection } from "../../mochi/outfits";
 import { h } from "../../views/dom";
 import { onLeave } from "../shell";
 import { card, pageOf, save, settings } from "../ui";
@@ -193,6 +194,24 @@ export function page(): HTMLElement {
   const collarColor = h("span", { class: "row-inline" }, color("collarColor"));
   syncers.push(() => collarColor.classList.toggle("off", look.collar === "none"));
 
+  // Outfit: Auto (by season), None, or one of the outfits. Draws straight away.
+  const outfitRow = h("div", { class: "dog-states" });
+  const outfitChoices: [string, OutfitSelection][] = [
+    ["Auto", "auto"], ["None", "none"], ...OUTFITS.map((o) => [o.name, o.id] as [string, OutfitSelection]),
+  ];
+  for (const [label, sel] of outfitChoices) {
+    const b = h("button", { class: "chip", text: label });
+    b.addEventListener("click", () => {
+      settings.outfit = sel;
+      setOutfitSelection(sel);
+      void save();
+      kick();
+      sync();
+    });
+    syncers.push(() => b.classList.toggle("on", normalizeOutfit(settings.outfit) === sel));
+    outfitRow.append(b);
+  }
+
   const surprise = h("button", { class: "primary", text: "Surprise me" });
   surprise.addEventListener("click", () => {
     apply(randomLook(), false, true);
@@ -213,6 +232,7 @@ export function page(): HTMLElement {
     h("div", { class: "row" }, h("label", { text: "Eyes" }), segmented("eyes", EYES)),
     h("div", { class: "row" }, h("label", { text: "Eye colour" }), color("eyeColor"), plainEyes),
     h("div", { class: "row" }, h("label", { text: "Collar" }), segmented("collar", COLLARS), collarColor),
+    h("div", { class: "row" }, h("label", { text: "Outfit" }), outfitRow),
   );
 
   // ── Agent dogs ──────────────────────────────────────────────────────────────

@@ -110,6 +110,9 @@ pub struct Settings {
     /// How Awuuu looks (coat, ears, tail…). The front end owns the shape.
     #[serde(default)]
     pub dog: serde_json::Value,
+    /// Dog outfit: "auto" (by season), "none" or an outfit id.
+    #[serde(default = "default_outfit")]
+    pub outfit: String,
     /// OAuth client ids for "Sign in with…" (public identifiers, not secrets).
     #[serde(default)]
     pub google_client_id: String,
@@ -117,6 +120,10 @@ pub struct Settings {
     pub microsoft_client_id: String,
     #[serde(default)]
     pub github_client_id: String,
+    /// Global shortcuts: action id -> accelerator ("Ctrl+Alt+Space"), only the
+    /// ones the user changed; "" = off. Defaults live in hotkeys.rs.
+    #[serde(default)]
+    pub shortcuts: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -127,6 +134,10 @@ pub struct ChatProvider {
     /// ".../v1" — `/chat/completions` and `/models` are appended.
     pub base_url: String,
     pub model: String,
+}
+
+fn default_outfit() -> String {
+    "auto".into()
 }
 
 fn default_hide_after() -> f64 {
@@ -233,9 +244,11 @@ impl Default for Settings {
             history_days: default_history_days(),
             chat_height: 0.0,
             dog: serde_json::Value::Null,
+            outfit: default_outfit(),
             google_client_id: String::new(),
             microsoft_client_id: String::new(),
             github_client_id: String::new(),
+            shortcuts: Default::default(),
         }
     }
 }

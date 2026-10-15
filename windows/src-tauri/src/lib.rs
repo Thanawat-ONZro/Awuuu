@@ -1,5 +1,6 @@
 // Awuuu for Windows — app wiring and the commands the island calls.
 
+mod adapters;
 mod claude;
 mod files;
 mod hooks;
@@ -102,6 +103,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
             eprintln!("[awuuu] autostart: {err}");
         }
     }
+    hotkeys::apply(&app, &settings.shortcuts);
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings, collapsed);
@@ -409,10 +411,16 @@ fn update_check_now(app: AppHandle) {
     updater::check_now(&app);
 }
 
-/// Ctrl+Alt+Y / Ctrl+Alt+N answer the approval card; held only while one is up.
+/// The approval keys (Ctrl+Alt+Y / N by default) answer the card; held only while one is up.
 #[tauri::command]
 fn set_approval_keys(app: AppHandle, on: bool) {
     hotkeys::set_approval_keys(&app, on);
+}
+
+/// Shortcuts page: action -> why its keys could not be registered.
+#[tauri::command]
+fn shortcut_errors() -> std::collections::BTreeMap<String, String> {
+    hotkeys::errors()
 }
 
 /// Settings → About → Check my setup.
@@ -643,7 +651,9 @@ fn detect_agents() -> Vec<AgentFound> {
                 || local.join("Programs").join("@opencode-aidesktop").join("OpenCode.exe").exists()
         }
         "codex" => find_on_path("codex").is_some(),
-        _ => false,
+        other => adapters::find(other).is_some_and(|a| {
+            find_on_path(a.exe).is_some() || std::env::var_os("USERPROFILE").map(std::path::PathBuf::from).unwrap_or_default().join(a.home_dir).is_dir()
+        }),
     };
     [
         ("claude", "Claude Code"),
@@ -653,6 +663,7 @@ fn detect_agents() -> Vec<AgentFound> {
         ("codex", "Codex CLI"),
     ]
     .into_iter()
+    .chain(adapters::ADAPTERS.iter().map(|a| (a.id, a.name)))
     .map(|(id, name)| AgentFound {
         id,
         name,
@@ -826,6 +837,7 @@ pub fn run() {
             git_snapshot,
             doctor,
             set_approval_keys,
+            shortcut_errors,
             judge_tests,
             update_check_now,
             ingest_file,
@@ -880,6 +892,7 @@ pub fn run() {
             } else {
                 log::line("WARNING: island window not found by label");
             }
+            hotkeys::apply(&handle, &loaded.shortcuts);
             gate.collapsed.store(false, Ordering::Relaxed);
             gate.set_active(true);
             island::spawn_mouse_watch(handle.clone(), gate.clone());

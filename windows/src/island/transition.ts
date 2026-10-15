@@ -12,6 +12,7 @@ export type TabId = (typeof TAB_ORDER)[number];
 /** The tab that is lit for a view, or null for views no tab owns (alerts, notes…). */
 export function tabOf(view: IslandViewName): TabId | null {
   if (view === "overview" || view === "empty") return "overview";
+  if (view === "diff") return "agents";
   return (TAB_ORDER as readonly string[]).includes(view) ? (view as TabId) : null;
 }
 

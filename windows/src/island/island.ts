@@ -13,6 +13,7 @@ import { Sound } from "../core/sound";
 import { State, type PendingFile } from "../core/state";
 import { BotEngine } from "../mochi/engine";
 import { setOwnerLook } from "../mochi/dog";
+import { setOutfitSelection } from "../mochi/outfits";
 import { CLASSIC, lookForAgent, normalizeLook, type DogLook } from "../mochi/looks";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
@@ -334,6 +335,33 @@ export class Island {
       // A question needs its options picked; N hands it back to the terminal.
       if (req.isQuestion && d !== "deny") return;
       actions.decide(d === "allow" ? "allow" : "deny");
+    });
+    // The other global shortcuts (Settings → Shortcuts). They never take focus
+    // from the active app; only the chat's own text field does, via setView.
+    void onEvent<string>("shortcut", (id) => {
+      switch (id) {
+        case "openChat":
+          this.alert("prompt", true);
+          break;
+        case "goToAlert":
+          if (State.pendingApproval) this.alert("approval", true);
+          break;
+        case "jumpToTerminal": {
+          const sid = State.pendingApproval?.sessionId;
+          const task = (sid ? State.agentSessions.find((s) => s.id === `session_${sid}`) : null)
+            ?? State.focusedAgentSession ?? State.focusTask;
+          if (task && !task.isIntegration) actions.focusTerminal(task);
+          else actions.openTerminal(task?.sessionCwd ?? null);
+          break;
+        }
+        case "muteToggle":
+          actions.toggleSound();
+          break;
+        case "toggleIsland":
+          if (State.mode === "expanded") this.collapse();
+          else this.alert(State.defaultView(), true);
+          break;
+      }
     });
 
     this.header = buildHeader(actions);
@@ -1033,7 +1061,8 @@ export class Island {
     });
 
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
+      if (e.key === "Escape" && State.mode === "expanded" && State.view === "diff") this.setView("agents");
+      else if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
       State.lastActivity = performance.now();
     });
 
@@ -1471,6 +1500,7 @@ export class Island {
     // The Appearance page edits the dog live; the frame loop picks it up.
     this.ownLook = normalizeLook(State.settings.dog);
     setOwnerLook(this.ownLook);
+    setOutfitSelection(State.settings.outfit);
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.applyGeometry();
     this.animateGeometry(false);

@@ -4,6 +4,7 @@
 // (design/prototype/notch-buddy.html, the visual source of truth) — the Swift
 // arc angles produce a different shape.
 
+import { currentOutfit, drawOutfit } from "./outfits";
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
@@ -871,6 +872,7 @@ export class BotEngine {
       }, pal);
     }
     if (R > 9) drawCollarTag(x, rx, ry, dogA, pal);
+    if (!this.isMini && dogA > 0.01) drawOutfit(x, rx, ry, currentOutfit(), { shift: earShift, alpha: dogA });
     if (this.morph > 0.05) this.drawMouth(x, body, R);
 
     x.restore();

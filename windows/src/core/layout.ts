@@ -7,6 +7,7 @@ export type IslandMode = "hidden" | "compact" | "expanded";
 export type IslandViewName =
   | "overview"
   | "agents"
+  | "diff"
   | "empty"
   | "approval"
   | "error"
@@ -125,6 +126,7 @@ export const WAKE_STRIP_H = 14;
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   overview: { height: 290, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   agents: { height: 290, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  diff: { height: 290, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
   empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
   approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
   error: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
@@ -191,7 +193,7 @@ export function islandSize(
           ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
           : view === "approval"
           ? approvalHeight(approvalFit)
-          : view === "agents" || view === "overview"
+          : view === "agents" || view === "diff" || view === "overview"
           ? geo.hubH
           : VIEW_LAYOUTS[view].height;
       return { w: geo.expandedW, h };

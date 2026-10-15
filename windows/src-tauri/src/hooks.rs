@@ -102,6 +102,8 @@ pub enum HookAgent {
     OpenCode,
     /// ~/.codex/hooks.json (Experimental: Codex asks to trust new hooks).
     Codex,
+    /// A JSON hooks file described in adapters.rs (Gemini CLI, Cursor).
+    Adapter(&'static crate::adapters::Adapter),
 }
 
 impl HookAgent {
@@ -112,7 +114,7 @@ impl HookAgent {
             "hermes" => Some(Self::Hermes),
             "opencode" => Some(Self::OpenCode),
             "codex" => Some(Self::Codex),
-            _ => None,
+            other => crate::adapters::find(other).map(Self::Adapter),
         }
     }
 
@@ -123,12 +125,13 @@ impl HookAgent {
             Self::Hermes => hermes_home().join("config.yaml"),
             Self::OpenCode => home().join(".config").join("opencode").join("plugin").join("awuuu.js"),
             Self::Codex => codex_home().join("hooks.json"),
+            Self::Adapter(a) => a.file.iter().fold(home(), |p, part| p.join(part)),
         }
     }
 
     /// JSON settings are merged key by key; the others are edited as text.
     fn is_json(&self) -> bool {
-        matches!(self, Self::Claude | Self::Agy | Self::Codex)
+        matches!(self, Self::Claude | Self::Agy | Self::Codex | Self::Adapter(_))
     }
 }
 
@@ -282,7 +285,7 @@ fn read_settings() -> Result<Value, String> {
 
 /// The parsing half of `read_settings`, split out so it can be tested without a
 /// home directory.
-fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
+pub(crate) fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
     // PowerShell writes a UTF-8 BOM with `Set-Content -Encoding utf8`, and
     // serde_json refuses it. Stripping it is safe and well defined; guessing at
     // anything else is not.
@@ -309,8 +312,8 @@ fn read_settings_lossy() -> Value {
 
 fn hook_command(agent: HookAgent, event: &str) -> String {
     match agent {
-        // Written by hermes_block() / the plugin file instead.
-        HookAgent::Hermes | HookAgent::OpenCode => String::new(),
+        // Written by hermes_block() / the plugin file / adapters.rs instead.
+        HookAgent::Hermes | HookAgent::OpenCode | HookAgent::Adapter(_) => String::new(),
         HookAgent::Codex => {
             // Unquoted, forward slashes and no spaces (8.3 name if needed):
             // the same string works whether Codex hands it to cmd, PowerShell
@@ -504,6 +507,12 @@ fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
         HookAgent::Hermes | HookAgent::OpenCode => existing.clone(),
         HookAgent::Codex => merged_codex(existing),
         HookAgent::Claude => merged(existing),
+        // Refusals (a "hooks" of the wrong type) leave the file as it is: the
+        // preview step runs the same function and reports the error first.
+        HookAgent::Adapter(a) => {
+            let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
+            (a.merge)(existing, &exe).unwrap_or_else(|_| existing.clone())
+        }
         HookAgent::Agy => {
             // AGY's hooks.json (spec bundled in agy.exe 1.2.14): top-level keys
             // are named hooks, each holding its events. Tool events are grouped
@@ -533,6 +542,9 @@ fn merged_for_agent(agent: HookAgent, existing: &Value) -> Value {
 }
 
 fn without_ours_for_agent(agent: HookAgent, existing: &Value) -> Value {
+    if let HookAgent::Adapter(a) = agent {
+        return (a.remove)(existing).unwrap_or_else(|_| existing.clone());
+    }
     let mut root = existing.as_object().cloned().unwrap_or_default();
     if agent == HookAgent::Agy {
         root.remove(AGY_HOOK_NAME);
@@ -540,6 +552,16 @@ fn without_ours_for_agent(agent: HookAgent, existing: &Value) -> Value {
         root.remove(MARKER);
     }
     without_ours(&Value::Object(root))
+}
+
+/// The settings after installing or removing. An adapter that finds something
+/// it doesn't expect refuses with the reason; nothing is previewed or written.
+fn next_for(agent: HookAgent, current: &Value, install: bool) -> Result<Value, String> {
+    if let HookAgent::Adapter(a) = agent {
+        let exe = settings::hook_exe_path().to_string_lossy().replace('/', "\\");
+        return if install { (a.merge)(current, &exe) } else { (a.remove)(current) };
+    }
+    Ok(if install { merged_for_agent(agent, current) } else { without_ours_for_agent(agent, current) })
 }
 
 fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
@@ -560,6 +582,7 @@ fn is_installed_for_agent(agent: HookAgent, current: &Value) -> bool {
         // Only the current format counts: an install in the old format never
         // ran, so it shows as "not installed" and gets replaced.
         HookAgent::Agy => current.get(AGY_HOOK_NAME).is_some_and(Value::is_object),
+        HookAgent::Adapter(a) => (a.installed)(current),
     }
 }
 
@@ -603,11 +626,7 @@ pub fn preview_for(agent: HookAgent, install: bool) -> Result<HookPreview, Strin
         });
     }
     let current = read_settings_path(&path)?;
-    let next = if install {
-        merged_for_agent(agent, &current)
-    } else {
-        without_ours_for_agent(agent, &current)
-    };
+    let next = next_for(agent, &current, install)?;
     Ok(HookPreview {
         diff: unified_diff(&pretty(&current), &pretty(&next)),
         backup: backup_path_for(&path).to_string_lossy().to_string(),
@@ -671,11 +690,7 @@ pub fn write_for(agent: HookAgent, install: bool, fingerprint: &str) -> Result<S
         std::fs::copy(&path, &backup).map_err(|e| format!("backup failed: {e}"))?;
     }
 
-    let next = if install {
-        merged_for_agent(agent, &current)
-    } else {
-        without_ours_for_agent(agent, &current)
-    };
+    let next = next_for(agent, &current, install)?;
     let mut text = pretty(&next);
     text.push('\n');
 

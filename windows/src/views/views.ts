@@ -11,6 +11,7 @@ import { moveThumb, tabOf, TAB_ORDER } from "../island/transition";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
+import { buildDiffView, showDiff } from "./diff-view";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { EXTRA_IDS, hasExtraData, renderExtraCard, renderToday, weatherChip } from "./today";
@@ -154,7 +155,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     sync() {
       const v = State.view;
       tabHome.classList.toggle("on", v === "overview" || v === "empty");
-      tabAgents.classList.toggle("on", v === "agents");
+      tabAgents.classList.toggle("on", tabOf(v) === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
       const lit = tabOf(v);
@@ -412,7 +413,7 @@ function buildAgentsHub(actions: ViewActions): ViewHost {
         recent.forEach((entry, i) => {
           const last = i === recent.length - 1;
           const live = last && ["working", "thinking"].includes(focused.state);
-          steps.append(logRow(entry, last, live));
+          steps.append(logRow(entry, last, live, entry.diff ? () => { showDiff(entry.diff!); actions.blip(); actions.setView("diff"); } : undefined));
         });
         if (focused.id !== lastStepsFocus) readingBack = false;
         if (!readingBack) toBottom();
@@ -477,14 +478,20 @@ const LOG_MARK: Record<LogKind, string> = {
   prompt: "›", sent: "›", tool: "▸", say: "●", think: "∴", done: "✓", error: "!", info: "·",
 };
 
-function logRow(entry: LogEntry, last: boolean, live: boolean): HTMLElement {
-  return h(
+function logRow(entry: LogEntry, last: boolean, live: boolean, onOpen?: () => void): HTMLElement {
+  const row = h(
     "div",
     { class: `hub-step k-${entry.kind}${last ? " now" : ""}`, title: entry.text },
     h("span", { class: "mark", text: LOG_MARK[entry.kind] }),
     h("span", { class: live ? "txt shimmer" : "txt", text: entry.text }),
     h("span", { class: "ago", text: ago(entry.at) }),
   );
+  if (onOpen) {
+    row.classList.add("has-diff");
+    row.title = `${entry.text} (click to see the diff)`;
+    row.addEventListener("click", onOpen);
+  }
+  return row;
 }
 
 function ago(at: number): string {
@@ -896,6 +903,7 @@ export function buildViews(
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildOverview(actions));
   map.set("agents", buildAgentsHub(actions));
+  map.set("diff", buildDiffView(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions, onApprovalHeightChange));
   map.set("error", buildError(actions));

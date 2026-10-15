@@ -1,5 +1,6 @@
 // App state — mirror of AppState.swift (the parts the island needs).
 
+import type { FileDiff } from "./diff";
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 import type { AgentUsage } from "./bridge";
@@ -31,6 +32,8 @@ export interface LogEntry {
   at: number;
   /** Identifies a tool call, so the same call reported twice shows once. */
   key?: string;
+  /** An edit/write call: its diff, kept in memory only, opened from the ticker. */
+  diff?: FileDiff;
 }
 const LOG_MAX = 80;
 
@@ -241,10 +244,14 @@ export interface Settings {
   chatHeight: number;
   /** How Awuuu looks (mochi/dog.ts DogLook); null = the classic Shiba. */
   dog: Record<string, unknown> | null;
+  /** Dog outfit: "auto" (by season), "none" or an outfit id (mochi/outfits.ts). */
+  outfit: string;
   /** OAuth client ids for "Sign in with…". */
   googleClientId: string;
   microsoftClientId: string;
   githubClientId: string;
+  /** Global shortcuts: action -> accelerator, only what changed ("" = off). See core/shortcuts.ts. */
+  shortcuts: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -289,9 +296,11 @@ export const DEFAULT_SETTINGS: Settings = {
   historyDays: 7,
   chatHeight: 0,
   dog: null,
+  outfit: "auto",
   googleClientId: "",
   microsoftClientId: "",
   githubClientId: "",
+  shortcuts: {},
 };
 
 type Listener = () => void;
@@ -507,7 +516,7 @@ class AppState {
     this.notify();
   }
 
-  appendStep(id: string, step: string, kind: LogKind = "tool", key?: string) {
+  appendStep(id: string, step: string, kind: LogKind = "tool", key?: string, diff?: FileDiff | null) {
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return;
     const text = step.trim();
@@ -519,7 +528,7 @@ class AppState {
     if (key && log.slice(-12).some((e) => e.key === key)) return;
     const last = log.at(-1);
     if (last && last.kind === kind && last.text === text && now - last.at < 3000) return;
-    log.push({ kind, text, at: now, key });
+    log.push({ kind, text, at: now, key, ...(diff ? { diff } : {}) });
     if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
     t.steps.push(text);
     if (t.steps.length > 20) t.steps.shift();
