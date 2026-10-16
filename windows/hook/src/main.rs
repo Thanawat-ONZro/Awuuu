@@ -153,9 +153,7 @@ impl Agent {
     /// What the agent waits for on this event.
     fn waits_on(self, event: &str) -> Wait {
         match (self, event) {
-            (Self::Agy, "PreToolUse") => Wait::Decision,
-            (Self::Agy, _) => Wait::Nothing,
-            (_, "PermissionRequest") => Wait::Decision,
+            (Self::Claude | Self::Codex | Self::OpenCode, "PermissionRequest") => Wait::Decision,
             _ => Wait::Nothing,
         }
     }
@@ -281,8 +279,10 @@ fn main() {
         let shown = REACHED_ISLAND.load(Ordering::Relaxed);
         output_json(ev.agent, answer.as_ref(), ev.tool_input.as_ref(), shown)
     } else if ev.agent == Agent::Agy {
-        // AGY parses every hook's stdout as JSON; an empty object changes nothing.
-        Some("{}".to_string())
+        // AGY parses every hook's stdout as JSON and reads anything that is not an
+        // explicit allow as a denial; in print mode it cannot ask, so a bare `{}`
+        // blocked every tool call. Awuuu never gates AGY tool calls.
+        Some("{\"decision\":\"allow\"}".to_string())
     } else {
         None
     };
@@ -740,14 +740,18 @@ mod tests {
         assert_eq!(d["updatedInput"]["questions"][0]["question"], "Which?");
     }
 
+    /// AGY is notify-only at runtime (`waits_on` returns `Wait::Nothing` on every event,
+    /// so the interactive decision wait loop is never entered for AGY).
+    /// `output_json` still preserves the protocol formatting rules for AGY decisions
+    /// if ever called directly.
     #[test]
-    fn agy_always_gets_a_decision() {
+    fn agy_output_json_formats_legacy_decisions_if_invoked() {
         assert_eq!(out(Agent::Agy, "allow", None).unwrap(), r#"{"decision":"allow"}"#);
         assert_eq!(
             val(&out(Agent::Agy, r#"{"decision":"deny","reason":"no"}"#, None).unwrap()),
             serde_json::json!({"decision": "deny", "reason": "no"})
         );
-        // Awuuu closed: AGY's own rules. On screen but unanswered: AGY must ask.
+        // Fallbacks if output_json is evaluated: Awuuu closed -> "ask", unanswered card -> "force_ask".
         assert_eq!(output_json(Agent::Agy, None, None, false).unwrap(), r#"{"decision":"ask"}"#);
         assert_eq!(output_json(Agent::Agy, None, None, true).unwrap(), r#"{"decision":"force_ask"}"#);
         // Answers to ask_question go back as the reason of a deny.
@@ -785,5 +789,30 @@ mod tests {
         let s = v["tool_input"]["content"].as_str().unwrap();
         assert!(s.len() <= MAX_FIELD_LEN + 4);
         assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn waits_on_pins_decision_only_for_claude_and_codex_permissions() {
+        // Claude: only PermissionRequest waits for a human decision
+        assert_eq!(Agent::Claude.waits_on("PermissionRequest"), Wait::Decision);
+        for ev in ["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop"] {
+            assert_eq!(Agent::Claude.waits_on(ev), Wait::Nothing, "Claude {ev} must not wait");
+        }
+
+        // Codex: only PermissionRequest waits for a human decision
+        assert_eq!(Agent::Codex.waits_on("PermissionRequest"), Wait::Decision);
+        for ev in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStart", "SubagentStop", "Interrupt", "SessionEnd"] {
+            assert_eq!(Agent::Codex.waits_on(ev), Wait::Nothing, "Codex {ev} must not wait");
+        }
+
+        // AGY: notify only, never wait for decision on any event (including PreToolUse)
+        for ev in ["PreToolUse", "PostToolUse", "PreInvocation", "PostInvocation", "Stop"] {
+            assert_eq!(Agent::Agy.waits_on(ev), Wait::Nothing, "AGY {ev} must not wait");
+        }
+
+        // Hermes: notify only, never wait for decision on any event
+        for ev in ["on_session_start", "pre_llm_call", "pre_tool_call", "post_tool_call", "post_llm_call", "on_session_end", "pre_approval_request", "post_approval_response", "subagent_stop", "HermesApproval", "HermesApprovalDone", "PermissionRequest"] {
+            assert_eq!(Agent::Hermes.waits_on(ev), Wait::Nothing, "Hermes {ev} must not wait");
+        }
     }
 }

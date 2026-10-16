@@ -133,10 +133,8 @@ async fn handle(app: AppHandle, mut pipe: NamedPipeServer) {
         .unwrap_or_default()
         .to_string();
 
-    let is_agy = payload.get("agent_source").and_then(Value::as_str) == Some("agy");
-
-    let is_agy_pre_tool = is_agy && event == "PreToolUse";
-    let waits_for_answer = event == "PermissionRequest" || is_agy_pre_tool;
+    let agent = payload.get("agent_source").and_then(Value::as_str).unwrap_or("claude");
+    let waits_for_answer = event == "PermissionRequest" && agent != "agy" && agent != "hermes";
 
     if !waits_for_answer {
         log::line(format!("hook {event}"));

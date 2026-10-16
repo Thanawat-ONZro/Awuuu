@@ -287,6 +287,13 @@ function queueApprovalRequest(
   input: Record<string, unknown>,
   key: string,
 ) {
+  // agy and hermes are read & notify only — never show an approval card.
+  if (session.source === "agy" || session.source === "hermes") {
+    session.state = "working";
+    State.appendStep(session.id, describeTool(tool, input), "tool", key, buildFileDiff(tool, input));
+    return;
+  }
+
   // Every tool call shows in the log, whether it ends up auto-allowed or not.
   State.appendStep(session.id, describeTool(tool, input), "tool", key, buildFileDiff(tool, input));
   const target = approvalTarget(tool, input);
@@ -438,7 +445,7 @@ function handleHook(island: Island, payload: HookPayload) {
     case "PreToolUse": {
       session.sessionCwd = cwd;
       trackPlan(session, tool, input, key);
-      if (payload.request_id) {
+      if (payload.request_id && source !== "agy" && source !== "hermes") {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
       } else {
         session.state = "working";
@@ -569,9 +576,13 @@ function handleHook(island: Island, payload: HookPayload) {
 
     case "PermissionRequest": {
       trackPlan(session, tool, input, key);
-      if (payload.request_id) {
+      if (payload.request_id && source !== "agy" && source !== "hermes") {
         queueApprovalRequest(island, session, sessionId, payload.request_id, tool, input, key);
         History.toolStart(who(), call(), State.approvalQueue.some((a) => a.requestId === payload.request_id));
+      } else {
+        session.state = "working";
+        State.appendStep(taskId, describeTool(tool, input), "tool", key, buildFileDiff(tool, input));
+        History.toolStart(who(), call(), false);
       }
       break;
     }

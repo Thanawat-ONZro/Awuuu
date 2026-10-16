@@ -51,9 +51,9 @@ const CODEX_EVENTS: &[(&str, u64)] = &[
     ("SessionEnd", 3),
 ];
 
-/// AGY events and their timeouts. PreToolUse waits for a human in the island.
+/// AGY events and their timeouts. Every event is notify-only.
 const AGY_EVENTS: &[(&str, u64)] = &[
-    ("PreToolUse", 120),
+    ("PreToolUse", 10),
     ("PostToolUse", 10),
     ("PreInvocation", 10),
     ("PostInvocation", 10),
@@ -1133,7 +1133,7 @@ mod tests {
         assert!(cmd.contains("--agent agy PreToolUse"));
         // AGY escapes quotes on the way to cmd.exe, so the command has none.
         assert!(!cmd.contains('"'));
-        assert_eq!(pre["hooks"][0]["timeout"], 120);
+        assert_eq!(pre["hooks"][0]["timeout"], 10);
         // Flat events carry handlers directly.
         assert!(ours["Stop"][0]["command"].as_str().unwrap().contains("--agent agy Stop"));
         assert!(ours["PreInvocation"][0].get("hooks").is_none());
@@ -1146,6 +1146,58 @@ mod tests {
 
         let removed = without_ours_for_agent(HookAgent::Agy, &after);
         assert_eq!(removed, json!({ "lint-checker": existing["lint-checker"] }));
+    }
+
+    #[test]
+    fn agy_install_preserves_foreign_keys_such_as_orca_status_byte_for_byte() {
+        let foreign_key = json!({
+            "PreInvocation": [
+                {
+                    "type": "command",
+                    "command": "C:\\Users\\User\\.orca\\agent-hooks\\antigravity-pre-invocation.cmd",
+                    "timeout": 10
+                }
+            ],
+            "PostInvocation": [
+                {
+                    "type": "command",
+                    "command": "C:\\Users\\User\\.orca\\agent-hooks\\antigravity-post-invocation.cmd",
+                    "timeout": 10
+                }
+            ],
+            "Stop": [
+                {
+                    "type": "command",
+                    "command": "C:\\Users\\User\\.orca\\agent-hooks\\antigravity-stop.cmd",
+                    "timeout": 10
+                }
+            ],
+            "PreToolUse": [
+                {
+                    "matcher": "*",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "C:\\Users\\User\\.hermes\\agent-hooks\\agy-pre-tool-use.cmd",
+                            "timeout": 10
+                        }
+                    ]
+                }
+            ]
+        });
+        let existing = json!({
+            "orca-status": foreign_key.clone()
+        });
+
+        let after = merged_for_agent(HookAgent::Agy, &existing);
+        assert_eq!(after["orca-status"], foreign_key, "orca-status key must survive byte-for-byte intact");
+        assert!(after.get("awuuu").is_some(), "awuuu entry must be present");
+        assert_eq!(after["awuuu"]["enabled"], true);
+
+        // Foreign keys must also survive uninstall intact
+        let removed = without_ours_for_agent(HookAgent::Agy, &after);
+        assert_eq!(removed["orca-status"], foreign_key);
+        assert!(removed.get("awuuu").is_none());
     }
 
     #[test]
