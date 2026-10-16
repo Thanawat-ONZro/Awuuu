@@ -29,6 +29,7 @@ mod win_user;
 mod usage;
 mod history;
 mod sounds;
+mod media;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -939,6 +940,7 @@ pub fn run() {
             desktop_dog::desktop_dog_set_position,
             desktop_dog::desktop_dog_flight_end,
             desktop_dog::desktop_dog_forget,
+            media::now_playing,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

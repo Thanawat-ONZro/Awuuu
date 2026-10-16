@@ -19,6 +19,8 @@ import "./hub-extra.css";
 import { planHeadline } from "../island/plan";
 import { refreshUsage } from "../island/usage";
 import { t } from "../i18n/i18n";
+import { createCardShell } from "./card-shell";
+import { buildDashboardView } from "./dashboard";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -106,6 +108,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const tabAgents = h("button", { class: "tab", title: t("Agent Sessions"), onclick: () => go("agents") }, svg(ICONS.terminal, 13));
   const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: t("Feed Awuuu a file"), onclick: () => go("upload") }, svg(ICONS.bone, 13));
+  const tabTools = h("button", { class: "tab", title: t("Tools"), onclick: () => go("dashboard") }, svg(ICONS.tools, 13));
 
   // Both open the Awuuu window: the gear where it was left, the list on Sessions.
   const open = (page?: string) => () => {
@@ -135,7 +138,13 @@ export function buildHeader(actions: ViewActions): ViewHost {
 
   // The lit-tab highlight is one element that travels, not a background per tab.
   const thumb = h("div", { class: "tab-thumb" });
-  const tabEls = { agents: tabAgents, prompt: tabChat, overview: tabHome, upload: tabDrop };
+  const tabEls: Record<string, HTMLElement> = {
+    agents: tabAgents,
+    prompt: tabChat,
+    overview: tabHome,
+    upload: tabDrop,
+    dashboard: tabTools,
+  };
   let thumbX: number | null = null;
 
   // Grip: press and drag to move the island (Alt + drag works anywhere on it).
@@ -146,7 +155,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, thumb, tabAgents, tabChat, tabHome, tabDrop),
+    h("div", { class: "tabs" }, thumb, tabAgents, tabChat, tabHome, tabDrop, tabTools),
     grip,
     h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
@@ -159,9 +168,10 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabAgents.classList.toggle("on", tabOf(v) === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
+      tabTools.classList.toggle("on", v === "dashboard");
       const lit = tabOf(v);
       thumb.classList.toggle("on", lit !== null);
-      if (lit !== null && TAB_ORDER.includes(lit)) {
+      if (lit !== null && (TAB_ORDER as readonly string[]).includes(lit)) {
         const x = tabEls[lit].offsetLeft;
         if (x > 0 && x !== thumbX) {
           moveThumb(thumb, thumbX ?? x, x);
@@ -824,12 +834,13 @@ function buildConfused(): ViewHost {
 // ── Note ──────────────────────────────────────────────────────────────────────
 
 function buildNote(): ViewHost {
-  const title = h("div", { class: "title" });
-  const el = h("div", { class: "view" }, card(null, h("div", { class: "stack", style: "padding:0 18px 0 98px" }, title)));
+  const text = h("div", { class: "title" });
+  const shell = createCardShell({ title: t("Note"), body: text });
+  const el = h("div", { class: "view" }, shell.el);
   return {
     el,
     sync() {
-      title.textContent = State.noteMessage ?? "";
+      text.textContent = State.noteMessage ?? "";
     },
   };
 }
@@ -912,6 +923,7 @@ export function buildViews(
   map.set("confused", buildConfused());
   map.set("note", buildNote());
   map.set("settings", buildSettings(actions));
+  map.set("dashboard", buildDashboardView(actions));
   map.set("prompt", buildPrompt(onChatHeightChange));
   map.set("upload", buildUpload());
   map.set("uploading", buildUploading());

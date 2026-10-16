@@ -31,6 +31,8 @@ webpki-roots = "1"
 # (it is rustls' crypto provider, see above), so nothing new is compiled.
 ring = "0.17"
 windows = { version = "0.61", features = [
+  "Foundation",
+  "Media_Control",
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",

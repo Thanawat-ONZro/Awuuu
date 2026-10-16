@@ -5,8 +5,8 @@
 import type { IslandViewName } from "../core/layout";
 import { MOTION } from "../core/anim";
 
-/** The four header tabs, left to right. */
-export const TAB_ORDER = ["agents", "prompt", "overview", "upload"] as const;
+/** The header tabs, left to right. */
+export const TAB_ORDER = ["agents", "prompt", "overview", "upload", "dashboard"] as const;
 export type TabId = (typeof TAB_ORDER)[number];
 
 /** The tab that is lit for a view, or null for views no tab owns (alerts, notes…). */

@@ -245,6 +245,9 @@ export const Bridge = {
   dogFlightEnd: (kind: "out" | "home", forget: boolean) => call<void>("desktop_dog_flight_end", { kind, forget }),
   /** It stays home from now on (the feature was switched off). */
   dogForget: () => call<void>("desktop_dog_forget"),
+
+  /** Windows SMTC Media Transport Controls query. */
+  nowPlaying: () => call<NowPlaying>("now_playing"),
 };
 
 /** An event for one window only (island ⇄ dog). No-op in a plain browser. */
@@ -255,6 +258,13 @@ export async function emitToWindow(label: string, event: string, payload?: unkno
   } catch (err) {
     console.error(`[awuuu] emit ${event} failed`, err);
   }
+}
+
+export interface NowPlaying {
+  active: boolean;
+  title: string;
+  artist: string;
+  status: string;
 }
 
 /** One provider on the Integrations page. */
