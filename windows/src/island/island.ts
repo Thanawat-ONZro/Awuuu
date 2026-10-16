@@ -828,8 +828,8 @@ export class Island {
     const L0 = geo.layout;
     const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt");
     this.resizeGrip.style.display = showGrip ? "block" : "none";
-    this.resizeGrip.dataset.v = L0.v === "bottom" ? "bottom" : "top";
-    this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
+    this.resizeGrip.dataset.v = L0.edge === "bottom" ? "top" : "bottom";
+    this.resizeGrip.dataset.h = L0.edge === "right" ? "left" : "right";
     // The wake strip fills the window while it is only the strip.
     this.wakeStrip.style.cssText = this.collapsed
       ? "left:0;top:0;width:100%;height:100%;transform:none;display:block"
@@ -934,13 +934,16 @@ export class Island {
       const dx = e.screenX - r.sx;
       const dy = e.screenY - r.sy;
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
-      const dh = L.v === "bottom" ? -dy : L.v === "center" ? 2 * dy : dy;
-      geo.expandedW = Math.round(Math.min(1100, Math.max(520, r.w + dw)));
       // A click on the grip is not a resize: the chat keeps growing by itself.
       if (r.chat && geo.chatH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
-      const height = Math.round(Math.min(640, Math.max(220, r.h + dh)));
-      if (r.chat) geo.chatH = height;
-      else geo.hubH = height;
+      const initialAspect = r.w / r.h;
+      const rawW = Math.round(r.w + dw);
+      const clampedW = Math.min(1100, Math.max(580, rawW));
+      const uniformH = Math.round(clampedW / initialAspect);
+      const clampedH = Math.min(640, Math.max(260, uniformH));
+      geo.expandedW = Math.round(clampedH * initialAspect);
+      if (r.chat) geo.chatH = clampedH;
+      else geo.hubH = clampedH;
       this.animateGeometry(false);
     });
     const end = (e: PointerEvent) => {
@@ -1535,8 +1538,8 @@ export class Island {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
-    geo.expandedW = State.settings.islandWidth ?? 640;
-    geo.hubH = State.settings.hubHeight ?? 290;
+    geo.expandedW = State.settings.islandWidth ?? 680;
+    geo.hubH = State.settings.hubHeight ?? 300;
     geo.chatH = State.settings.chatHeight ?? 0;
     // The Appearance page edits the dog live; the frame loop picks it up.
     this.ownLook = normalizeLook(State.settings.dog);

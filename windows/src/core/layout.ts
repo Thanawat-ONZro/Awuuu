@@ -69,8 +69,19 @@ export interface IslandLayout {
   panelH: number;
 }
 
+export interface RectSize { w: number; h: number; }
+export interface OrientationSpec { min: RectSize; default: RectSize; max: RectSize; }
+export const ORIENTATION_GEOMETRY: Record<"landscape" | "side", OrientationSpec> = {
+  landscape: { min: { w: 580, h: 260 }, default: { w: 680, h: 300 }, max: { w: 1100, h: 640 } },
+  side: { min: { w: 260, h: 420 }, default: { w: 320, h: 520 }, max: { w: 480, h: 800 } },
+};
+export function getOrientationBounds(edge: "top" | "bottom" | "left" | "right"): OrientationSpec {
+  return (edge === "left" || edge === "right") ? ORIENTATION_GEOMETRY.side : ORIENTATION_GEOMETRY.landscape;
+}
+export const EXPANDED_W = 680;
+
 export const DEFAULT_LAYOUT: IslandLayout = {
-  anchorX: 360, anchorY: 160, h: "center", v: "top", edge: "top", vertical: false, panelW: 720, panelH: 320,
+  anchorX: 380, anchorY: 170, h: "center", v: "top", edge: "top", vertical: false, panelW: 760, panelH: 340,
 };
 
 /** The header is a 34 px row: along the top, or along the bottom when the
@@ -99,9 +110,9 @@ export const SIDE_GAP = 10;
 export const geo = {
   layout: { ...DEFAULT_LAYOUT },
   /** Width of the open island. */
-  expandedW: 640,
+  expandedW: 680,
   /** Height of the Agents hub. */
-  hubH: 290,
+  hubH: 300,
   /** Height of the chat; 0 = it grows with the conversation. */
   chatH: 0,
 };
@@ -110,7 +121,6 @@ export const geo = {
 export const NOTCH_W = 184;
 export const NOTCH_H = 32;
 export const COMPACT_W = 288; // NOTCH_W + 104
-export const EXPANDED_W = 640;
 
 export const ROUNDED_CORNER = 14; // compact
 export const EXPANDED_CORNER = 22;
@@ -125,26 +135,26 @@ export const WAKE_STRIP_W = 140;
 export const WAKE_STRIP_H = 14;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 290, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
-  agents: { height: 290, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
-  diff: { height: 290, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
-  empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
-  approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  error: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  finished: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  confused: { height: 160, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },
-  upload: { height: 176, botX: 140, botY: 104, botDiameter: 62, agentMode: "column" },
+  overview: { height: 300, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  agents: { height: 300, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  diff: { height: 300, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
+  empty: { height: 180, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
+  approval: { height: 180, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
+  error: { height: 180, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
+  finished: { height: 180, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
+  confused: { height: 180, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },
+  upload: { height: 190, botX: 140, botY: 104, botDiameter: 62, agentMode: "column" },
   // botY 103 = bar top (42 + 58) + 3, so the dot really rides the bar. The Swift
   // layout says 118 while its own comment says 103; the comment matches the spec.
-  uploading: { height: 176, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
-  choose: { height: 176, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
-  mail: { height: 240, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
-  prompt: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  searching: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  result: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
-  settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
-  greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  uploading: { height: 190, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
+  choose: { height: 190, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
+  mail: { height: 260, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
+  prompt: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
+  searching: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
+  result: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
+  note: { height: 180, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
+  settings: { height: 180, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
+  greeting: { height: 160, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
   dashboard: { height: 260, botX: 62, botY: 92, botDiameter: 58, agentMode: "none" },
 };
 
@@ -154,14 +164,14 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
 
 /** Chat view grows with the conversation — IslandContainer.chatPromptHeight. */
 export function chatPromptHeight(messageCount: number): number {
-  return Math.min(300, 240 + messageCount * 40);
+  return Math.min(360, 260 + messageCount * 25);
 }
 
 /** Height of the header strip above every expanded view's card. */
 export const HEADER_BOTTOM = 42;
 /** Space under the card, inside the island. */
 export const CARD_BOTTOM_GAP = 14;
-export const APPROVAL_MIN_H = 160;
+export const APPROVAL_MIN_H = 180;
 export function approvalMaxH(): number {
   return geo.layout.panelH - 12;
 }
@@ -172,9 +182,8 @@ export function approvalMaxH(): number {
  * height of the card's content; 0 = not measured yet.
  */
 export function approvalHeight(fit: number): number {
-  if (fit <= 0) return 200;
-  const h = HEADER_BOTTOM + fit + CARD_BOTTOM_GAP;
-  return Math.round(Math.min(approvalMaxH(), Math.max(APPROVAL_MIN_H, h)));
+  if (fit <= 0) return 220;
+  return Math.round(Math.min(approvalMaxH(), Math.max(APPROVAL_MIN_H, HEADER_BOTTOM + fit + CARD_BOTTOM_GAP)));
 }
 
 export function islandSize(
@@ -190,6 +199,10 @@ export function islandSize(
     case "compact":
       return onSide() ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
+      if (onSide()) {
+        const spec = ORIENTATION_GEOMETRY.side;
+        return { w: spec.default.w, h: spec.default.h };
+      }
       const h =
         view === "prompt"
           ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
