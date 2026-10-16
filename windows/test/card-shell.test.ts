@@ -8,6 +8,13 @@ describe("CardShell template", () => {
     body.textContent = "Body text";
     const shell = createCardShell({ title: "Test Card", wash: "amber", body });
     expect(shell.el.classList.contains("card-shell")).toBe(true);
+    expect(shell.el.classList.contains("card")).toBe(true);
+    expect(shell.el.classList.contains("wash")).toBe(true);
+    expect(shell.el.querySelector(".card-header")).toBeDefined();
     expect(shell.el.querySelector(".card-title")?.textContent).toBe("Test Card");
+    expect(Array.from(shell.el.querySelector(".card-body")?.children ?? []).includes(body as any)).toBe(true);
+
+    shell.setTitle("Updated Title");
+    expect(shell.el.querySelector(".card-title")?.textContent).toBe("Updated Title");
   });
 });

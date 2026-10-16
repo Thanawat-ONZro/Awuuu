@@ -157,7 +157,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   note: { height: 180, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 180, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 160, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
-  dashboard: { height: 260, botX: 62, botY: 92, botDiameter: 58, agentMode: "none" },
+  dashboard: { height: 460, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
 };
 
 // The upload views above are only the fallback geometry. Once a file is actually
@@ -202,14 +202,15 @@ export function islandSize(
     case "compact":
       return onSide() ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
+      const safeView = view || "overview";
       const h =
-        view === "prompt"
+        safeView === "prompt"
           ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
-          : view === "approval"
+          : safeView === "approval"
           ? approvalHeight(approvalFit)
-          : view === "agents" || view === "diff" || view === "overview"
+          : safeView === "agents" || safeView === "diff" || safeView === "overview" || safeView === "dashboard"
           ? geo.hubH
-          : VIEW_LAYOUTS[view].height;
+          : (VIEW_LAYOUTS[safeView]?.height ?? geo.hubH);
       if (onSide()) {
         // Docked to a side the card keeps the height its own view asks for; only
         // the width comes from the side geometry, so a view is never stretched
@@ -249,7 +250,8 @@ export function botPosition(
 }
 
 function expandedBot(view: IslandViewName, islandH: number, uploadProgress: number): BotPlacement {
-  const layout = VIEW_LAYOUTS[view];
+  const safeView = view || "overview";
+  const layout = VIEW_LAYOUTS[safeView] || VIEW_LAYOUTS.overview;
   if (view === "uploading") {
     return {
       cx: 36 + uploadProgress * 526,

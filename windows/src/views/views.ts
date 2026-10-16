@@ -8,7 +8,7 @@ import { ICONS } from "./icons";
 import { State, agentInfo, type AgentTask, type LogEntry, type LogKind } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { moveThumb, tabOf, TAB_ORDER } from "../island/transition";
-import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
+import { washRGBA, onSide, type IslandViewName, type Wash } from "../core/layout";
 import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
 import { buildDiffView, showDiff } from "./diff-view";
@@ -145,7 +145,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
     upload: tabDrop,
     dashboard: tabTools,
   };
-  let thumbX: number | null = null;
+  let thumbPos: number | null = null;
+  let lastSide: boolean | null = null;
 
   // Grip: press and drag to move the island (Alt + drag works anywhere on it).
   const grip = h("div", { class: "grip", title: t("Drag to move the island (or Alt + drag)") },
@@ -171,11 +172,16 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabTools.classList.toggle("on", v === "dashboard");
       const lit = tabOf(v);
       thumb.classList.toggle("on", lit !== null);
+      const side = onSide();
+      if (side !== lastSide) {
+        lastSide = side;
+        thumbPos = null;
+      }
       if (lit !== null && (TAB_ORDER as readonly string[]).includes(lit)) {
-        const x = tabEls[lit].offsetLeft;
-        if (x > 0 && x !== thumbX) {
-          moveThumb(thumb, thumbX ?? x, x);
-          thumbX = x;
+        const pos = side ? tabEls[lit].offsetTop : tabEls[lit].offsetLeft;
+        if (pos >= 0 && pos !== thumbPos) {
+          moveThumb(thumb, thumbPos ?? pos, pos, side);
+          thumbPos = pos;
         }
       }
       clear(soundBtn);
@@ -834,9 +840,9 @@ function buildConfused(): ViewHost {
 // ── Note ──────────────────────────────────────────────────────────────────────
 
 function buildNote(): ViewHost {
-  const text = h("div", { class: "title" });
-  const shell = createCardShell({ title: t("Note"), body: text });
-  const el = h("div", { class: "view" }, shell.el);
+  const text = h("div", { class: "note-text" });
+  const shell = createCardShell({ title: t("Note"), wash: "soft", body: text });
+  const el = h("div", { class: "view note-view" }, shell.el);
   return {
     el,
     sync() {

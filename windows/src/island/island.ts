@@ -7,8 +7,9 @@ import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
-  islandSize,
+  islandSize, getOrientationBounds,
   type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP,} from "../core/layout";
+
 import { Sound } from "../core/sound";
 import { State, type PendingFile } from "../core/state";
 import { BotEngine } from "../mochi/engine";
@@ -24,6 +25,8 @@ import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
 import { HoverOpen } from "./hover";
 import { DROPLET, Mover } from "./move";
+import { clampCornerRadius } from "./move-physics";
+import { Liquid } from "./liquid";
 import { DesktopDogLink } from "./desktop-dog";
 import { isDrag } from "../mochi/desktop-logic";
 import { t } from "../i18n/i18n";
@@ -105,7 +108,12 @@ export class Island {
 
   private width = new Tracked(NOTCH_W);
   private height = new Tracked(0);
-  private radius = new Tracked(ROUNDED_CORNER);
+  private cornerTL = new Tracked(0);
+  private cornerTR = new Tracked(0);
+  private cornerBR = new Tracked(ROUNDED_CORNER);
+  private cornerBL = new Tracked(ROUNDED_CORNER);
+  private liquidCanvas!: HTMLCanvasElement;
+  private liquid!: Liquid;
   private botCx = new Spring(46);
   private botCy = new Spring(16);
   private botSize = new Spring(10);
@@ -157,6 +165,7 @@ export class Island {
 
   constructor(root: HTMLElement) {
     this.root = root;
+    this.root.dataset.edge = geo.layout.edge;
     this.build();
     this.wireFsm();
     this.mover = new Mover(
@@ -171,19 +180,127 @@ export class Island {
         },
         enterMove: () => {
           const saved = { wasExpanded: State.mode === "expanded", view: State.view };
+          const r0 = this.islandRect();
+          this.contentEl.style.width = `${r0.w}px`;
+          this.contentEl.style.height = `${r0.h}px`;
+          this.contentEl.style.left = "50%";
+          this.contentEl.style.top = "50%";
+          this.contentEl.style.transform = "translate(-50%, -50%)";
           this.fsm.pinned = true;
           if (State.mode !== "compact") this.collapse();
           this.fsm.pinned = true;
           return saved;
         },
         leaveMove: (saved) => {
+          this.contentEl.style.width = "";
+          this.contentEl.style.height = "";
+          this.contentEl.style.left = "";
+          this.contentEl.style.top = "";
+          this.contentEl.style.transform = "";
           this.fsm.pinned = State.isPinned;
           if (saved.wasExpanded) {
             this.fsm.forceHome();
             this.expand(saved.view as IslandViewName);
           }
         },
+        startLiquid: () => {
+          if (this.liquid.isReady()) {
+            this.liquidCanvas.style.display = "block";
+            this.root.classList.add("liquid-active");
+          }
+        },
+        stepLiquid: (cx, cy, work, swell) => {
+          if (!this.liquid.isReady()) return;
+          this.liquidCanvas.style.display = "block";
+          this.root.classList.add("liquid-active");
+          const w = this.width.value;
+          const hh = this.height.value;
+          const tl = clampCornerRadius(this.cornerTL.value, w, hh);
+          const tr = clampCornerRadius(this.cornerTR.value, w, hh);
+          const br = clampCornerRadius(this.cornerBR.value, w, hh);
+          const bl = clampCornerRadius(this.cornerBL.value, w, hh);
+          this.liquid.frame({
+            w,
+            h: hh,
+            radii: [tl, tr, br, bl],
+            cx,
+            cy,
+            swell,
+            work,
+            dpr: Math.min(2, window.devicePixelRatio || 1),
+          });
+        },
+        applyMorph: (cx, cy, w, hh, radii, work, swell) => {
+          this.moveAt = { x: cx, y: cy, transform: "none" };
+          this.width.jump(w);
+          this.height.jump(hh);
+          this.cornerTL.jump(radii[0]);
+          this.cornerTR.jump(radii[1]);
+          this.cornerBR.jump(radii[2]);
+          this.cornerBL.jump(radii[3]);
+          this.applyGeometry();
+          if (this.liquid.isReady()) {
+            this.liquid.frame({
+              w,
+              h: hh,
+              radii,
+              cx,
+              cy,
+              swell,
+              work,
+              dpr: Math.min(2, window.devicePixelRatio || 1),
+            });
+          }
+        },
+        getDockedTarget: (dockRect, layout, origin, scale) => {
+          const { w, h } = islandSize(
+            State.mode,
+            State.view,
+            State.chatHistory.length,
+            State.approvalFit,
+          );
+          const r = State.mode === "expanded"
+            ? EXPANDED_CORNER
+            : State.mode === "hidden"
+            ? NOTCH_TAB_CORNER
+            : ROUNDED_CORNER;
+          const edge = layout.edge;
+          const isSide = edge === "left" || edge === "right";
+          const lift = isSide ? this.sideGap(w) / SIDE_GAP : 0;
+          const radii: [number, number, number, number] =
+            edge === "top" ? [0, 0, r, r]
+            : edge === "bottom" ? [r, r, 0, 0]
+            : edge === "left" ? [r * lift, r, r, r * lift]
+            : [r, r * lift, r * lift, r];
+
+          let cardX: number;
+          let cardY: number;
+          if (isSide) {
+            const gap = this.sideGap(w);
+            cardX = edge === "left" ? gap : layout.panelW - w - gap;
+            cardY = Math.min(Math.max(layout.anchorY - h / 2, 0), Math.max(0, layout.panelH - h));
+          } else {
+            cardX = Math.min(Math.max(layout.anchorX - w / 2, 0), Math.max(0, layout.panelW - w));
+            cardY = edge === "bottom" ? layout.panelH - h : 0;
+          }
+
+          const physCardX = dockRect[0] + cardX * scale;
+          const physCardY = dockRect[1] + cardY * scale;
+          const physCardW = w * scale;
+          const physCardH = h * scale;
+
+          const cx = (physCardX + physCardW / 2 - origin.x) / scale;
+          const cy = (physCardY + physCardH / 2 - origin.y) / scale;
+
+          return { cx, cy, w, h, radii };
+        },
+        clearLiquid: () => {
+          this.liquid.clear();
+          this.liquidCanvas.style.display = "none";
+          this.root.classList.remove("liquid-active");
+        },
       },
+
       this.root,
     );
     this.wireInput();
@@ -415,7 +532,19 @@ export class Island {
     this.greetingCanvas.style.width = `${EXPANDED_W}px`;
     this.greetingCanvas.style.height = "150px";
 
-    this.root.append(this.wakeStrip, this.islandEl);
+    this.liquidCanvas = h("canvas", { id: "liquid", class: "move-layer" }) as HTMLCanvasElement;
+    this.liquidCanvas.style.display = "none";
+    this.liquid = new Liquid(this.liquidCanvas);
+    this.liquid.onLost = () => {
+      this.root.classList.remove("liquid-active");
+    };
+    this.liquid.onRestored = () => {
+      if (this.moveAt) {
+        this.root.classList.add("liquid-active");
+      }
+    };
+
+    this.root.append(this.wakeStrip, this.liquidCanvas, this.islandEl);
     this.applyGeometry();
   }
 
@@ -495,7 +624,7 @@ export class Island {
     if (UploadSeq.isActive && !UPLOAD_VIEWS.has(view)) UploadSeq.deactivate();
   }
 
-  expand(view: IslandViewName) {
+  expand(view: IslandViewName = State.defaultView()) {
     this.stopSequenceIfLeaving(view);
     State.view = view;
     if (State.mode !== "expanded") this.setMode("expanded");
@@ -509,12 +638,12 @@ export class Island {
     this.stopSequenceIfLeaving(view);
     if (State.mode !== "expanded") {
       this.fsm.forceHome();
-      State.view = view;
-      this.animateGeometry(false);
-      State.notify();
+      this.expand(view);
       return;
     }
-    const grew = view === "approval" || VIEW_LAYOUTS[view].height >= VIEW_LAYOUTS[State.view].height;
+    const currentH = VIEW_LAYOUTS[State.view]?.height ?? geo.hubH;
+    const nextH = VIEW_LAYOUTS[view]?.height ?? geo.hubH;
+    const grew = view === "approval" || nextH >= currentH;
     State.view = view;
     State.lastActivity = performance.now();
     this.animateGeometry(!grew);
@@ -785,9 +914,15 @@ export class Island {
 
   // ── Geometry ────────────────────────────────────────────────────────────────
 
-  private targetSize(): { w: number; h: number; r: number } {
+  private targetSize(): { w: number; h: number; radii: [number, number, number, number] } {
     // Being carried, the island is a droplet whatever it was.
-    if (this.moveAt) return { w: DROPLET, h: DROPLET, r: DROPLET / 2 };
+    if (this.moveAt) {
+      return {
+        w: DROPLET,
+        h: DROPLET,
+        radii: [DROPLET / 2, DROPLET / 2, DROPLET / 2, DROPLET / 2],
+      };
+    }
     const { w, h } = islandSize(
       State.mode,
       State.view,
@@ -799,19 +934,40 @@ export class Island {
       : State.mode === "hidden"
       ? NOTCH_TAB_CORNER
       : ROUNDED_CORNER;
-    return { w, h, r };
+    const edge = geo.layout.edge;
+    const lift = onSide() ? this.sideGap(w) / SIDE_GAP : 0;
+    const radii: [number, number, number, number] =
+      edge === "top" ? [0, 0, r, r]
+      : edge === "bottom" ? [r, r, 0, 0]
+      : edge === "left" ? [r * lift, r, r, r * lift]
+      : [r, r * lift, r * lift, r];
+    return { w, h, radii };
   }
 
   private animateGeometry(shrinking: boolean) {
-    const { w, h, r } = this.targetSize();
-    if (shrinking) {
+    const { w, h, radii } = this.targetSize();
+    if (this.moveAt) {
+      // Carrying: 0.42 response, 0.86 damping for <1% overshoot
+      this.width.springTo(w, 0.42, 0.86);
+      this.height.springTo(h, 0.42, 0.86);
+      this.cornerTL.springTo(radii[0], 0.42, 0.86);
+      this.cornerTR.springTo(radii[1], 0.42, 0.86);
+      this.cornerBR.springTo(radii[2], 0.42, 0.86);
+      this.cornerBL.springTo(radii[3], 0.42, 0.86);
+    } else if (shrinking) {
       this.width.curveTowards(w);
       this.height.curveTowards(h);
-      this.radius.curveTowards(r);
+      this.cornerTL.curveTowards(radii[0]);
+      this.cornerTR.curveTowards(radii[1]);
+      this.cornerBR.curveTowards(radii[2]);
+      this.cornerBL.curveTowards(radii[3]);
     } else {
       this.width.springTo(w);
       this.height.springTo(h);
-      this.radius.springTo(r);
+      this.cornerTL.springTo(radii[0]);
+      this.cornerTR.springTo(radii[1]);
+      this.cornerBR.springTo(radii[2]);
+      this.cornerBL.springTo(radii[3]);
     }
     this.ensureRunning();
   }
@@ -819,14 +975,17 @@ export class Island {
   private applyGeometry() {
     const w = this.width.value;
     const hh = this.height.value;
-    const r = this.radius.value;
+    const tl = clampCornerRadius(this.cornerTL.value, w, hh);
+    const tr = clampCornerRadius(this.cornerTR.value, w, hh);
+    const br = clampCornerRadius(this.cornerBR.value, w, hh);
+    const bl = clampCornerRadius(this.cornerBL.value, w, hh);
     this.islandEl.style.width = `${w}px`;
     this.islandEl.style.height = `${hh}px`;
     const rect0 = this.islandRect();
     this.islandEl.style.transform = this.moveAt?.transform ?? "none";
     // The resize grip sits on the corner away from the docked edge.
     const L0 = geo.layout;
-    const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt");
+    const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt" || State.view === "dashboard" || State.view === "overview");
     this.resizeGrip.style.display = showGrip ? "block" : "none";
     this.resizeGrip.dataset.v = L0.v === "bottom" ? "bottom" : "top";
     this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
@@ -837,16 +996,8 @@ export class Island {
     this.islandEl.style.left = `${rect0.x}px`;
     this.islandEl.style.top = `${rect0.y}px`;
     this.islandEl.style.bottom = "auto";
-    // Round every corner that does not touch the screen edge it is docked to.
-    // On a side the open card floats off the edge: its corners round as it leaves.
-    const edge = geo.layout.edge;
+    this.islandEl.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
     const lift = onSide() ? this.sideGap(w) / SIDE_GAP : 0;
-    const [tl, tr, br, bl] =
-      edge === "top" ? [0, 0, r, r]
-      : edge === "bottom" ? [r, r, 0, 0]
-      : edge === "left" ? [r * lift, r, r, r * lift]
-      : [r, r * lift, r * lift, r];
-    this.islandEl.style.borderRadius = this.moveAt ? `${r}px` : `${tl}px ${tr}px ${br}px ${bl}px`;
     this.root.classList.toggle("floating", lift > 0.05);
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
@@ -921,7 +1072,8 @@ export class Island {
       g.setPointerCapture(e.pointerId);
       const chat = State.view === "prompt";
       const h = chat ? geo.chatH || chatPromptHeight(State.chatHistory.length) : geo.hubH;
-      this.resizing = { sx: e.screenX, sy: e.screenY, w: geo.expandedW, h, chat };
+      const initialW = onSide() ? geo.sideW : geo.expandedW;
+      this.resizing = { sx: e.screenX, sy: e.screenY, w: initialW, h, chat };
       State.isPinned = true;
       this.fsm.pinned = true;
       this.root.classList.add("resizing");
@@ -931,6 +1083,7 @@ export class Island {
       const r = this.resizing;
       if (!r) return;
       const L = geo.layout;
+      const bounds = getOrientationBounds(L.edge);
       const dx = e.screenX - r.sx;
       const dy = e.screenY - r.sy;
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
@@ -938,13 +1091,18 @@ export class Island {
       if (r.chat && geo.chatH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
       const initialAspect = r.w / r.h;
       const rawW = Math.round(r.w + dw);
-      const clampedW = Math.min(1100, Math.max(780, rawW));
+      const clampedW = Math.min(bounds.max.w, Math.max(bounds.min.w, rawW));
       const uniformH = Math.round(clampedW / initialAspect);
-      const clampedH = Math.min(640, Math.max(400, uniformH));
-      geo.expandedW = Math.round(clampedH * initialAspect);
-      if (onSide()) geo.sideW = Math.round(clampedH * initialAspect);
-      if (r.chat) geo.chatH = clampedH;
-      else geo.hubH = clampedH;
+      const clampedH = Math.min(bounds.max.h, Math.max(bounds.min.h, uniformH));
+      const finalW = Math.round(clampedH * initialAspect);
+      if (onSide()) {
+        geo.sideW = clampedW;
+        geo.hubH = clampedH;
+      } else {
+        geo.expandedW = finalW;
+        if (r.chat) geo.chatH = clampedH;
+        else geo.hubH = clampedH;
+      }
       this.animateGeometry(false);
     });
     const end = (e: PointerEvent) => {
@@ -1250,7 +1408,10 @@ export class Island {
 
     this.width.step(dt, nowMs);
     this.height.step(dt, nowMs);
-    this.radius.step(dt, nowMs);
+    this.cornerTL.step(dt, nowMs);
+    this.cornerTR.step(dt, nowMs);
+    this.cornerBR.step(dt, nowMs);
+    this.cornerBL.step(dt, nowMs);
     this.applyGeometry();
 
     if (this.dirty) {
@@ -1294,7 +1455,9 @@ export class Island {
     // sweep — so a hidden island went on burning frames in exactly the states it
     // spends most of its life in. Geometry still has to finish retracting.
     const settling =
-      this.width.animating || this.height.animating || this.radius.animating;
+      this.width.animating || this.height.animating ||
+      this.cornerTL.animating || this.cornerTR.animating ||
+      this.cornerBR.animating || this.cornerBL.animating;
     const busy = State.mode === "hidden"
       ? settling
       : settling ||
@@ -1311,7 +1474,7 @@ export class Island {
 
   private updateBotTargets() {
     const p = this.moveAt
-      ? { cx: DROPLET / 2, cy: DROPLET / 2, diameter: DROPLET / 2, opacity: 1 }
+      ? { cx: this.width.value / 2, cy: this.height.value / 2, diameter: DROPLET / 2, opacity: 1 }
       : botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
     this.botCx.target = p.cx;
     this.botCy.target = p.cy;

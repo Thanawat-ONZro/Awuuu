@@ -10,15 +10,14 @@ import type { ViewActions, ViewHost } from "./views";
 
 export function buildDashboardView(_actions: ViewActions): ViewHost {
   const dateWidget = createDateWidget();
-  const mediaWidget = createNowPlayingWidget();
+  const mediaWidget = createNowPlayingWidget((active) => {
+    grid.classList.toggle("has-media", active);
+  });
   const noteWidget = createScratchpadWidget();
   const todoWidget = createTodoWidget();
   const grid = h(
     "div",
-    {
-      class: "dashboard-grid",
-      style: "display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px",
-    },
+    { class: "dashboard-grid" },
     dateWidget.el,
     mediaWidget.el,
     noteWidget.el,

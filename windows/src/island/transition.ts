@@ -57,17 +57,32 @@ export function animateView(el: HTMLElement, entering: boolean, dir: Direction) 
 }
 
 /** Moves the tab highlight; it stretches while it travels. */
-export function moveThumb(thumb: HTMLElement, fromX: number, toX: number) {
-  thumb.style.transform = `translateX(${toX}px)`;
-  if (fromX === toX || reduced() || typeof thumb.animate !== "function") return;
-  thumb.getAnimations().forEach((a) => a.cancel());
-  const mid = (fromX + toX) / 2;
-  thumb.animate(
-    [
-      { transform: `translateX(${fromX}px) scaleX(1)` },
-      { transform: `translateX(${mid}px) scaleX(${1 + Math.min(0.6, Math.abs(toX - fromX) / 120)})`, offset: 0.45 },
-      { transform: `translateX(${toX}px) scaleX(1)` },
-    ],
-    { duration: MOTION.base + 20, easing: MOTION.spring },
-  );
+export function moveThumb(thumb: HTMLElement, from: number, to: number, vertical = false) {
+  if (vertical) {
+    thumb.style.transform = `translateY(${to}px)`;
+    if (from === to || reduced() || typeof thumb.animate !== "function") return;
+    thumb.getAnimations().forEach((a) => a.cancel());
+    const mid = (from + to) / 2;
+    thumb.animate(
+      [
+        { transform: `translateY(${from}px) scaleY(1)` },
+        { transform: `translateY(${mid}px) scaleY(${1 + Math.min(0.6, Math.abs(to - from) / 120)})`, offset: 0.45 },
+        { transform: `translateY(${to}px) scaleY(1)` },
+      ],
+      { duration: MOTION.base + 20, easing: MOTION.spring },
+    );
+  } else {
+    thumb.style.transform = `translateX(${to}px)`;
+    if (from === to || reduced() || typeof thumb.animate !== "function") return;
+    thumb.getAnimations().forEach((a) => a.cancel());
+    const mid = (from + to) / 2;
+    thumb.animate(
+      [
+        { transform: `translateX(${from}px) scaleX(1)` },
+        { transform: `translateX(${mid}px) scaleX(${1 + Math.min(0.6, Math.abs(to - from) / 120)})`, offset: 0.45 },
+        { transform: `translateX(${to}px) scaleX(1)` },
+      ],
+      { duration: MOTION.base + 20, easing: MOTION.spring },
+    );
+  }
 }

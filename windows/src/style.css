@@ -82,7 +82,9 @@ body {
   border-top: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: border-color var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1),
+              background-color var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 #island:hover {
@@ -215,7 +217,7 @@ body {
   grid-auto-rows: 13px;
   gap: 3px;
   pointer-events: none;
-  transition: opacity 0.25s ease-in-out;
+  transition: opacity var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* A mini Mochi: the slot is the body, the canvas is larger and overflows it so
@@ -242,7 +244,7 @@ body {
   padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
-  transition: opacity 0.2s ease-in-out;
+  transition: opacity var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 #header {
@@ -373,7 +375,16 @@ body {
   z-index: 1;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
-  transition: none;
+  transition: border-color var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Stage 2 on: the DOM body becomes transparent while carrying.
+   The WebGL SDF canvas behind #island draws the fill, rim, and shadow. */
+#root.moving.liquid-active #island {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 /* A droplet carries nothing but the dog. */
@@ -381,6 +392,7 @@ body {
 #root.moving #mini-grid {
   opacity: 0;
   pointer-events: none;
+  transition: opacity var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 #root.moving #wake-strip {
@@ -394,8 +406,51 @@ body {
   padding: 10px 10px 8px;
 }
 
-/* ── Docked to a side: an upright tab/pill against the edge; open, the same
-   card as on the top edge, floating beside it (island.ts islandRect). ────── */
+/* ── Docked to a side: an upright tab/pill against the edge; open, upright header ── */
+
+#root[data-edge="left"] #content {
+  flex-direction: row;
+  padding: 10px 10px 10px 8px;
+}
+
+#root[data-edge="right"] #content {
+  flex-direction: row-reverse;
+  padding: 10px 8px 10px 10px;
+}
+
+#root[data-edge="left"] #header,
+#root[data-edge="right"] #header {
+  height: 100%;
+  width: 34px;
+  flex: 0 0 34px;
+  flex-direction: column;
+  margin: -10px 0;
+  padding: 0;
+}
+
+#root[data-edge="left"] .tabs,
+#root[data-edge="right"] .tabs {
+  flex-direction: column;
+  padding-left: 0;
+  padding-top: 14px;
+  gap: 5px;
+}
+
+#root[data-edge="left"] .header-actions,
+#root[data-edge="right"] .header-actions {
+  margin-left: 0;
+  margin-top: auto;
+  flex-direction: column;
+  padding-right: 0;
+  padding-bottom: 10px;
+}
+
+#root[data-edge="left"] .grip,
+#root[data-edge="right"] .grip {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
 
 #root[data-edge="left"] #island,
 #root[data-edge="right"] #island {
@@ -2221,6 +2276,10 @@ input[type="range"]::-webkit-slider-thumb {
 .card-shell {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
 }
 
 .card-shell .card-header {
@@ -2229,6 +2288,7 @@ input[type="range"]::-webkit-slider-thumb {
   justify-content: space-between;
   padding: 10px 16px 4px 16px;
   min-height: 28px;
+  flex: 0 0 auto;
 }
 
 .card-shell .card-header-left {
@@ -2246,19 +2306,48 @@ input[type="range"]::-webkit-slider-thumb {
 .card-shell .card-body {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 4px 12px 12px 12px;
+  padding: 6px 14px 14px 14px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.dashboard-view .card {
+.dashboard-view,
+.note-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.dashboard-view .card,
+.note-view .card {
   height: 100%;
 }
 
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1.8fr);
   gap: 10px;
   height: 100%;
+  width: 100%;
+  min-height: 0;
+}
+
+.dashboard-grid:not(.has-media) .widget-date {
+  grid-column: 1 / -1;
+}
+
+#root[data-edge="left"] .dashboard-grid,
+#root[data-edge="right"] .dashboard-grid {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+#root[data-edge="left"] .dashboard-grid:not(.has-media) .widget-date,
+#root[data-edge="right"] .dashboard-grid:not(.has-media) .widget-date {
+  grid-column: 1;
 }
 
 .widget {
@@ -2270,7 +2359,20 @@ input[type="range"]::-webkit-slider-thumb {
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  min-height: 76px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.note-view .card-body {
+  padding: 10px 16px 14px 96px;
+}
+
+.note-view .note-text {
+  font: 500 13px/1.5 var(--font);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .widget-date .widget-time {

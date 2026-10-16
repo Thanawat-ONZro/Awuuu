@@ -15,7 +15,7 @@ export function createDateWidget(refDate = new Date()) {
   return { el, update };
 }
 
-export function createNowPlayingWidget() {
+export function createNowPlayingWidget(onActiveChange?: (active: boolean) => void) {
   const titleEl = h("div", { class: "track-title" });
   const artistEl = h("div", { class: "track-artist" });
   const el = h(
@@ -28,11 +28,13 @@ export function createNowPlayingWidget() {
     const info = await Bridge.nowPlaying();
     if (!info || !info.active) {
       el.style.display = "none";
+      onActiveChange?.(false);
       return;
     }
     titleEl.textContent = info.title;
     artistEl.textContent = info.artist;
     el.style.display = "flex";
+    onActiveChange?.(true);
   }
   return { el, refresh };
 }
