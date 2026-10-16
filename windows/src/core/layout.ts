@@ -72,16 +72,16 @@ export interface IslandLayout {
 export interface RectSize { w: number; h: number; }
 export interface OrientationSpec { min: RectSize; default: RectSize; max: RectSize; }
 export const ORIENTATION_GEOMETRY: Record<"landscape" | "side", OrientationSpec> = {
-  landscape: { min: { w: 580, h: 260 }, default: { w: 680, h: 300 }, max: { w: 1100, h: 640 } },
-  side: { min: { w: 260, h: 420 }, default: { w: 320, h: 520 }, max: { w: 480, h: 800 } },
+  landscape: { min: { w: 780, h: 400 }, default: { w: 900, h: 460 }, max: { w: 1100, h: 640 } },
+  side: { min: { w: 320, h: 480 }, default: { w: 380, h: 560 }, max: { w: 520, h: 800 } },
 };
 export function getOrientationBounds(edge: "top" | "bottom" | "left" | "right"): OrientationSpec {
   return (edge === "left" || edge === "right") ? ORIENTATION_GEOMETRY.side : ORIENTATION_GEOMETRY.landscape;
 }
-export const EXPANDED_W = 680;
+export const EXPANDED_W = 900;
 
 export const DEFAULT_LAYOUT: IslandLayout = {
-  anchorX: 380, anchorY: 170, h: "center", v: "top", edge: "top", vertical: false, panelW: 760, panelH: 340,
+  anchorX: 500, anchorY: 230, h: "center", v: "top", edge: "top", vertical: false, panelW: 980, panelH: 490,
 };
 
 /** The header is a 34 px row: along the top, or along the bottom when the
@@ -110,11 +110,13 @@ export const SIDE_GAP = 10;
 export const geo = {
   layout: { ...DEFAULT_LAYOUT },
   /** Width of the open island. */
-  expandedW: 680,
+  expandedW: 900,
   /** Height of the Agents hub. */
-  hubH: 300,
+  hubH: 460,
   /** Height of the chat; 0 = it grows with the conversation. */
   chatH: 0,
+  /** Width of the open island while docked to a screen side. */
+  sideW: 380,
 };
 
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
@@ -164,7 +166,8 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
 
 /** Chat view grows with the conversation — IslandContainer.chatPromptHeight. */
 export function chatPromptHeight(messageCount: number): number {
-  return Math.min(360, 260 + messageCount * 25);
+  const spec = ORIENTATION_GEOMETRY.landscape;
+  return Math.min(spec.max.h, Math.max(spec.min.h, 300 + messageCount * 28));
 }
 
 /** Height of the header strip above every expanded view's card. */
@@ -199,10 +202,6 @@ export function islandSize(
     case "compact":
       return onSide() ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
-      if (onSide()) {
-        const spec = ORIENTATION_GEOMETRY.side;
-        return { w: spec.default.w, h: spec.default.h };
-      }
       const h =
         view === "prompt"
           ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
@@ -211,6 +210,13 @@ export function islandSize(
           : view === "agents" || view === "diff" || view === "overview"
           ? geo.hubH
           : VIEW_LAYOUTS[view].height;
+      if (onSide()) {
+        // Docked to a side the card keeps the height its own view asks for; only
+        // the width comes from the side geometry, so a view is never stretched
+        // into a fixed slab.
+        const spec = ORIENTATION_GEOMETRY.side;
+        return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))), h };
+      }
       return { w: geo.expandedW, h };
     }
   }

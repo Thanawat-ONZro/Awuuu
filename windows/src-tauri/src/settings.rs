@@ -195,9 +195,9 @@ fn default_log_lines() -> u32 {
     40
 }
 
-pub const ISLAND_WIDTH: (f64, f64, f64) = (580.0, 680.0, 1100.0);
-pub const HUB_HEIGHT: (f64, f64, f64) = (260.0, 300.0, 640.0);
-pub const CHAT_HEIGHT: (f64, f64) = (260.0, 640.0);
+pub const ISLAND_WIDTH: (f64, f64, f64) = (780.0, 900.0, 1100.0);
+pub const HUB_HEIGHT: (f64, f64, f64) = (400.0, 460.0, 640.0);
+pub const CHAT_HEIGHT: (f64, f64) = (400.0, 640.0);
 
 fn default_island_width() -> f64 {
     ISLAND_WIDTH.1
