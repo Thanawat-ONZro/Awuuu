@@ -391,9 +391,11 @@ class AppState {
     return this._view;
   }
   set view(val: IslandViewName) {
-    this._view = val;
-    if (val === "overview" || val === "agents" || val === "dashboard") {
-      this.lastHomeView = val === "dashboard" ? "overview" : val;
+    // The Tools page was merged into Home; a stored "dashboard" (an old setting,
+    // a replayed history entry, a hook payload) would have no view to show.
+    this._view = val === "dashboard" ? "overview" : val;
+    if (this._view === "overview" || this._view === "agents") {
+      this.lastHomeView = this._view;
     }
   }
 

@@ -2,6 +2,7 @@ import "./setup-dom";
 import { describe, it, expect, vi } from "vitest";
 import { VIEW_LAYOUTS, islandSize, geo } from "../src/core/layout";
 import { buildDashboardView, buildToolsPanel } from "../src/views/dashboard";
+import { defaultIslandView } from "../src/core/modules";
 import { buildHeader, buildViews } from "../src/views/views";
 import { State } from "../src/core/state";
 import { t } from "../src/i18n/i18n";
@@ -201,5 +202,20 @@ describe("Dashboard Island View & Merged Home Page", () => {
     geo.layout.edge = "top";
     geo.layout.vertical = false;
     geo.expandedW = 1000;
+  });
+
+  it("resolves a stored dashboard view to Home, which is the view that exists", () => {
+    // The Tools page was merged into Home: nothing renders for "dashboard", so a
+    // stale value (old setting, replayed history, hook payload) must land on Home.
+    State.view = "dashboard";
+    expect(State.view).toBe("overview");
+
+    State.view = "agents";
+    expect(State.lastHomeView).toBe("agents");
+    State.view = "overview";
+
+    // A remembered "dashboard" from a stored session also opens Home.
+    expect(defaultIslandView({ approvals: 0, preference: "last", lastView: "dashboard" })).toBe("overview");
+    expect(defaultIslandView({ approvals: 0, preference: "dashboard" })).toBe("overview");
   });
 });
