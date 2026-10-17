@@ -2447,6 +2447,7 @@ input[type="range"]::-webkit-slider-thumb {
   align-content: start;
   gap: 10px;
   min-height: 100%;
+  flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -2497,8 +2498,7 @@ input[type="range"]::-webkit-slider-thumb {
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  min-height: 0;
-  height: 100%;
+  min-height: 64px;
   box-sizing: border-box;
 }
 
