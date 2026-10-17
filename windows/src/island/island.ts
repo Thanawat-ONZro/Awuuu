@@ -105,7 +105,7 @@ export class Island {
   /** Set while the island is being moved (move.ts). */
   private moveAt: { x: number; y: number; transform: string } | null = null;
   private resizeGrip!: HTMLElement;
-  private resizing: { sx: number; sy: number; w: number; h: number; chat: boolean } | null = null;
+  private resizing: { sx: number; sy: number; w: number; h: number; chat: boolean; agents: boolean } | null = null;
   private notchNub!: HTMLElement;
 
   private header!: ViewHost;
@@ -1125,9 +1125,14 @@ export class Island {
       e.stopPropagation();
       g.setPointerCapture(e.pointerId);
       const chat = State.view === "prompt";
-      const h = chat ? geo.chatH || chatPromptHeight(State.chatHistory.length) : geo.hubH;
+      const agents = State.view === "agents";
+      const h = chat
+        ? geo.chatH || chatPromptHeight(State.chatHistory.length)
+        : agents
+        ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
+        : geo.hubH;
       const initialW = onSide() ? geo.sideW : geo.expandedW;
-      this.resizing = { sx: e.screenX, sy: e.screenY, w: initialW, h, chat };
+      this.resizing = { sx: e.screenX, sy: e.screenY, w: initialW, h, chat, agents };
       State.isPinned = true;
       this.fsm.pinned = true;
       this.root.classList.add("resizing");
@@ -1143,6 +1148,7 @@ export class Island {
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
       // A click on the grip is not a resize: the chat keeps growing by itself.
       if (r.chat && geo.chatH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
+      if (r.agents && geo.agentsH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
       const dh = L.v === "bottom" ? -dy : dy;
       const rawW = Math.round(r.w + dw);
       const rawH = Math.round(r.h + dh);
@@ -1150,10 +1156,13 @@ export class Island {
       const clampedH = Math.min(bounds.max.h, Math.max(bounds.min.h, rawH));
       if (onSide()) {
         geo.sideW = clampedW;
-        geo.hubH = clampedH;
+        if (r.chat) geo.chatH = clampedH;
+        else if (r.agents) geo.agentsH = clampedH;
+        else geo.hubH = clampedH;
       } else {
         geo.expandedW = clampedW;
         if (r.chat) geo.chatH = clampedH;
+        else if (r.agents) geo.agentsH = clampedH;
         else geo.hubH = clampedH;
       }
       this.animateGeometry(false);
@@ -1168,14 +1177,23 @@ export class Island {
       State.settings.islandWidth = geo.expandedW;
       State.settings.hubHeight = geo.hubH;
       State.settings.chatHeight = geo.chatH;
+      State.settings.agentsHeight = geo.agentsH;
       void Bridge.saveSettings(State.settings);
     };
     g.addEventListener("pointerup", end);
     g.addEventListener("pointercancel", end);
     g.addEventListener("dblclick", () => {
-      if (State.view !== "prompt" || geo.chatH === 0) return;
-      geo.chatH = 0;
-      State.settings.chatHeight = 0;
+      if (State.view === "prompt") {
+        if (geo.chatH === 0) return;
+        geo.chatH = 0;
+        State.settings.chatHeight = 0;
+      } else if (State.view === "agents") {
+        if (geo.agentsH === 0) return;
+        geo.agentsH = 0;
+        State.settings.agentsHeight = 0;
+      } else {
+        return;
+      }
       void Bridge.saveSettings(State.settings);
       this.animateGeometry(true);
     });
@@ -1763,6 +1781,7 @@ export class Island {
     geo.expandedW = State.settings.islandWidth ?? 1000;
     geo.hubH = State.settings.hubHeight ?? 360;
     geo.chatH = State.settings.chatHeight ?? 0;
+    geo.agentsH = State.settings.agentsHeight ?? 0;
     // The Appearance page edits the dog live; the frame loop picks it up.
     this.ownLook = normalizeLook(State.settings.dog);
     setOwnerLook(this.ownLook);

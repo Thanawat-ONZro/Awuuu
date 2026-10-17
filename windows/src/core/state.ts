@@ -246,6 +246,8 @@ export interface Settings {
   historyDays: number;
   /** Height of the open chat, px (0 = grows with the conversation). */
   chatHeight: number;
+  /** Height of the agents card, px (0 = defaults to hubHeight). */
+  agentsHeight: number;
   /** How Awuuu looks (mochi/dog.ts DogLook); null = the classic Shiba. */
   dog: Record<string, unknown> | null;
   /** Dog outfit: "auto" (by season), "none" or an outfit id (mochi/outfits.ts). */
@@ -332,6 +334,7 @@ export const DEFAULT_SETTINGS: Settings = {
   historyEnabled: true,
   historyDays: 7,
   chatHeight: 0,
+  agentsHeight: 0,
   dog: null,
   outfit: "auto",
   googleClientId: "",

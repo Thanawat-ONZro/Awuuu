@@ -113,6 +113,9 @@ pub struct Settings {
     /// Height of the open chat, logical px (0 = grows with the conversation).
     #[serde(default)]
     pub chat_height: f64,
+    /// Height of the agents card, logical px (0 = defaults to hub_height).
+    #[serde(default)]
+    pub agents_height: f64,
     /// How Awuuu looks (coat, ears, tail…). The front end owns the shape.
     #[serde(default)]
     pub dog: serde_json::Value,
@@ -234,6 +237,7 @@ fn default_log_lines() -> u32 {
 pub const ISLAND_WIDTH: (f64, f64, f64) = (800.0, 1000.0, 1100.0);
 pub const HUB_HEIGHT: (f64, f64, f64) = (320.0, 360.0, 440.0);
 pub const CHAT_HEIGHT: (f64, f64) = (320.0, 440.0);
+pub const AGENTS_HEIGHT: (f64, f64) = (320.0, 440.0);
 
 fn default_island_width() -> f64 {
     ISLAND_WIDTH.1
@@ -250,7 +254,8 @@ impl Settings {
         let w = self.island_width.clamp(ISLAND_WIDTH.0, ISLAND_WIDTH.2);
         let hub = self.hub_height.clamp(HUB_HEIGHT.0, HUB_HEIGHT.2);
         let chat = if self.chat_height > 0.0 { self.chat_height.clamp(CHAT_HEIGHT.0, CHAT_HEIGHT.1) } else { 0.0 };
-        ((w + 80.0).max(760.0), (hub.max(chat) + 30.0).max(340.0))
+        let agents = if self.agents_height > 0.0 { self.agents_height.clamp(AGENTS_HEIGHT.0, AGENTS_HEIGHT.1) } else { 0.0 };
+        ((w + 80.0).max(760.0), (hub.max(chat).max(agents) + 30.0).max(340.0))
     }
 }
 
@@ -309,6 +314,7 @@ impl Default for Settings {
             history_enabled: true,
             history_days: default_history_days(),
             chat_height: 0.0,
+            agents_height: 0.0,
             dog: serde_json::Value::Null,
             outfit: default_outfit(),
             google_client_id: String::new(),
@@ -392,4 +398,26 @@ mod tests {
         assert!(!s.desktop_dog.on_desktop);
         assert!(s.desktop_dog.spots.is_empty());
     }
+
+    #[test]
+    fn older_settings_load_with_default_agents_height() {
+        let json = serde_json::to_value(Settings::default()).unwrap();
+        let mut obj = json.as_object().unwrap().clone();
+        obj.remove("agentsHeight");
+        let s: Settings = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
+        assert_eq!(s.agents_height, 0.0);
+    }
+
+    #[test]
+    fn panel_size_accounts_for_agents_height() {
+        let mut s = Settings::default();
+        assert_eq!(s.agents_height, 0.0);
+        let base_panel = s.panel_size();
+        assert_eq!(base_panel.1, 390.0);
+
+        s.agents_height = 420.0;
+        let resized_panel = s.panel_size();
+        assert_eq!(resized_panel.1, 450.0);
+    }
 }
+

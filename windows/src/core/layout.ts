@@ -115,6 +115,8 @@ export const geo = {
   hubH: 360,
   /** Height of the chat; 0 = it grows with the conversation. */
   chatH: 0,
+  /** Height of the agents card; 0 = defaults to hubH. */
+  agentsH: 0,
   /** Width of the open island while docked to a screen side. */
   sideW: 380,
 };
@@ -136,6 +138,9 @@ export const NOTCH_TAB_H = 10;
 export const WAKE_STRIP_W = 140;
 export const WAKE_STRIP_H = 14;
 
+/** Default open height for the chat prompt view. */
+export const CHAT_DEFAULT_H = 400;
+
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   overview: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   agents: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
@@ -151,7 +156,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   uploading: { height: 220, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
   choose: { height: 220, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
   mail: { height: 260, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
-  prompt: { height: 400, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
+  prompt: { height: CHAT_DEFAULT_H, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   searching: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   result: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   note: { height: 360, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
@@ -167,7 +172,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
 /** Chat view grows with the conversation — IslandContainer.chatPromptHeight. */
 export function chatPromptHeight(messageCount: number): number {
   const spec = ORIENTATION_GEOMETRY.landscape;
-  return Math.min(spec.max.h, Math.max(spec.min.h, 300 + messageCount * 28));
+  return Math.min(spec.max.h, Math.max(CHAT_DEFAULT_H, 300 + messageCount * 28));
 }
 
 /** Height of the header strip above every expanded view's card. */
@@ -209,7 +214,9 @@ export function islandSize(
           ? geo.chatH > 0 ? geo.chatH : chatPromptHeight(chatCount)
           : safeView === "approval"
           ? approvalHeight(approvalFit)
-          : safeView === "agents" || safeView === "diff" || safeView === "overview" || safeView === "dashboard"
+          : safeView === "agents"
+          ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
+          : safeView === "diff" || safeView === "overview" || safeView === "dashboard"
           ? geo.hubH
           : (VIEW_LAYOUTS[safeView]?.height ?? geo.hubH);
       if (onSide()) {

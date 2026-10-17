@@ -11,8 +11,7 @@ describe("Derived view heights", () => {
     expect(approvalHeight(0)).toBe(200);
   });
   it("scales chatPromptHeight inside the landscape bounds", () => {
-    const min = ORIENTATION_GEOMETRY.landscape.min.h;
-    expect(chatPromptHeight(0)).toBe(min);
+    expect(chatPromptHeight(0)).toBe(400);
     expect(chatPromptHeight(5)).toBe(300 + 5 * 28);
     expect(chatPromptHeight(100)).toBe(ORIENTATION_GEOMETRY.landscape.max.h);
   });

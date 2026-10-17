@@ -15,6 +15,8 @@ import {
   VIEW_LAYOUTS,
   islandSize,
   geo,
+  CHAT_DEFAULT_H,
+  chatPromptHeight,
   type IslandViewName,
   type IslandMode,
 } from "../src/core/layout";
@@ -183,4 +185,51 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     // Maximum clamping (1100x440)
     expect(drag(1000, 360, 200, 150)).toEqual({ w: 1100, h: 440 });
   });
+
+  it("WS7b: empty chat opens at 400 (CHAT_DEFAULT_H) and a long conversation stops at 440", () => {
+    expect(CHAT_DEFAULT_H).toBe(400);
+    // Empty chat (0 messages) starts at 400, not the landscape minimum (320)
+    expect(chatPromptHeight(0)).toBe(400);
+    expect(islandSize("expanded", "prompt", 0).h).toBe(400);
+
+    // Growing conversation:
+    expect(chatPromptHeight(1)).toBe(400);
+    expect(chatPromptHeight(4)).toBe(412); // 300 + 4 * 28 = 412
+    expect(chatPromptHeight(5)).toBe(440); // 300 + 5 * 28 = 440
+
+    // Long conversation stops at 440
+    expect(chatPromptHeight(10)).toBe(440);
+    expect(chatPromptHeight(100)).toBe(440);
+    expect(islandSize("expanded", "prompt", 100).h).toBe(440);
+  });
+
+  it("WS7b: dragging agents height changes agents height only, leaving dashboard, overview, and diff unchanged", () => {
+    // Baseline: geo.hubH is 360, geo.agentsH is 0
+    geo.hubH = 360;
+    (geo as any).agentsH = 0;
+
+    expect(islandSize("expanded", "agents").h).toBe(360);
+    expect(islandSize("expanded", "dashboard").h).toBe(360);
+    expect(islandSize("expanded", "overview").h).toBe(360);
+    expect(islandSize("expanded", "diff").h).toBe(360);
+
+    // Simulate dragging agents card to 415px
+    (geo as any).agentsH = 415;
+
+    // agents view reflects the dragged height
+    expect(islandSize("expanded", "agents").h).toBe(415);
+
+    // dashboard, overview, and diff MUST stay fixed at geo.hubH (360)
+    expect(islandSize("expanded", "dashboard").h).toBe(360);
+    expect(islandSize("expanded", "overview").h).toBe(360);
+    expect(islandSize("expanded", "diff").h).toBe(360);
+
+    // Resetting agentsH back to 0 restores default hubH for agents
+    (geo as any).agentsH = 0;
+    expect(islandSize("expanded", "agents").h).toBe(360);
+
+    // DEFAULT_SETTINGS has agentsHeight default of 0
+    expect((DEFAULT_SETTINGS as any).agentsHeight).toBe(0);
+  });
 });
+
