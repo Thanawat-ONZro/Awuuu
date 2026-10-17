@@ -20,7 +20,7 @@ import { planHeadline } from "../island/plan";
 import { refreshUsage } from "../island/usage";
 import { t } from "../i18n/i18n";
 import { createCardShell } from "./card-shell";
-import { buildDashboardView } from "./dashboard";
+import { buildToolsPanel } from "./dashboard";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -105,11 +105,10 @@ const ICON_DASHBOARD =
 const ICON_CLEAR = "M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5";
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: t("Overview (Integrations)"), onclick: () => go("overview") }, svg(ICONS.kennel, 13));
+  const tabHome = h("button", { class: "tab", title: t("Home"), onclick: () => go("overview") }, svg(ICONS.kennel, 13));
   const tabAgents = h("button", { class: "tab", title: t("Agent Sessions"), onclick: () => go("agents") }, svg(ICONS.terminal, 13));
   const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: t("Feed Awuuu a file"), onclick: () => go("upload") }, svg(ICONS.bone, 13));
-  const tabTools = h("button", { class: "tab", title: t("Tools"), onclick: () => go("dashboard") }, svg(ICONS.tools, 13));
 
   // Both open the Awuuu window: the gear where it was left, the list on Sessions.
   const open = (page?: string) => () => {
@@ -140,11 +139,10 @@ export function buildHeader(actions: ViewActions): ViewHost {
   // The lit-tab highlight is one element that travels, not a background per tab.
   const thumb = h("div", { class: "tab-thumb" });
   const tabEls: Record<string, HTMLElement> = {
+    overview: tabHome,
     agents: tabAgents,
     prompt: tabChat,
-    overview: tabHome,
     upload: tabDrop,
-    dashboard: tabTools,
   };
   let thumbPos: number | null = null;
   let lastSide: boolean | null = null;
@@ -157,7 +155,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, thumb, tabAgents, tabChat, tabHome, tabDrop, tabTools),
+    h("div", { class: "tabs" }, thumb, tabHome, tabAgents, tabChat, tabDrop),
     grip,
     h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
@@ -170,7 +168,6 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabAgents.classList.toggle("on", tabOf(v) === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
-      tabTools.classList.toggle("on", v === "dashboard");
       const lit = tabOf(v);
       thumb.classList.toggle("on", lit !== null);
       const side = onSide();
@@ -196,6 +193,8 @@ export function buildHeader(actions: ViewActions): ViewHost {
 // ── Overview (Integrations) ──────────────────────────────────────────────────
 
 function buildOverview(actions: ViewActions): ViewHost {
+  const tools = buildToolsPanel(actions);
+
   // Today first: one list of what needs you, from every integration. Tap a
   // pill for that integration's own card; tap Today to come back.
   const pills = h("div", { class: "hub-pills" });
@@ -208,11 +207,12 @@ function buildOverview(actions: ViewActions): ViewHost {
   });
   const weather = h("span", { class: "today-weather-slot" });
   const body = h("div", { class: "today-body" });
-  const wrap = h("div", { class: "hub today-wrap" },
+  const todayWrap = h("div", { class: "overview-today today-wrap" },
     h("div", { class: "hub-pill-row" }, todayPill, pills, weather),
     body,
   );
-  const el = h("div", { class: "view hub-view overview" }, card(null, wrap));
+  const panels = h("div", { class: "overview-panels" }, tools.el, todayWrap);
+  const el = h("div", { class: "view hub-view overview" }, card(null, panels));
 
   let pillKey = "";
   let cardKey = "";
@@ -238,6 +238,9 @@ function buildOverview(actions: ViewActions): ViewHost {
   return {
     el,
     sync() {
+      panels.classList.toggle("side-dock", onSide());
+      tools.sync();
+
       const tasks = State.tasks.filter((t) => t.isIntegration);
       const focused = State.overviewToday ? null : State.focusTask?.isIntegration ? State.focusTask : null;
       todayPill.classList.toggle("on", !focused);
@@ -281,6 +284,9 @@ function buildOverview(actions: ViewActions): ViewHost {
       }
       el.style.setProperty("--agent", focused?.color ?? "#C9956A");
       el.style.setProperty("--agent-soft", `${focused?.color ?? "#C9956A"}33`);
+    },
+    tick(nowMs) {
+      tools.tick?.(nowMs);
     },
   };
 }
@@ -939,7 +945,6 @@ export function buildViews(
   map.set("confused", buildConfused());
   map.set("note", buildNote());
   map.set("settings", buildSettings(actions));
-  map.set("dashboard", buildDashboardView(actions));
   map.set("prompt", buildPrompt(onChatHeightChange));
   map.set("upload", buildUpload());
   map.set("uploading", buildUploading());

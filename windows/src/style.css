@@ -2328,14 +2328,64 @@ input[type="range"]::-webkit-slider-thumb {
   height: 100%;
 }
 
+.overview .card,
 .dashboard-view .card,
 .note-view .card {
   height: 100%;
 }
 
+/* ── Overview: merged Tools and Today feed ─────────────────────────────── */
+
+.overview-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 14px 12px 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#root[data-edge="left"] .overview-panels,
+#root[data-edge="right"] .overview-panels,
+.overview-panels.side-dock {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.overview-tools {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-today {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overview-panels .today-wrap {
+  padding: 0;
+  height: 100%;
+  min-height: 0;
+}
+
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: minmax(0, 1fr) minmax(0, 1.8fr);
   grid-auto-rows: minmax(0, 1fr);
   gap: 10px;
@@ -2344,19 +2394,29 @@ input[type="range"]::-webkit-slider-thumb {
   min-height: 0;
 }
 
-.dashboard-grid:not(.has-media) .widget-date {
-  grid-column: 1 / -1;
+.dashboard-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.dashboard-grid.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-grid.cols-1,
 #root[data-edge="left"] .dashboard-grid,
 #root[data-edge="right"] .dashboard-grid {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1.2fr);
   grid-auto-rows: minmax(0, 1fr);
 }
 
+.dashboard-grid:not(.has-media) .widget-date {
+  grid-column: 1 / -1;
+}
+
 #root[data-edge="left"] .dashboard-grid:not(.has-media) .widget-date,
-#root[data-edge="right"] .dashboard-grid:not(.has-media) .widget-date {
+#root[data-edge="right"] .dashboard-grid:not(.has-media) .widget-date,
+.dashboard-grid.cols-1:not(.has-media) .widget-date {
   grid-column: 1;
 }
 

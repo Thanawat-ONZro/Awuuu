@@ -363,7 +363,7 @@ export function visibleModules(
 
 export interface DefaultIslandViewOptions {
   approvals: number;
-  preference: "dashboard" | "agents" | "last";
+  preference: "overview" | "dashboard" | "agents" | "last";
   lastView?: IslandViewName;
 }
 
@@ -371,7 +371,9 @@ export interface DefaultIslandViewOptions {
 export function defaultIslandView(opts: DefaultIslandViewOptions): IslandViewName {
   if (opts.approvals > 0) return "approval";
   if (opts.preference === "agents") return "agents";
-  if (opts.preference === "last" && opts.lastView) return opts.lastView;
-  return "dashboard";
+  if (opts.preference === "last" && opts.lastView) {
+    return opts.lastView === "dashboard" ? "overview" : opts.lastView;
+  }
+  return "overview";
 }
 

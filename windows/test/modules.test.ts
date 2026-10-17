@@ -37,15 +37,15 @@ describe("module registry", () => {
     expect(trans?.order).toBe(11);
   });
 
-  it("opens the island on the dashboard when nothing waits for an answer", () => {
-    expect(defaultIslandView({ approvals: 0, preference: "dashboard" })).toBe("dashboard");
-    expect(defaultIslandView({ approvals: 1, preference: "dashboard" })).toBe("approval");
+  it("opens the island on overview (Home) when nothing waits for an answer", () => {
+    expect(defaultIslandView({ approvals: 0, preference: "overview" })).toBe("overview");
+    expect(defaultIslandView({ approvals: 1, preference: "overview" })).toBe("approval");
     expect(defaultIslandView({ approvals: 0, preference: "agents" })).toBe("agents");
   });
 
   it("handles last preference with or without lastView", () => {
     expect(defaultIslandView({ approvals: 0, preference: "last", lastView: "overview" })).toBe("overview");
-    expect(defaultIslandView({ approvals: 0, preference: "last" })).toBe("dashboard");
+    expect(defaultIslandView({ approvals: 0, preference: "last" })).toBe("overview");
     expect(defaultIslandView({ approvals: 2, preference: "last", lastView: "overview" })).toBe("approval");
   });
 
@@ -61,15 +61,11 @@ describe("module registry", () => {
     State.view = "note";
     expect(State.defaultView()).toBe("agents");
 
-    // Switching to dashboard updates lastHomeView
-    State.view = "dashboard";
-    expect(State.defaultView()).toBe("dashboard");
-
-    State.view = "confused";
-    expect(State.defaultView()).toBe("dashboard");
-
     // Switching to overview updates lastHomeView
     State.view = "overview";
+    expect(State.defaultView()).toBe("overview");
+
+    State.view = "confused";
     expect(State.defaultView()).toBe("overview");
 
     State.view = "uploading";
@@ -89,9 +85,9 @@ describe("module registry", () => {
     State.removeApproval("req-1");
     expect(State.defaultView()).toBe("overview");
 
-    // Reset back to dashboard default
-    State.openIslandOn = "dashboard";
-    State.view = "dashboard";
+    // Reset back to overview default
+    State.openIslandOn = "overview";
+    State.view = "overview";
   });
 });
 

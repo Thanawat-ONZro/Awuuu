@@ -180,7 +180,7 @@ export function buildChoose(actions: ViewActions): ViewHost {
       }
       State.droppedFiles = [];
       State.dropError = null;
-      actions.setView("dashboard");
+      actions.setView("overview");
     },
   });
   const cancel = () => {

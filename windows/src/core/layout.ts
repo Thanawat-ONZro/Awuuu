@@ -142,7 +142,7 @@ export const WAKE_STRIP_H = 14;
 export const CHAT_DEFAULT_H = 400;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  overview: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
   agents: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   diff: { height: 360, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
   empty: { height: 200, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
@@ -270,13 +270,13 @@ function expandedBot(view: IslandViewName, islandH: number, uploadProgress: numb
     };
   }
   if (layout.botY != null) {
-    return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
+    return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: layout.botDiameter > 0 ? 1 : 0 };
   }
   // Centre of the fixed 84 pt card (8 pt top inset + 34 pt header → content at y = 42).
   const headerBottom = HEADER_BOTTOM;
   const cardH = 84;
   const cy = headerBottom + (islandH - headerBottom - cardH) / 2 + cardH / 2;
-  return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: 1 };
+  return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: layout.botDiameter > 0 ? 1 : 0 };
 }
 
 export function botGlowColor(s: BotStateName): string {

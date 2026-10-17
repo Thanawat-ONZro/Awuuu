@@ -264,7 +264,7 @@ export interface Settings {
    */
   desktopDog: DesktopDogPref;
   /** View shown on a fresh island expansion. */
-  openIslandOn: "dashboard" | "agents" | "last";
+  openIslandOn?: "overview" | "dashboard" | "agents" | "last";
   /** Enabled state of each module in the dashboard. */
   modules: Record<string, boolean>;
   /** Custom order of modules in the dashboard. */
@@ -342,7 +342,7 @@ export const DEFAULT_SETTINGS: Settings = {
   githubClientId: "",
   shortcuts: {},
   desktopDog: { enabled: false, onDesktop: false, spots: {}, last: "" },
-  openIslandOn: "dashboard",
+  openIslandOn: "overview",
   modules: {
     dashboard: true,
     media: true,
@@ -384,16 +384,16 @@ type Listener = () => void;
 
 class AppState {
   mode: IslandMode = "hidden";
-  private _view: IslandViewName = "dashboard";
-  lastHomeView: IslandViewName = "dashboard";
+  private _view: IslandViewName = "overview";
+  lastHomeView: IslandViewName = "overview";
 
   get view(): IslandViewName {
     return this._view;
   }
   set view(val: IslandViewName) {
     this._view = val;
-    if (val === "dashboard" || val === "agents" || val === "overview") {
-      this.lastHomeView = val;
+    if (val === "overview" || val === "agents" || val === "dashboard") {
+      this.lastHomeView = val === "dashboard" ? "overview" : val;
     }
   }
 
@@ -657,11 +657,11 @@ class AppState {
     this.notify();
   }
 
-  get openIslandOn(): "dashboard" | "agents" | "last" {
-    return this.settings.openIslandOn ?? "dashboard";
+  get openIslandOn(): "overview" | "dashboard" | "agents" | "last" {
+    return (this.settings.openIslandOn as any) ?? "overview";
   }
-  set openIslandOn(val: "dashboard" | "agents" | "last") {
-    this.settings.openIslandOn = val;
+  set openIslandOn(val: "overview" | "dashboard" | "agents" | "last") {
+    this.settings.openIslandOn = val as any;
     this.notify();
   }
 

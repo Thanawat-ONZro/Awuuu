@@ -516,7 +516,7 @@ export class Island {
           else this.alert(State.defaultView(), true);
           break;
         case "openDashboard":
-          this.alert("dashboard", true);
+          this.alert("overview", true);
           break;
         case "toggleDesktopDog":
           this.desktopDog.toggle();
@@ -1860,7 +1860,7 @@ export class Island {
           );
           timerWrap.addEventListener("click", (e: Event) => {
             e.stopPropagation();
-            this.alert("dashboard", true);
+            this.alert("overview", true);
           });
           this.compactStrip.replaceChildren(timerWrap);
         }
@@ -1948,7 +1948,7 @@ export class Island {
     );
     wrap.addEventListener("click", (e: Event) => {
       e.stopPropagation();
-      this.alert("dashboard", true);
+      this.alert("overview", true);
     });
 
     this.compactStrip.replaceChildren(wrap);

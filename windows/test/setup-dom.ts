@@ -7,6 +7,7 @@ class MockElement {
   children: MockElement[] = [];
   childNodes: any[] = [];
   attributes: Record<string, string> = {};
+  dataset: Record<string, string> = {};
   value = "";
   style: any = {
     _props: {} as Record<string, string>,
@@ -115,8 +116,8 @@ class MockElement {
     if (selector.startsWith(".")) {
       const cls = selector.slice(1);
       for (const child of this.children) {
-        if (child.classList.contains(cls)) return child;
-        const found = child.querySelector(selector);
+        if (child && child.classList?.contains(cls)) return child;
+        const found = child?.querySelector?.(selector);
         if (found) return found;
       }
     }
@@ -128,8 +129,8 @@ class MockElement {
     if (selector.startsWith(".")) {
       const cls = selector.slice(1);
       for (const child of this.children) {
-        if (child.classList.contains(cls)) res.push(child);
-        res.push(...child.querySelectorAll(selector));
+        if (child && child.classList?.contains(cls)) res.push(child);
+        if (child?.querySelectorAll) res.push(...child.querySelectorAll(selector));
       }
     }
     return res;
@@ -147,5 +148,13 @@ if (typeof (globalThis as any).document === "undefined") {
     createTextNode(text: string) {
       return { nodeType: 3, textContent: text };
     },
+  };
+}
+
+if (typeof (globalThis as any).ResizeObserver === "undefined") {
+  (globalThis as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
   };
 }

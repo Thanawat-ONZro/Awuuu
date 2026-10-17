@@ -6,12 +6,12 @@ import type { IslandViewName } from "../core/layout";
 import { MOTION } from "../core/anim";
 
 /** The header tabs, left to right. */
-export const TAB_ORDER = ["agents", "prompt", "overview", "upload", "dashboard"] as const;
+export const TAB_ORDER = ["overview", "agents", "prompt", "upload"] as const;
 export type TabId = (typeof TAB_ORDER)[number];
 
 /** The tab that is lit for a view, or null for views no tab owns (alerts, notes…). */
 export function tabOf(view: IslandViewName): TabId | null {
-  if (view === "overview" || view === "empty") return "overview";
+  if (view === "overview" || view === "empty" || (view as string) === "dashboard") return "overview";
   if (view === "diff") return "agents";
   return (TAB_ORDER as readonly string[]).includes(view) ? (view as TabId) : null;
 }

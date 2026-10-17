@@ -10,9 +10,19 @@ import {
 } from "../core/modules";
 import { State } from "../core/state";
 import { t } from "../i18n/i18n";
+import { onSide, geo } from "../core/layout";
 
-export function buildDashboardView(actions: ViewActions): ViewHost {
+export interface ToolsPanelHost {
+  el: HTMLElement;
+  grid: HTMLElement;
+  sync(): void;
+  tick(nowMs: number): void;
+  dispose?(): void;
+}
+
+export function buildToolsPanel(actions: ViewActions): ToolsPanelHost {
   const grid = h("div", { class: "dashboard-grid" });
+  const el = h("div", { class: "overview-tools" }, grid);
   let hosts: { mod: ModuleDescriptor; host: ModuleHost }[] = [];
   let renderedKey = "";
   let wasOpen = false;
@@ -30,6 +40,17 @@ export function buildDashboardView(actions: ViewActions): ViewHost {
         grid.classList.toggle("has-media", activeById.get("media") === true);
       },
     };
+  }
+
+  function syncCols() {
+    const side = onSide();
+    const wide = !side && geo.expandedW >= 920;
+    const cols = side ? "1" : (wide ? "3" : "2");
+    grid.setAttribute("data-cols", cols);
+    if (grid.dataset) grid.dataset.cols = cols;
+    grid.classList.toggle("cols-3", cols === "3");
+    grid.classList.toggle("cols-2", cols === "2");
+    grid.classList.toggle("cols-1", cols === "1");
   }
 
   function updateModules(): boolean {
@@ -78,14 +99,14 @@ export function buildDashboardView(actions: ViewActions): ViewHost {
   }
 
   updateModules();
-
-  const shell = createCardShell({ title: t("Tools"), wash: "soft", body: grid });
-  const el = h("div", { class: "view dashboard-view" }, shell.el);
+  syncCols();
 
   return {
     el,
+    grid,
     sync() {
-      const open = State.mode === "expanded" && State.view === "dashboard";
+      const open = State.mode === "expanded" && (State.view === "overview" || State.view === "dashboard");
+      syncCols();
       if (!open) {
         wasOpen = false;
         return;
@@ -103,5 +124,23 @@ export function buildDashboardView(actions: ViewActions): ViewHost {
         item.host.tick?.(nowMs);
       }
     },
+    dispose() {
+      for (const item of hosts) {
+        item.host.dispose?.();
+      }
+      hosts = [];
+    },
+  };
+}
+
+export function buildDashboardView(actions: ViewActions): ViewHost {
+  const panel = buildToolsPanel(actions);
+  const shell = createCardShell({ title: t("Tools"), wash: "soft", body: panel.el });
+  const el = h("div", { class: "view dashboard-view" }, shell.el);
+
+  return {
+    el,
+    sync: () => panel.sync(),
+    tick: (nowMs) => panel.tick(nowMs),
   };
 }
