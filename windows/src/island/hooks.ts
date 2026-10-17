@@ -385,7 +385,7 @@ export function registerHookHandlers(island: Island) {
   if (!IS_TAURI) (window as unknown as { __hook: (p: HookPayload) => void }).__hook = (p) => handleHook(island, p);
 }
 
-function handleHook(island: Island, payload: HookPayload) {
+export function handleHook(island: Island, payload: HookPayload) {
   if (State.paused) {
     if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
     return;
@@ -408,8 +408,23 @@ function handleHook(island: Island, payload: HookPayload) {
   const sessionId = payload.session_id || payload.conversationId || "default";
   const session = State.getOrCreateSession(sessionId, cwd, source);
   const taskId = session.id;
-  if (payload.terminal_hwnd) session.terminalHwnd = payload.terminal_hwnd;
-  if (payload.ancestor_pids?.length) session.ancestorPids = payload.ancestor_pids;
+
+  const incomingHwnd = payload.terminal_hwnd || undefined;
+  if (session.terminalHwnd !== incomingHwnd) {
+    session.terminalHwnd = incomingHwnd;
+  }
+
+  const incomingPids = payload.ancestor_pids && payload.ancestor_pids.length > 0 ? payload.ancestor_pids : undefined;
+  const pidsDiffer =
+    (session.ancestorPids == null && incomingPids != null) ||
+    (session.ancestorPids != null && incomingPids == null) ||
+    (session.ancestorPids != null &&
+      incomingPids != null &&
+      (session.ancestorPids.length !== incomingPids.length ||
+        session.ancestorPids.some((pid, i) => pid !== incomingPids[i])));
+  if (pidsDiffer) {
+    session.ancestorPids = incomingPids;
+  }
 
   let tool = payload.tool_name ?? "";
   let input = payload.tool_input ?? {};

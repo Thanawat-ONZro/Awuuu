@@ -22,7 +22,11 @@ export function buildDiffView(actions: ViewActions): ViewHost {
   const name = h("span", { class: "diff-name" });
   const counts = h("span", { class: "diff-counts" });
   const open = h("button", { class: "diff-btn", title: t("Open in VS Code"), onclick: () => {
-    if (current) void Bridge.openInVSCode(current.path);
+    if (current) {
+      void Bridge.openInVSCode(current.path).then((ok) => {
+        if (!ok) actions.showNote(t("Couldn't open a terminal for this session."));
+      });
+    }
   } }, svg(ICONS.arrowUpRight, 12, { stroke: 2 }));
   const body = h("div", { class: "diff-body" });
   const el = h("div", { class: "view" },

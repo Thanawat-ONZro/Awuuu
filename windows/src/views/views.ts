@@ -24,6 +24,7 @@ import { buildDashboardView } from "./dashboard";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
+  showNote(msg: string): void;
   collapse(): void;
   setFocus(id: string): void;
   setAgentFocus(id: string): void;
@@ -762,7 +763,7 @@ function buildApproval(actions: ViewActions, onHeightChange: (shrinking: boolean
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
-function buildError(actions: ViewActions): ViewHost {
+export function buildError(actions: ViewActions): ViewHost {
   const who = h("div");
   const title = h("div", { class: "title", text: t("Workflow stopped.") });
   const detail = h("div", { class: "detail" });
@@ -790,7 +791,16 @@ function buildError(actions: ViewActions): ViewHost {
       } else {
         row.append(
           btn(t("Show log"), "primary", () => {
-            if (task) actions.setAgentFocus(task.id);
+            if (!task) {
+              actions.showNote(t("That session's log is no longer available."));
+              return;
+            }
+            const session = State.agentSessions.find((s) => s.id === task.id);
+            if (!session) {
+              actions.showNote(t("That session's log is no longer available."));
+              return;
+            }
+            actions.setAgentFocus(session.id);
             actions.setView("agents");
           }),
           btn(t("Open terminal"), "secondary", () => (task ? actions.focusTerminal(task) : actions.openTerminal(null))),

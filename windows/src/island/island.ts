@@ -351,6 +351,7 @@ export class Island {
   private build() {
     const actions: ViewActions = {
       setView: (v) => this.setView(v),
+      showNote: (msg) => this.showNote(msg),
       collapse: () => this.collapse(),
       setFocus: (id) => {
         State.setFocus(id);
@@ -362,11 +363,17 @@ export class Island {
       },
       openTerminal: (cwd) => {
         const path = cwd ?? State.focusedAgentSession?.sessionCwd ?? State.focusTask?.sessionCwd ?? null;
-        void Bridge.openInVSCode(path);
+        void Bridge.openInVSCode(path).then((ok) => {
+          if (!ok) this.showNote(t("Couldn't open a terminal for this session."));
+        });
       },
       focusTerminal: (task) => {
         void Bridge.focusTerminal(task.terminalHwnd ?? null, task.ancestorPids ?? []).then((ok) => {
-          if (!ok) void Bridge.openInVSCode(task.sessionCwd ?? null);
+          if (!ok) {
+            void Bridge.openInVSCode(task.sessionCwd ?? null).then((okVS) => {
+              if (!okVS) this.showNote(t("Couldn't open a terminal for this session."));
+            });
+          }
         });
       },
       beginMove: (e, el) => void this.mover.begin(e, el),
@@ -394,7 +401,11 @@ export class Island {
           integration_notion: "https://notion.so",
           integration_calcom: "https://app.cal.com/bookings",
         };
-        if (task.sessionCwd) void Bridge.openInVSCode(task.sessionCwd);
+        if (task.sessionCwd) {
+          void Bridge.openInVSCode(task.sessionCwd).then((ok) => {
+            if (!ok) this.showNote(t("Couldn't open a terminal for this session."));
+          });
+        }
         else if (task.id === "integration_n8n") void Bridge.openN8n();
         else if (urls[task.id]) void Bridge.openUrl(urls[task.id]);
       },
@@ -701,6 +712,19 @@ export class Island {
     }
   }
 
+  /** Note message: display note view for duration then restore previous view. */
+  showNote(message: string, durationMs = 2400) {
+    const prevView = State.view !== "note" ? State.view : State.defaultView();
+    State.noteMessage = message;
+    this.engine.animateMorph(0);
+    this.setView("note");
+    window.setTimeout(() => {
+      if (State.view === "note" && State.noteMessage === message) {
+        this.setView(prevView);
+      }
+    }, durationMs);
+  }
+
   /** Toast from hook/integration: pop compact for durationSec then auto-hide. */
   toast(view: IslandViewName = "overview", durationSec = State.settings.hideAfter ?? 5) {
     // Open already: don't pull the user away from what they're doing (a chat
@@ -909,13 +933,7 @@ export class Island {
       return;
     }
     UploadSeq.deactivate();
-    State.noteMessage = why;
-    this.engine.animateMorph(0);
-    this.setView("note");
-    // Only if the note is still up: the user may have moved on meanwhile.
-    window.setTimeout(() => {
-      if (State.view === "note" && State.noteMessage === why) this.setView(State.defaultView());
-    }, 2400);
+    this.showNote(why);
   }
 
   /**

@@ -298,9 +298,17 @@ fn open_in_vscode(path: Option<String>) -> bool {
             return true;
         }
     }
-    if let Some(p) = path.as_deref().filter(|p| !p.is_empty()) {
-        let _ = Command::new("explorer").arg(p).spawn();
+    let target = path
+        .as_deref()
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from));
+    if let Some(t) = target {
+        if Command::new("explorer").arg(t).spawn().is_ok() {
+            return true;
+        }
     }
+    log::line(format!("open_in_vscode path={path:?} -> false"));
     false
 }
 
