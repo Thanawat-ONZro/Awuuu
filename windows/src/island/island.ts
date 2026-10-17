@@ -582,9 +582,7 @@ export class Island {
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.greetingCanvas.width = Math.round(EXPANDED_W * dpr);
-    this.greetingCanvas.height = Math.round(150 * dpr);
-    this.greetingCanvas.style.width = `${EXPANDED_W}px`;
-    this.greetingCanvas.style.height = "150px";
+    this.greetingCanvas.height = Math.round(360 * dpr);
 
     this.liquidCanvas = h("canvas", { id: "liquid", class: "move-layer" }) as HTMLCanvasElement;
     this.liquidCanvas.style.display = "none";
@@ -629,6 +627,7 @@ export class Island {
           break;
         case "awuuu":
           this.expand("greeting");
+          this.greeting.fit(this.viewsEl, this.width.value || geo.expandedW, this.height.value || 360);
           this.greeting.start();
           break;
       }
@@ -1099,7 +1098,6 @@ export class Island {
       this.miniGrid.style.left = `${w - 40 - 14.5}px`;
       this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
     }
-    this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
 
     // Position agent column dots if active
     if (this.agentColumn.style.display !== "none") {
@@ -1551,7 +1549,16 @@ export class Island {
       const gctx = this.greetingCanvas.getContext("2d");
       if (gctx) {
         const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const w = this.width.value;
+        const hh = this.height.value;
+        const gw = Math.round(w * dpr);
+        const gh = Math.round(hh * dpr);
+        if (this.greetingCanvas.width !== gw || this.greetingCanvas.height !== gh) {
+          this.greetingCanvas.width = gw;
+          this.greetingCanvas.height = gh;
+        }
         gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.greeting.fit(this.viewsEl, w, hh);
         this.greeting.draw(gctx);
       }
     } else {
@@ -1597,7 +1604,7 @@ export class Island {
   private updateBotTargets() {
     const p = this.moveAt
       ? { cx: this.width.value / 2, cy: this.height.value / 2, diameter: DROPLET / 2, opacity: 1 }
-      : botPosition(State.mode, State.view, this.height.value, State.uploadProgress);
+      : botPosition(State.mode, State.view, this.height.value, State.uploadProgress, this.width.value);
     this.botCx.target = p.cx;
     this.botCy.target = p.cy;
     this.botSize.target = p.diameter / 0.6;

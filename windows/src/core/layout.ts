@@ -161,7 +161,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   result: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   note: { height: 360, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 200, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
-  greeting: { height: 160, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  greeting: { height: 360, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
   dashboard: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
 };
 
@@ -216,7 +216,7 @@ export function islandSize(
           ? approvalHeight(approvalFit)
           : safeView === "agents"
           ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
-          : safeView === "diff" || safeView === "overview" || safeView === "dashboard"
+          : safeView === "diff" || safeView === "overview" || safeView === "dashboard" || safeView === "greeting"
           ? geo.hubH
           : (VIEW_LAYOUTS[safeView]?.height ?? geo.hubH);
       if (onSide()) {
@@ -226,7 +226,7 @@ export function islandSize(
         const spec = ORIENTATION_GEOMETRY.side;
         return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))), h };
       }
-      const w = (safeView === "agents" || safeView === "prompt") ? geo.expandedW : EXPANDED_W;
+      const w = (safeView === "agents" || safeView === "prompt" || safeView === "greeting") ? geo.expandedW : EXPANDED_W;
       return { w, h };
     }
   }
@@ -239,12 +239,24 @@ export interface BotPlacement {
   opacity: number;
 }
 
+/**
+ * Derives the upload progress bar's X range across the island width.
+ * In the card, the track spans left: 36px to right: 110px. With the 10px card inset,
+ * the track starts at x0 = 46 and ends at x1 = islandW - 120.
+ */
+export function uploadingBarRange(islandW: number): { x0: number; x1: number } {
+  const x0 = 46;
+  const x1 = Math.max(x0, islandW - 120);
+  return { x0, x1 };
+}
+
 /** IslandRootView.botPosition — cy is measured from the island's top edge. */
 export function botPosition(
   mode: IslandMode,
   view: IslandViewName,
   islandH: number,
   uploadProgress = 0,
+  islandW?: number,
 ): BotPlacement {
   switch (mode) {
     case "hidden":
@@ -252,18 +264,26 @@ export function botPosition(
     case "compact":
       return onSide() ? { cx: 16, cy: 26, diameter: 20, opacity: 1 } : { cx: 40, cy: 16, diameter: 20, opacity: 1 };
     case "expanded": {
-      const p = expandedBot(view, islandH, uploadProgress);
+      const p = expandedBot(view, islandH, uploadProgress, islandW);
       return { ...p, cy: p.cy + edgeShiftY() };
     }
   }
 }
 
-function expandedBot(view: IslandViewName, islandH: number, uploadProgress: number): BotPlacement {
+function expandedBot(
+  view: IslandViewName,
+  islandH: number,
+  uploadProgress: number,
+  islandW?: number,
+): BotPlacement {
   const safeView = view || "overview";
   const layout = VIEW_LAYOUTS[safeView] || VIEW_LAYOUTS.overview;
+  const w = islandW ?? (onSide() ? geo.sideW : geo.expandedW);
   if (view === "uploading") {
+    const { x0, x1 } = uploadingBarRange(w);
+    const progress = Math.max(0, Math.min(1, uploadProgress));
     return {
-      cx: 36 + uploadProgress * 526,
+      cx: x0 + progress * (x1 - x0),
       cy: layout.botY ?? 103,
       diameter: layout.botDiameter,
       opacity: 1,

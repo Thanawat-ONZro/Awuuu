@@ -7,7 +7,7 @@ import {
   drawBrows, drawCollarTag, drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat,
   type EarPose, type FacePose, type Palette,
 } from "./dog";
-import { COMPACT_W, NOTCH_H, NOTCH_W } from "../core/layout";
+import { COMPACT_W, EXPANDED_W, NOTCH_H, NOTCH_W, geo } from "../core/layout";
 
 // ── Timing (mirrors greeting-v2.html `T`) ─────────────────────────────────────
 
@@ -36,15 +36,106 @@ const T = {
 
 export const GREETING_END = T.end;
 
-// ── Geometry (640×150) ────────────────────────────────────────────────────────
+// ── Geometry (following live island dimensions) ───────────────────────────────
 
-const C0 = { x: 320, y: 90 };
+export interface GreetingBox {
+  w: number;
+  h: number;
+  cardX: number;
+  cardY: number;
+  cardW: number;
+  cardH: number;
+  cx: number;
+  cy: number;
+  earY: number;
+}
+
+const box: GreetingBox = {
+  w: EXPANDED_W,
+  h: 360,
+  cardX: 190,
+  cardY: 142,
+  cardW: 620,
+  cardH: 104,
+  cx: 500,
+  cy: 194,
+  earY: 16,
+};
+
+export function setGreetingBox(
+  island: { w: number; h: number },
+  card?: { x: number; y: number; w: number; h: number },
+  edge: "top" | "bottom" | "left" | "right" = "top",
+) {
+  const w = Math.max(320, island.w);
+  const h = Math.max(150, island.h);
+  box.w = w;
+  box.h = h;
+
+  let contentX = 10;
+  let contentY = 38;
+  let contentW = w - 20;
+  let contentH = h - 48;
+
+  if (card && card.w > 0 && card.h > 0) {
+    contentX = card.x;
+    contentY = card.y;
+    contentW = card.w;
+    contentH = card.h;
+  } else {
+    if (edge === "bottom") {
+      contentX = 10;
+      contentY = 10;
+      contentW = w - 20;
+      contentH = h - 48;
+    } else if (edge === "left") {
+      contentX = 38;
+      contentY = 10;
+      contentW = w - 48;
+      contentH = h - 20;
+    } else if (edge === "right") {
+      contentX = 10;
+      contentY = 10;
+      contentW = w - 48;
+      contentH = h - 20;
+    }
+  }
+
+  box.cx = contentX + contentW / 2;
+  box.cy = contentY + contentH / 2;
+
+  let cardW = Math.min(620, contentW);
+  let cardH = Math.round(cardW * (104 / 620));
+  if (cardH > contentH) {
+    cardH = contentH;
+    cardW = Math.round(cardH * (620 / 104));
+  }
+  box.cardW = cardW;
+  box.cardH = cardH;
+  box.cardX = box.cx - cardW / 2;
+  box.cardY = box.cy - cardH / 2;
+
+  box.earY = edge === "bottom" ? h - 16 : 16;
+}
+
+export function getGreetingBox(): Readonly<GreetingBox> {
+  return box;
+}
+
+const C0 = {
+  get x() { return box.cx; },
+  get y() { return box.cy; },
+};
 const HB = 58;
 const ASP = 1.34;
 const EAR_X = 40;
-const EAR_Y = 16;
 const EAR_HB = 17;
-const CARD = { x: 10, y: 36, w: 620, h: 104 };
+const CARD = {
+  get x() { return box.cardX; },
+  get y() { return box.cardY; },
+  get w() { return box.cardW; },
+  get h() { return box.cardH; },
+};
 const CARD_R = 20;
 const SMALL_W = COMPACT_W;
 const SMALL_H = NOTCH_H;
@@ -83,13 +174,13 @@ interface Pose {
 function greetPose(t: number): Pose {
   const gx = seg(t, 0, 0.5);
   const g = Math.sin((Math.PI * gx) / 2) + 0.04 * Math.sin(Math.PI * gx) * gx;
-  const iw = lerp(NOTCH_W, 640, g);
-  const ih = lerp(NOTCH_H, 150, g);
+  const iw = lerp(NOTCH_W, box.w, g);
+  const ih = lerp(NOTCH_H, box.h, g);
 
   const gg = E.back(seg(t, 0.02, T.grow));
   const hb = lerp(3, HB, gg);
   let x = C0.x;
-  let y = lerp(16, C0.y, E.out(seg(t, 0.02, T.grow)));
+  let y = lerp(box.earY, C0.y, E.out(seg(t, 0.02, T.grow)));
   let sx = 1;
   let sy = 1;
   let tilt = 0;
@@ -162,8 +253,8 @@ function greetPose(t: number): Pose {
 function smallPose(): Pose {
   return {
     hb: EAR_HB,
-    x: 320 - SMALL_W / 2 + EAR_X,
-    y: EAR_Y,
+    x: box.cx - SMALL_W / 2 + EAR_X,
+    y: box.earY,
     sx: 1, sy: 1, tilt: 0,
     eye: "dot", open: 1, eyeRoll: 0,
     lookX: 0, lookY: 0,
@@ -542,8 +633,8 @@ const MINI_COLORS = ["#E86A6A", "#3E86E0", "#EFAE5A", "#8C73F2"];
 
 function drawMinis(x: CanvasRenderingContext2D, alpha: number) {
   if (alpha <= 0.01) return;
-  const cx = 320 + SMALL_W / 2 - 27;
-  const cy = 16;
+  const cx = box.cx + SMALL_W / 2 - 27;
+  const cy = box.earY;
   const sp = 6;
   const offsets: [number, number][] = [[-sp, -sp], [sp, -sp], [-sp, sp], [sp, sp]];
   offsets.forEach(([dx, dy], i) => {
@@ -614,12 +705,25 @@ export class Greeting {
     this.timers = [];
   }
 
+  fit(cardEl?: HTMLElement | null, islandW = EXPANDED_W, islandH = 360) {
+    const edge = geo.layout.edge;
+    if (cardEl && cardEl.offsetWidth > 0 && cardEl.offsetHeight > 0) {
+      setGreetingBox(
+        { w: islandW, h: islandH },
+        { x: cardEl.offsetLeft, y: cardEl.offsetTop, w: cardEl.offsetWidth, h: cardEl.offsetHeight },
+        edge,
+      );
+    } else {
+      setGreetingBox({ w: islandW, h: islandH }, undefined, edge);
+    }
+  }
+
   draw(x: CanvasRenderingContext2D) {
     const t = this.elapsed;
     if (!this.fired && t >= T.end && this.tc >= T.autoLeave) this.fire();
 
     const p = pose(t, this.tc);
-    x.clearRect(0, 0, 640, 150);
+    x.clearRect(0, 0, box.w, box.h);
 
     if (p.card > 0) {
       x.save();

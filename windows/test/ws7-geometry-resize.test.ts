@@ -84,7 +84,7 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     expect(VIEW_LAYOUTS.mail.height).toBe(260);
     expect(VIEW_LAYOUTS.searching.height).toBe(180);
     expect(VIEW_LAYOUTS.result.height).toBe(180);
-    expect(VIEW_LAYOUTS.greeting.height).toBe(160);
+    expect(VIEW_LAYOUTS.greeting.height).toBe(360);
   });
 
   it("enforces fixed 1000 width policy for non-resizable views", () => {
