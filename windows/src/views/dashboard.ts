@@ -17,13 +17,20 @@ export function buildDashboardView(actions: ViewActions): ViewHost {
   let renderedKey = "";
   let wasOpen = false;
 
-  const ctx: ModuleCtx = {
-    actions,
-    open: (view) => actions.setView(view),
-    onActiveChange: (active) => {
-      grid.classList.toggle("has-media", active);
-    },
-  };
+  // Several modules call onActiveChange (translation included) but only the
+  // media widget's activity should drive the .has-media grid rule, so track
+  // each module's reported state separately rather than taking the last caller's word.
+  const activeById = new Map<string, boolean>();
+  function moduleCtxFor(moduleId: string): ModuleCtx {
+    return {
+      actions,
+      open: (view) => actions.setView(view),
+      onActiveChange: (active) => {
+        activeById.set(moduleId, active);
+        grid.classList.toggle("has-media", activeById.get("media") === true);
+      },
+    };
+  }
 
   function updateModules(): boolean {
     const mods = visibleModules(State.settings.modules, State.settings.moduleOrder);
@@ -53,7 +60,7 @@ export function buildDashboardView(actions: ViewActions): ViewHost {
     };
 
     for (const mod of mods) {
-      const host = mod.build(ctx);
+      const host = mod.build(moduleCtxFor(mod.id));
       if (!host.el.classList.contains("widget")) {
         host.el.classList.add("widget", `widget-${mod.id}`);
       }
