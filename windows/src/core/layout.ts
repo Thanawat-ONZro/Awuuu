@@ -279,6 +279,62 @@ function expandedBot(view: IslandViewName, islandH: number, uploadProgress: numb
   return { cx: layout.botX, cy, diameter: layout.botDiameter, opacity: layout.botDiameter > 0 ? 1 : 0 };
 }
 
+export interface AgentDotPosition {
+  x: number;
+  y: number;
+  cx: number;
+  cy: number;
+  left: number;
+  top: number;
+  diameter: number;
+}
+
+export const AGENT_DOT_DIAMETER = 16;
+export const AGENT_COLUMN_RIGHT_CLEARANCE = 42;
+
+/**
+ * Computes agent dot position in the right-hand column (Coucou SPEC.md:60).
+ * Non-overview views put mini-bots in a right-hand column:
+ * diameter 16, x = width - 31, y = 50 + i * 24.
+ */
+export function agentColumnPosition(i: number, islandW: number, _islandH = 0): AgentDotPosition {
+  const diameter = AGENT_DOT_DIAMETER;
+  const x = islandW - 31;
+  const y = 50 + i * 24;
+  return {
+    x,
+    y,
+    cx: x,
+    cy: y,
+    left: x - diameter / 2,
+    top: y - diameter / 2,
+    diameter,
+  };
+}
+
+export const agentColumnDotPosition = agentColumnPosition;
+
+/**
+ * Determines whether top-corner notch ears should be visible.
+ * Visible ONLY when docked to the TOP edge, not moving, and top corners are square.
+ */
+export function shouldShowEars(
+  edge: "top" | "bottom" | "left" | "right",
+  isMoving: boolean,
+  tl = 0,
+  tr = 0,
+): boolean {
+  return edge === "top" && !isMoving && tl < 1 && tr < 1;
+}
+
+/**
+ * Selects agent tasks for the right-hand column (up to 4, excluding the active/focused task).
+ */
+export function getColumnAgents<T extends { id: string }>(tasks: T[], activeId?: string | null): T[] {
+  const list = activeId ? tasks.filter((t) => t.id !== activeId) : tasks.slice(1);
+  return list.slice(0, 4);
+}
+
 export function botGlowColor(s: BotStateName): string {
   switch (s) {
     case "working":

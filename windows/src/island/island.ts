@@ -8,10 +8,12 @@ import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize, getOrientationBounds,
-  type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP,} from "../core/layout";
+  type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP,
+  agentColumnPosition, shouldShowEars, getColumnAgents,
+} from "../core/layout";
 
 import { Sound } from "../core/sound";
-import { State, type PendingFile } from "../core/state";
+import { State, type AgentTask, type PendingFile } from "../core/state";
 import { BotEngine } from "../mochi/engine";
 import { setOwnerLook } from "../mochi/dog";
 import { setOutfitSelection } from "../mochi/outfits";
@@ -92,6 +94,20 @@ export class Island {
   private botGlow!: HTMLElement;
   private greetingCanvas!: HTMLCanvasElement;
   private miniGrid!: HTMLElement;
+  private agentColumn!: HTMLElement;
+  private earLeft!: HTMLElement;
+  private earRight!: HTMLElement;
+
+  get leftEarEl(): HTMLElement {
+    return this.earLeft;
+  }
+  get rightEarEl(): HTMLElement {
+    return this.earRight;
+  }
+  get agentColumnEl(): HTMLElement {
+    return this.agentColumn;
+  }
+
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
   private compactStrip!: HTMLElement;
@@ -469,6 +485,9 @@ export class Island {
     this.botCanvas = h("canvas", { id: "bot-canvas" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
+    this.agentColumn = h("div", { id: "agent-column" });
+    this.earLeft = h("div", { id: "ear-left", class: "island-ear" });
+    this.earRight = h("div", { id: "ear-right", class: "island-ear" });
     this.countdown = h("div", { id: "countdown" });
     this.compactStrip = h("div", { id: "compact-strip", style: "display:none" });
     this.resizeGrip = h("div", { id: "resize-grip", title: t("Drag to resize") });
@@ -548,12 +567,15 @@ export class Island {
     this.islandEl = h(
       "div",
       { id: "island" },
+      this.earLeft,
+      this.earRight,
       this.notchNub,
       this.clipEl,
       this.botGlow,
       this.botCanvas,
       this.compactStrip,
       this.miniGrid,
+      this.agentColumn,
       this.countdown,
       this.resizeGrip,
     );
@@ -1051,6 +1073,19 @@ export class Island {
     this.islandEl.style.top = `${rect0.y}px`;
     this.islandEl.style.bottom = "auto";
     this.islandEl.style.borderRadius = `${tl}px ${tr}px ${br}px ${bl}px`;
+
+    // Top-corner ears: visible only when docked to top edge, square top corners, not moving
+    const isMoving = !!this.moveAt || this.root.classList.contains("moving");
+    const showEars = shouldShowEars(geo.layout.edge, isMoving, tl, tr);
+    this.earLeft.style.display = showEars ? "block" : "none";
+    this.earRight.style.display = showEars ? "block" : "none";
+    if (showEars) {
+      this.earLeft.style.left = "-14px";
+      this.earLeft.style.top = "0px";
+      this.earRight.style.left = `${w}px`;
+      this.earRight.style.top = "0px";
+    }
+
     const lift = onSide() ? this.sideGap(w) / SIDE_GAP : 0;
     this.root.classList.toggle("floating", lift > 0.05);
     // These follow the island as it resizes, so they belong here rather than in
@@ -1065,6 +1100,19 @@ export class Island {
       this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
     }
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
+
+    // Position agent column dots if active
+    if (this.agentColumn.style.display !== "none") {
+      const dots = this.agentColumn.children;
+      for (let i = 0; i < dots.length; i++) {
+        const dot = dots[i] as HTMLElement;
+        const pos = agentColumnPosition(i, w, hh);
+        dot.style.left = `${pos.x}px`;
+        dot.style.top = `${pos.y}px`;
+        dot.dataset.x = `${pos.x}`;
+        dot.dataset.y = `${pos.y}`;
+      }
+    }
 
     const rect = this.islandRect();
     const p = this.pushedRect;
@@ -1722,11 +1770,60 @@ export class Island {
       }
     }
 
+    // Right-hand agent dot column (views with agentMode: "column")
+    const layout = VIEW_LAYOUTS[State.view];
+    const isColumnMode = State.mode === "expanded" && layout?.agentMode === "column";
+    const columnAgents = isColumnMode ? this.getColumnAgents() : [];
+    const hasColumnAgents = columnAgents.length > 0;
+
+    this.islandEl.classList.toggle("has-agent-column", hasColumnAgents);
+    this.agentColumn.style.display = hasColumnAgents ? "block" : "none";
+
+    if (hasColumnAgents) {
+      const key = columnAgents.map((t) => `${t.id}:${t.state}:${t.color}`).join("|");
+      if (this.agentColumn.dataset.key !== key) {
+        this.agentColumn.dataset.key = key;
+        this.agentColumn.replaceChildren();
+        const w = this.width.value;
+        const hh = this.height.value;
+        for (let i = 0; i < columnAgents.length; i++) {
+          const t = columnAgents[i];
+          const dot = createMiniBot(t, 16);
+          dot.classList.add("agent-dot");
+          const pos = agentColumnPosition(i, w, hh);
+          dot.style.left = `${pos.x}px`;
+          dot.style.top = `${pos.y}px`;
+          dot.dataset.x = `${pos.x}`;
+          dot.dataset.y = `${pos.y}`;
+          dot.title = t.name;
+          dot.onclick = (e) => {
+            e.stopPropagation();
+            const session = State.agentSessions.find((s) => s.id === t.id);
+            if (session) State.setAgentFocus(session.id);
+            State.setFocus(t.id);
+          };
+          this.agentColumn.append(dot);
+        }
+        pruneMiniBots();
+      }
+    } else {
+      if (this.agentColumn.dataset.key) {
+        this.agentColumn.dataset.key = "";
+        this.agentColumn.replaceChildren();
+        pruneMiniBots();
+      }
+    }
+
     void this.syncCompactStrip();
 
     syncMiniBotStates(State.tasks);
     this.engine.setState(this.botState());
     this.syncGlow();
+  }
+
+  private getColumnAgents(): AgentTask[] {
+    const focus = State.alertTask ?? State.focusedAgentSession ?? State.focusTask;
+    return getColumnAgents(State.tasks, focus?.id) as AgentTask[];
   }
 
   /**

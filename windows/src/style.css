@@ -91,6 +91,26 @@ body {
   border-color: rgba(255, 255, 255, 0.18);
 }
 
+/* ── Top-corner ears (notch fillets, Coucou prototype:97-99) ─────────────── */
+
+.island-ear {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#ear-left {
+  left: -14px;
+  background: radial-gradient(circle at 0 100%, transparent 13.5px, var(--bg-kibble-flat, #120f0c) 14px);
+}
+
+#ear-right {
+  background: radial-gradient(circle at 100% 100%, transparent 13.5px, var(--bg-kibble-flat, #120f0c) 14px);
+}
+
 /* Subtle notch indicator in idle/hidden state */
 #notch-nub {
   position: absolute;
@@ -234,6 +254,35 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   pointer-events: none;
+}
+
+/* ── Right-hand agent dot column (Coucou SPEC.md:60) ───────────────────────── */
+
+#agent-column {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.agent-dot {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.15s ease;
+}
+
+.agent-dot:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+/* When the column is active, the card leaves 42pt clear on the right */
+#island.has-agent-column .card {
+  margin-right: 42px;
 }
 
 /* ── Content shell (expanded) ───────────────────────────────────────────── */
