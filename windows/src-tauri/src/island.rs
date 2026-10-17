@@ -837,19 +837,28 @@ mod tests {
         assert_eq!(display_index("display:x"), None);
     }
 
+    /// The window that holds the island, so these tests follow the island's own
+    /// default size instead of hard-coding numbers that move with it.
+    fn panel() -> (f64, f64) {
+        Settings::default().panel_size()
+    }
+
     #[test]
     fn default_is_top_centre() {
+        let (pw, ph) = panel();
         let ((x, y, w, _), l) = compute(&Settings::default(), SCREEN, WORK, 1.0, false);
-        assert_eq!((x, y, w), (470.0, 0.0, 980.0));
-        assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", 490.0));
+        assert_eq!((x, y, w), ((SCREEN.w - pw) / 2.0, 0.0, pw));
+        assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", pw / 2.0));
+        assert_eq!(l.panel_h, ph);
     }
 
     #[test]
     fn slid_to_the_right_end_stays_on_screen() {
+        let (pw, _) = panel();
         let s = Settings { along: 1.0, ..Settings::default() };
         let ((x, _, w, _), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!(x + w, 1920.0);
-        assert_eq!(l.anchor_x, 980.0); // the front end keeps the island inside
+        assert_eq!(l.anchor_x, pw); // the front end keeps the island inside
     }
 
     #[test]
@@ -864,20 +873,22 @@ mod tests {
 
     #[test]
     fn open_on_a_side_is_centred_on_the_pill_with_room_to_float() {
+        let (pw, ph) = panel();
         let s = Settings { position: "left".into(), along: 0.5, ..Settings::default() };
         let ((x, y, w, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
-        assert_eq!((x, y, w, h), (0.0, 271.0, 980.0, 490.0));
-        assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", 245.0));
-        // The default island (640) plus its 10 px gap fits in the window.
-        assert!(s.island_width + 10.0 <= l.panel_w);
+        assert_eq!((x, y, w, h), (0.0, (WORK.h - ph) / 2.0, pw, ph));
+        assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", ph / 2.0));
+        // The island plus its 10 px gap fits in the window.
+        assert!(s.island_width.clamp(800.0, 1100.0) + 10.0 <= l.panel_w);
     }
 
     #[test]
     fn side_window_stays_in_the_work_area_and_says_where_the_pill_is() {
+        let (_, ph) = panel();
         let s = Settings { position: "left".into(), along: 1.0, ..Settings::default() };
         let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!(y + h, 1032.0);
-        assert_eq!(l.anchor_y, 490.0); // the front end keeps the island inside
+        assert_eq!(l.anchor_y, ph); // the front end keeps the island inside
         let top = Settings { position: "right".into(), along: 0.0, ..Settings::default() };
         let ((_, y, _, _), l) = compute(&top, SCREEN, WORK, 1.0, false);
         assert_eq!((y, l.anchor_y), (0.0, 0.0));
