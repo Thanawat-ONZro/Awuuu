@@ -59,6 +59,9 @@ pub struct Settings {
     /// City for the weather.
     #[serde(default)]
     pub weather_city: String,
+    /// Temperature unit for the weather ("c" or "f").
+    #[serde(default = "default_weather_unit")]
+    pub weather_unit: String,
     /// The Welcome page (what hooks and `aw` are) has been read.
     #[serde(default)]
     pub onboarded: bool,
@@ -131,6 +134,35 @@ pub struct Settings {
     /// older settings.json → off.
     #[serde(default)]
     pub desktop_dog: DesktopDogPref,
+    /// Fresh expansion view preference: "dashboard" | "agents" | "last".
+    #[serde(default = "default_open_island_on")]
+    pub open_island_on: String,
+    /// Dashboard modules enabled map.
+    #[serde(default)]
+    pub modules: std::collections::BTreeMap<String, bool>,
+    /// Custom ordering of dashboard modules.
+    #[serde(default)]
+    pub module_order: Vec<String>,
+    /// Default module focused or opened on dashboard.
+    #[serde(default)]
+    pub default_module: String,
+    /// Modules shown in the collapsed strip.
+    #[serde(default)]
+    pub collapsed_modules: std::collections::BTreeMap<String, bool>,
+    /// LibreTranslate endpoint.
+    #[serde(default)]
+    pub libre_translate_url: String,
+    /// Preferred translation provider.
+    #[serde(default)]
+    pub translate_provider: String,
+    #[serde(default)]
+    pub translate_source: String,
+    #[serde(default)]
+    pub translate_target: String,
+}
+
+fn default_open_island_on() -> String {
+    "dashboard".into()
 }
 
 /// `enabled` is the user's switch (Settings → General). The rest is written
@@ -161,6 +193,10 @@ pub struct ChatProvider {
     /// ".../v1" — `/chat/completions` and `/models` are appended.
     pub base_url: String,
     pub model: String,
+}
+
+fn default_weather_unit() -> String {
+    "c".into()
 }
 
 fn default_outfit() -> String {
@@ -249,6 +285,7 @@ impl Default for Settings {
             rss_feeds: Vec::new(),
             uptime_urls: Vec::new(),
             weather_city: String::new(),
+            weather_unit: default_weather_unit(),
             onboarded: false,
             hermes_model: String::new(),
             hermes_provider: String::new(),
@@ -279,6 +316,15 @@ impl Default for Settings {
             github_client_id: String::new(),
             shortcuts: Default::default(),
             desktop_dog: DesktopDogPref::default(),
+            open_island_on: default_open_island_on(),
+            modules: std::collections::BTreeMap::new(),
+            module_order: Vec::new(),
+            default_module: "dashboard".to_string(),
+            collapsed_modules: std::collections::BTreeMap::new(),
+            libre_translate_url: String::new(),
+            translate_provider: String::new(),
+            translate_source: String::new(),
+            translate_target: String::new(),
         }
     }
 }

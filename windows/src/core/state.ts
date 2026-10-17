@@ -4,6 +4,7 @@ import type { FileDiff } from "./diff";
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
 import type { AgentUsage } from "./bridge";
+import { defaultIslandView } from "./modules";
 
 export type AgentSource = "claude" | "agy" | "hermes" | "opencode" | "codex" | "custom" | "integration";
 
@@ -205,6 +206,7 @@ export interface Settings {
   rssFeeds: string[];
   uptimeUrls: string[];
   weatherCity: string;
+  weatherUnit?: "c" | "f";
   /** The Welcome page has been read. */
   onboarded: boolean;
   /** Hermes chat: model + provider for the turn ("" = Hermes' default) and effort. */
@@ -259,6 +261,24 @@ export interface Settings {
    * rest (desktop_dog.rs) and keeps its own copy when settings are saved.
    */
   desktopDog: DesktopDogPref;
+  /** View shown on a fresh island expansion. */
+  openIslandOn: "dashboard" | "agents" | "last";
+  /** Enabled state of each module in the dashboard. */
+  modules: Record<string, boolean>;
+  /** Custom order of modules in the dashboard. */
+  moduleOrder?: string[];
+  /** Default module opened or focused on the dashboard. */
+  defaultModule?: string;
+  /** Modules displayed in the collapsed strip. */
+  collapsedModules?: Record<string, boolean>;
+  /** Translation: LibreTranslate endpoint URL */
+  libreTranslateUrl?: string;
+  /** Translation: preferred provider ("" = auto) */
+  translateProvider?: string;
+  /** Translation: default source language ("auto" = auto-detect) */
+  translateSource?: string;
+  /** Translation: default target language */
+  translateTarget?: string;
 }
 
 export interface DesktopDogPref {
@@ -288,6 +308,7 @@ export const DEFAULT_SETTINGS: Settings = {
   rssFeeds: [],
   uptimeUrls: [],
   weatherCity: "",
+  weatherUnit: "c",
   onboarded: false,
   hermesModel: "",
   hermesProvider: "",
@@ -318,13 +339,64 @@ export const DEFAULT_SETTINGS: Settings = {
   githubClientId: "",
   shortcuts: {},
   desktopDog: { enabled: false, onDesktop: false, spots: {}, last: "" },
+  openIslandOn: "dashboard",
+  modules: {
+    dashboard: true,
+    media: true,
+    weather: false,
+    todo: true,
+    notes: true,
+    system: false,
+    calendar: true,
+    toggles: true,
+    shelf: true,
+    screentime: false,
+    notifications: true,
+    translation: true,
+  },
+  moduleOrder: [
+    "dashboard",
+    "media",
+    "weather",
+    "todo",
+    "notes",
+    "system",
+    "calendar",
+    "toggles",
+    "shelf",
+    "screentime",
+    "notifications",
+    "translation",
+  ],
+  defaultModule: "dashboard",
+  collapsedModules: {
+    media: true,
+    dashboard: true,
+    calendar: true,
+    weather: true,
+  },
 };
 
 type Listener = () => void;
 
 class AppState {
   mode: IslandMode = "hidden";
-  view: IslandViewName = "overview";
+  private _view: IslandViewName = "dashboard";
+  lastHomeView: IslandViewName = "dashboard";
+
+  get view(): IslandViewName {
+    return this._view;
+  }
+  set view(val: IslandViewName) {
+    this._view = val;
+    if (val === "dashboard" || val === "agents" || val === "overview") {
+      this.lastHomeView = val;
+    }
+  }
+
+  setView(view: IslandViewName) {
+    this.view = view;
+  }
 
   tasks: AgentTask[] = [];
   focusId: string | null = null;
@@ -582,9 +654,21 @@ class AppState {
     this.notify();
   }
 
+  get openIslandOn(): "dashboard" | "agents" | "last" {
+    return this.settings.openIslandOn ?? "dashboard";
+  }
+  set openIslandOn(val: "dashboard" | "agents" | "last") {
+    this.settings.openIslandOn = val;
+    this.notify();
+  }
+
   /** Opening the island always shows a request that waits for an answer first. */
   defaultView(): IslandViewName {
-    return this.approvalQueue.length > 0 ? "approval" : "agents";
+    return defaultIslandView({
+      approvals: this.approvalQueue.length,
+      preference: this.openIslandOn,
+      lastView: this.lastHomeView,
+    });
   }
 }
 

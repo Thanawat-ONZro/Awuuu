@@ -18,12 +18,13 @@ import { page as generalPage } from "./pages/general";
 import { page as shortcutsPage } from "./pages/shortcuts";
 import { page as privacyPage } from "./pages/privacy";
 import { page as aboutPage } from "./pages/about";
+import { page as modulesPage } from "./pages/modules";
 import { t } from "../i18n/i18n";
 
 export type PageId =
   | "sessions" | "stats"
   | "welcome" | "agents" | "chat" | "integrations"
-  | "appearance" | "island" | "general" | "shortcuts"
+  | "appearance" | "island" | "general" | "shortcuts" | "modules"
   | "privacy" | "about";
 
 interface PageDef {
@@ -45,6 +46,7 @@ const I = {
   island: "M3 5h18v14H3zM8 5v3a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V5",
   general: "M11 5 6.5 8.5H3.5v7h3L11 19V5zM15 9a4 4 0 0 1 0 6M17.5 6.5a7.5 7.5 0 0 1 0 11",
   shortcuts: "M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8",
+  modules: "M4 4h7v7H4V4zm11 0h5v7h-5V4zm-11 11h5v5H4v-5zm9 0h7v5h-7v-5z",
   privacy: "M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6l8-3zM9 12l2 2 4-4",
   about: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 7.5h.01",
 };
@@ -73,6 +75,7 @@ const groups = (): { title: string; pages: PageDef[] }[] => [
       { id: "island", label: t("Island"), icon: I.island, build: islandPage },
       { id: "general", label: t("Sound & behaviour"), icon: I.general, build: generalPage },
       { id: "shortcuts", label: t("Shortcuts"), icon: I.shortcuts, build: shortcutsPage },
+      { id: "modules", label: t("Modules"), icon: I.modules, build: modulesPage },
     ],
   },
   {

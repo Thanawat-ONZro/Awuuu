@@ -60,6 +60,12 @@ class MockElement {
           .filter((x) => x !== c)
           .join(" ");
       },
+      toggle: (c: string, force?: boolean) => {
+        const on = force !== undefined ? force : !this.classList.contains(c);
+        if (on) this.classList.add(c);
+        else this.classList.remove(c);
+        return on;
+      },
     };
   }
 

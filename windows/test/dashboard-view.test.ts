@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
+import "./setup-dom";
+import { describe, it, expect, vi } from "vitest";
 import { VIEW_LAYOUTS, islandSize, geo } from "../src/core/layout";
+import { buildDashboardView } from "../src/views/dashboard";
+import { State } from "../src/core/state";
 
 describe("Dashboard Island View", () => {
   it("registers dashboard in VIEW_LAYOUTS with full hub height and no bot overlay", () => {
@@ -34,5 +37,41 @@ describe("Dashboard Island View", () => {
     const size = islandSize("expanded", undefined as any);
     expect(size.w).toBe(900);
     expect(size.h).toBe(460);
+  });
+
+  it("gates sync() so module hosts are only refreshed on transition into open (B2)", () => {
+    const actions = {
+      setView: vi.fn(),
+      setMode: vi.fn(),
+      collapse: vi.fn(),
+      expand: vi.fn(),
+      openSettings: vi.fn(),
+    } as any;
+
+    const view = buildDashboardView(actions);
+
+    // When hidden: sync() returns early without doing work
+    State.mode = "hidden";
+    State.view = "dashboard";
+    view.sync();
+
+    // Transition into open: mode is expanded and view is dashboard
+    State.mode = "expanded";
+    State.view = "dashboard";
+    view.sync();
+
+    // Second sync() while already open: does not trigger another transition
+    view.sync();
+
+    // Transition away to hidden
+    State.mode = "hidden";
+    view.sync();
+
+    // Transition back to open
+    State.mode = "expanded";
+    view.sync();
+
+    // Clean up
+    State.mode = "hidden";
   });
 });

@@ -30,6 +30,9 @@ pub const KNOWN_KEYS: &[&str] = &[
     "google-account",
     "microsoft-account",
     "github-account",
+    // Translation providers (Task 12)
+    "deepl-api-key",
+    "google-translate-api-key",
 ];
 
 /// `provider-key:<id>` for a chat provider added in Settings: a short id of

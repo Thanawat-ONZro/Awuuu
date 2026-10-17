@@ -5,7 +5,7 @@ import "./core/motion.css";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
-import { State, type Settings } from "./core/state";
+import { State, DEFAULT_SETTINGS, type Settings } from "./core/state";
 import { applyAccent } from "./core/accent";
 import { setLanguage } from "./i18n/i18n";
 import { Island } from "./island/island";
@@ -30,7 +30,12 @@ async function main() {
 
   const boot = await Bridge.boot();
   if (boot) {
-    State.settings = { ...State.settings, ...boot.settings };
+    State.settings = {
+      ...State.settings,
+      ...boot.settings,
+      modules: { ...DEFAULT_SETTINGS.modules, ...(boot.settings?.modules ?? {}) },
+      collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(boot.settings?.collapsedModules ?? {}) },
+    };
   }
   setLanguage(State.settings.language);
   island.applySettings();
@@ -83,7 +88,12 @@ async function main() {
 
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
-    State.settings = { ...State.settings, ...s };
+    State.settings = {
+      ...State.settings,
+      ...s,
+      modules: { ...DEFAULT_SETTINGS.modules, ...(s?.modules ?? {}) },
+      collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(s?.collapsedModules ?? {}) },
+    };
     setLanguage(State.settings.language);
     island.applySettings();
     applyAccent(State.settings.dog);

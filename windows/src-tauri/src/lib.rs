@@ -4,7 +4,6 @@ mod adapters;
 mod claude;
 mod composio;
 mod desktop_dog;
-mod water;
 mod files;
 mod hooks;
 mod integrations;
@@ -30,6 +29,15 @@ mod usage;
 mod history;
 mod sounds;
 mod media;
+mod system;
+mod store;
+mod weather;
+mod calendar;
+mod toggles;
+mod shelf;
+mod screentime;
+mod translate;
+mod win_notifications;
 
 use std::os::windows::process::CommandExt;
 use std::process::Command;
@@ -129,9 +137,12 @@ fn set_collapsed(app: AppHandle, shared: State<Shared>, collapsed: bool) {
     shared.gate.collapsed.store(collapsed, Ordering::Relaxed);
     island::apply_geometry(&app, &settings, collapsed);
     // The wake strip must always take the mouse, and a resize invalidates the flag.
-    island::set_ignore_cursor(&app, false);
-    shared.gate.forget_ignore_state();
-    shared.gate.set_active(!collapsed);
+    // Skip if overlay/carry is active so mouse events are not re-enabled mid-drag.
+    if !shared.gate.overlay.load(Ordering::Relaxed) {
+        island::set_ignore_cursor(&app, false);
+        shared.gate.forget_ignore_state();
+        shared.gate.set_active(!collapsed);
+    }
 }
 
 /// The front end pushes the island shape; Rust decides click-through from it.
@@ -156,34 +167,14 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
     island::apply_geometry(&app, &settings, collapsed);
 }
 
-/// The grip (or Alt + press) on the island: the window becomes a full-work-area
-/// overlay so the island can be drawn being pulled off its edge. Returns the
-/// overlay's logical size and where the island window's top-left is inside it
-/// (`w, h, x, y`). `apply: false` only measures — the front end asks first,
-/// gets ready, then asks again to switch.
+/// Moving the island (see island::carry_begin): the window grows in place to side×side
+/// logical px instead of covering the display.
 #[tauri::command]
-fn island_overlay_begin(app: AppHandle, shared: State<Shared>, apply: Option<bool>) -> Option<(f64, f64, f64, f64)> {
-    let pref = shared.settings.lock().unwrap().screen.clone();
-    if apply == Some(false) {
-        return island::overlay_begin(&app, &pref, false);
-    }
-    shared.gate.overlay.store(true, Ordering::Relaxed);
-    shared.gate.forget_ignore_state();
-    let geometry = island::overlay_begin(&app, &pref, true);
-    if geometry.is_none() {
-        shared.gate.overlay.store(false, Ordering::Relaxed);
-    }
-    geometry
-}
-
-/// Moving the island (see island::carry_begin): the window shrinks to a square
-/// around the card instead of covering the display.
-#[tauri::command]
-fn island_carry_begin(app: AppHandle, shared: State<Shared>, off_x: f64, off_y: f64, side: f64, droplet: f64) -> Option<[f64; 9]> {
+fn island_carry_begin(app: AppHandle, shared: State<Shared>, side: f64) -> Option<[f64; 13]> {
     let pref = shared.settings.lock().unwrap().screen.clone();
     shared.gate.overlay.store(true, Ordering::Relaxed);
     shared.gate.forget_ignore_state();
-    let r = island::carry_begin(&app, &pref, off_x, off_y, side, droplet);
+    let r = island::carry_begin(&app, &pref, side);
     if r.is_none() {
         shared.gate.overlay.store(false, Ordering::Relaxed);
     }
@@ -191,16 +182,31 @@ fn island_carry_begin(app: AppHandle, shared: State<Shared>, off_x: f64, off_y: 
 }
 
 #[tauri::command]
-fn island_carry_step(app: AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
-    island::carry_step(&app, cx, cy)
+fn island_carry_step(app: AppHandle, x: f64, y: f64) -> Option<[f64; 3]> {
+    island::carry_step(&app, x, y)
+}
+
+/// Computes the docked window rect (physical) and Layout for a proposed edge and along,
+
+/// without applying it. Used by carry Stage 4 to morph the drop into the docked card.
+#[tauri::command]
+fn island_dock_rect(
+    app: AppHandle,
+    shared: State<Shared>,
+    edge: String,
+    along: f64,
+) -> Option<([f64; 4], island::Layout)> {
+    let settings = shared.settings.lock().unwrap().clone();
+    let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
+    island::dock_rect(&app, &settings, &edge, along, collapsed)
 }
 
 /// Released: dock to `edge` at `along` (the front end already animated the
 /// island into place), or just restore when `edge` is empty.
 #[tauri::command]
+
 fn island_overlay_end(app: AppHandle, shared: State<Shared>, edge: String, along: f64) {
     shared.gate.overlay.store(false, Ordering::Relaxed);
-    water::hide(&app);
     let mut settings = shared.settings.lock().unwrap().clone();
     if matches!(edge.as_str(), "top" | "bottom" | "left" | "right") {
         settings.position = edge;
@@ -208,6 +214,7 @@ fn island_overlay_end(app: AppHandle, shared: State<Shared>, edge: String, along
         log::line(format!("island moved: {} along={:.2}", settings.position, settings.along));
     }
     commit_settings(&app, shared.inner(), settings);
+    island::set_ignore_cursor(&app, false);
     shared.gate.forget_ignore_state();
 }
 
@@ -865,10 +872,10 @@ pub fn run() {
             set_island_rect,
             focus_window,
             reposition,
-            island_overlay_begin,
             island_overlay_end,
             island_carry_begin,
             island_carry_step,
+            island_dock_rect,
             reset_position,
             island_resize_mode,
             open_url,
@@ -941,6 +948,27 @@ pub fn run() {
             desktop_dog::desktop_dog_flight_end,
             desktop_dog::desktop_dog_forget,
             media::now_playing,
+            media::media_control,
+            system::system_stats,
+            store::store_read,
+            store::store_write,
+            weather::weather_now,
+            weather::geocode,
+            calendar::calendar_upcoming,
+            calendar::calendar_refresh,
+            toggles::toggle_get,
+            toggles::toggle_set,
+            shelf::shelf_list,
+            shelf::shelf_add,
+            shelf::shelf_remove,
+            shelf::shelf_clear,
+            screentime::screentime_sample,
+            screentime::screentime_today,
+            translate::translate_text,
+            translate::check_libretranslate,
+            win_notifications::check_notification_permission,
+            win_notifications::request_notification_permission,
+            win_notifications::get_windows_notifications,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -952,7 +980,6 @@ pub fn run() {
             create_settings_window(&handle);
             // The desktop dog's window, parked off-screen until it is wanted.
             desktop_dog::setup(&handle);
-            water::setup(&handle);
 
             if let Some(win) = island::window(&handle) {
                 island::make_non_activating(&win);

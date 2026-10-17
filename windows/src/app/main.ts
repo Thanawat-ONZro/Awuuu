@@ -6,7 +6,7 @@ import "../core/motion.css";
 import "../settings/settings.css";
 import "./app.css";
 import { Bridge, onEvent } from "../core/bridge";
-import type { Settings } from "../core/state";
+import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { layoutRefreshers, settings } from "./ui";
 import { applyAccent } from "../core/accent";
 import { setLanguage, currentLanguage } from "../i18n/i18n";
@@ -15,7 +15,12 @@ import { mountShell, rebuildShell, navigateFromEvent, type PageId } from "./shel
 
 async function main() {
   const boot = await Bridge.boot();
-  if (boot) Object.assign(settings, boot.settings);
+  if (boot) {
+    Object.assign(settings, boot.settings, {
+      modules: { ...DEFAULT_SETTINGS.modules, ...(boot.settings?.modules ?? {}) },
+      collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(boot.settings?.collapsedModules ?? {}) },
+    });
+  }
 
   let first: PageId = settings.onboarded ? "sessions" : "welcome";
   try {
@@ -33,7 +38,10 @@ async function main() {
   void onEvent<string>("settings-focus", (target) => navigateFromEvent(target));
 
   void onEvent<Settings>("settings-changed", (s) => {
-    Object.assign(settings, s);
+    Object.assign(settings, s, {
+      modules: { ...DEFAULT_SETTINGS.modules, ...(s?.modules ?? {}) },
+      collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(s?.collapsedModules ?? {}) },
+    });
     const before = currentLanguage();
     if (setLanguage(settings.language) !== before) rebuildShell();
     applyAccent(settings.dog);

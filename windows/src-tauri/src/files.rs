@@ -52,9 +52,14 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
     }
 
     std::fs::copy(src, &dest).map_err(|e| format!("cannot copy: {e}"))?;
-    // CopyFileEx carries the source's timestamps across, so a file last edited
-    // three years ago would arrive already older than the sweep window and be
-    // deleted on the spot. The inbox ages from when *we* copied it.
+    // CopyFileEx carries the source's timestamps and attributes across. Clear
+    // read-only so set_modified succeeds and the file isn't swept prematurely.
+    if let Ok(mut perms) = std::fs::metadata(&dest).map(|m| m.permissions()) {
+        if perms.readonly() {
+            perms.set_readonly(false);
+            let _ = std::fs::set_permissions(&dest, perms);
+        }
+    }
     if let Ok(file) = std::fs::File::options().write(true).open(&dest) {
         let _ = file.set_modified(SystemTime::now());
     }
@@ -67,8 +72,8 @@ pub fn ingest(source: &str) -> Result<DroppedFile, String> {
     })
 }
 
-/// A free name in the inbox: "name", then "name (2)"…
-fn free_name(dir: &Path, name: &str) -> PathBuf {
+/// A free name in the folder: "name", then "name (2)"…
+pub(crate) fn free_name(dir: &Path, name: &str) -> PathBuf {
     let dest = dir.join(name);
     if !dest.exists() {
         return dest;

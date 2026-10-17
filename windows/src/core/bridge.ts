@@ -52,18 +52,17 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
-  /**
-   * Moving: the window becomes a work-area overlay. Returns its logical
-   * [w, h] and where the island window's top-left is inside it [x, y].
-   * `apply: false` only measures, leaving the window as it is.
-   */
-  islandOverlayBegin: (apply = true) =>
-    call<[number, number, number, number]>("island_overlay_begin", { apply }),
-  /** Carry mode: the window becomes a `side`-px square around the card's centre. */
-  islandCarryBegin: (offX: number, offY: number, side: number, droplet: number) =>
-    call<number[]>("island_carry_begin", { offX, offY, side, droplet }),
-  /** Moves the carried window; answers [cursorX, cursorY, buttonDown]. */
-  islandCarryStep: (cx: number, cy: number) => call<number[]>("island_carry_step", { cx, cy }),
+  /** Carry mode: grows window to side×side logical in one SetWindowPos, origin unchanged. */
+  islandCarryBegin: (side: number) =>
+    call<[number, number, number, number, number, number, number, number, number, number, number, number, number]>(
+      "island_carry_begin",
+      { side },
+    ),
+  /** Moves the carried window to origin (physical); answers [cursorX, cursorY, buttonDown]. */
+  islandCarryStep: (x: number, y: number) => call<[number, number, number]>("island_carry_step", { x, y }),
+  /** Computes the docked window rect [x, y, w, h] physical and Layout without applying. */
+  islandDockRect: (edge: string, along: number) =>
+    call<[[number, number, number, number], IslandLayout]>("island_dock_rect", { edge, along }),
   /** Dock on `edge` at `along` ("" = put it back) and end the overlay. */
   islandOverlayEnd: (edge: string, along: number) => call<void>("island_overlay_end", { edge, along }),
   resetPosition: () => call<void>("reset_position"),
@@ -248,7 +247,112 @@ export const Bridge = {
 
   /** Windows SMTC Media Transport Controls query. */
   nowPlaying: () => call<NowPlaying>("now_playing"),
+
+  /** Windows SMTC Media Transport Controls action (play_pause, next, prev). */
+  mediaControl: (action: "play_pause" | "next" | "prev") => call<void>("media_control", { action }),
+
+  /** Windows system stats query (CPU, memory, disk, top processes). */
+  systemStats: () => call<SystemStats>("system_stats"),
+
+  /** Read a persistent JSON store entry from %LOCALAPPDATA%\Awuuu\store\<name>.json */
+  storeRead: <T>(name: string) => call<T>("store_read", { name }),
+
+  /** Write a persistent JSON store entry to %LOCALAPPDATA%\Awuuu\store\<name>.json */
+  storeWrite: <T>(name: string, value: T) => call<void>("store_write", { name, value }),
+
+  /** Geocode city name to [lat, lon] using Open-Meteo geocoding. */
+  geocode: (city: string) => call<[number, number]>("geocode", { city }),
+
+  /** Open-Meteo current weather and forecast query. */
+  weatherNow: (lat: number, lon: number, unit = "c") =>
+    call<WeatherNow>("weather_now", { lat, lon, unit }),
+
+  /** Fetches upcoming calendar events for the given number of days. */
+  calendarUpcoming: (days = 7) => call<CalEvent[]>("calendar_upcoming", { days }),
+
+  /** Forces a refresh of the calendar feed. */
+  calendarRefresh: () => call<void>("calendar_refresh"),
+
+  /** Read state of a quick toggle (bluetooth, wifi, dnd, never_sleep). */
+  toggleGet: (kind: string) => call<boolean>("toggle_get", { kind }),
+
+  /** Set state of a quick toggle and return the real read-back state. */
+  toggleSet: (kind: string, on: boolean) => callOrThrow<boolean>("toggle_set", { kind, on }),
+
+  /** Shelf: list all files on the shelf, sweeping files older than retentionDays (default 7). */
+  shelfList: (retentionDays?: number) => call<ShelfFile[]>("shelf_list", { retentionDays }),
+
+  /** Shelf: add a file to the shelf by copying it into %LOCALAPPDATA%\Awuuu\shelf\. */
+  shelfAdd: (source: string) => callOrThrow<ShelfFile>("shelf_add", { source }),
+
+  /** Shelf: remove a file from the shelf. Refuses any file outside the shelf directory. */
+  shelfRemove: (path: string) => callOrThrow<boolean>("shelf_remove", { path }),
+
+  /** Shelf: clear all files on the shelf. */
+  shelfClear: () => callOrThrow<number>("shelf_clear"),
+
+  /** Screen time: get today's screen time statistics. */
+  screentimeToday: () => call<ScreenTimeDay>("screentime_today"),
+
+  /** Screen time: poll active foreground window and update per-minute aggregator. */
+  screentimeSample: () => call<ScreenTimeDay>("screentime_sample"),
+
+  /** Translation: check if local LibreTranslate service is answering. */
+  checkLibreTranslate: (endpoint?: string) => call<boolean>("check_libretranslate", { endpoint }),
+
+  /** Translation: translate text chunk via chosen provider. */
+  translateText: (provider: string, text: string, sourceLang: string, targetLang: string, endpoint?: string) =>
+    callOrThrow<string>("translate_text", { provider, text, sourceLang, targetLang, endpoint }),
+
+  /** Windows Toast Notifications (Phase B): check current permission status. */
+  checkNotificationPermission: () => call<string>("check_notification_permission"),
+
+  /** Windows Toast Notifications (Phase B): request runtime permission. */
+  requestNotificationPermission: () => call<string>("request_notification_permission"),
+
+  /** Windows Toast Notifications (Phase B): fetch active toasts via WinRT listener. */
+  getWindowsNotifications: () => call<WinToastNotification[]>("get_windows_notifications"),
 };
+
+export interface WinToastNotification {
+  id: number;
+  appName: string;
+  title: string;
+  body: string;
+  timestampMs: number;
+}
+
+export interface ScreenTimeDay {
+  date: string;
+  totalMinutes: number;
+  appMinutes: Record<string, number>;
+  switchCount: number;
+}
+
+export interface ShelfFile {
+  name: string;
+  path: string;
+  size: number;
+  addedAtMs: number;
+}
+
+export interface CalEvent {
+  title: string;
+  startMs: number;
+  endMs: number;
+  allDay: boolean;
+  location?: string;
+}
+
+export interface WeatherNow {
+  tempC: number;
+  code: number;
+  hi: number;
+  lo: number;
+  hourly: number[];
+  sunrise: string;
+  sunset: string;
+}
 
 /** An event for one window only (island ⇄ dog). No-op in a plain browser. */
 export async function emitToWindow(label: string, event: string, payload?: unknown) {
@@ -265,6 +369,28 @@ export interface NowPlaying {
   title: string;
   artist: string;
   status: string;
+  playing: boolean;
+  positionMs?: number;
+  durationMs?: number;
+}
+
+export interface DiskStats {
+  mount: string;
+  freeGb: number;
+  totalGb: number;
+}
+
+export interface ProcessStats {
+  name: string;
+  cpuPct: number;
+}
+
+export interface SystemStats {
+  cpuPct: number;
+  memUsedMb: number;
+  memTotalMb: number;
+  disks: DiskStats[];
+  top: ProcessStats[];
 }
 
 /** One provider on the Integrations page. */

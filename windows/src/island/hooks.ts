@@ -14,6 +14,8 @@ import { isPlanTool, reducePlan } from "./plan";
 import { groundDiff, groundTitle, type GitSnapshot } from "./ground";
 import { Nudger } from "./quiet";
 import { buildFileDiff } from "../core/diff";
+import { dismissNotification, pushNotification } from "../core/notifications";
+import { t } from "../i18n/i18n";
 
 /** A pop-up that can wait (quiet.ts): skipped in quiet hours and right after another. */
 const nudges = new Nudger();
@@ -219,6 +221,7 @@ function settleElsewhere(island: Island, sessionId: string, match: (a: ApprovalI
   if (gone.length === 0) return;
   for (const a of gone) {
     State.removeApproval(a.requestId);
+    dismissNotification(`approval-${a.requestId}`);
     void Bridge.approvalDecline(a.requestId);
   }
   State.appendStep(`session_${sessionId}`, note, "info");
@@ -335,6 +338,16 @@ function queueApprovalRequest(
   State.isPinned = true;
   Sound.play("approval");
 
+  pushNotification({
+    id: `approval-${requestId}`,
+    source: session.name,
+    title: isQuestion ? t("Question from agent") : t("Approval required"),
+    body: target,
+    timestamp: Date.now(),
+    kind: "approval",
+    actionLabel: t("Review"),
+  });
+
   // Open straight on the card: the agent is blocked until someone answers,
   // and answering from the island is the point (Coucou #117/#120).
   island.alert("approval", true);
@@ -342,6 +355,7 @@ function queueApprovalRequest(
   // 5. Per-request safety timeout
   window.setTimeout(() => {
     const removed = State.removeApproval(requestId);
+    dismissNotification(`approval-${requestId}`);
     if (removed && State.approvalQueue.length === 0) {
       State.isPinned = false;
       island.dropPin();
@@ -416,6 +430,14 @@ function handleHook(island: Island, payload: HookPayload) {
     case "SessionStart":
       session.sessionCwd = cwd;
       Sound.play("work");
+      pushNotification({
+        id: `start-${sessionId}-${Date.now()}`,
+        source: session.name,
+        title: t("Session Started"),
+        body: session.sessionCwd || t("Ready"),
+        timestamp: Date.now(),
+        kind: "info",
+      });
       break;
 
     // AGY: one model call. The prompt and what the model said/thought are in
@@ -482,10 +504,26 @@ function handleHook(island: Island, payload: HookPayload) {
         History.error(who(), message);
         Sound.play("rate");
         island.toast("agents", 5);
+        pushNotification({
+          id: `rate-${sessionId}-${Date.now()}`,
+          source: session.name,
+          title: t("Rate Limit"),
+          body: message,
+          timestamp: Date.now(),
+          kind: "error",
+        });
       } else if (message.endsWith("?")) {
         session.state = "question";
         State.appendStep(taskId, message, "info");
         nudge(island, 5);
+        pushNotification({
+          id: `question-${sessionId}-${Date.now()}`,
+          source: session.name,
+          title: t("Question"),
+          body: message,
+          timestamp: Date.now(),
+          kind: "info",
+        });
       }
       break;
     }
@@ -501,6 +539,14 @@ function handleHook(island: Island, payload: HookPayload) {
         void grounded.finally(() => History.done(who(), last ? plainText(last) : null));
       }, who);
       session.pillBadge = "finished";
+      pushNotification({
+        id: `stop-${sessionId}-${Date.now()}`,
+        source: session.name,
+        title: t("Task Finished"),
+        body: payload.last_assistant_message ? plainText(payload.last_assistant_message) : (payload.message ? plainText(payload.message) : t("Done")),
+        timestamp: Date.now(),
+        kind: "done",
+      });
       if (State.mode === "expanded" && State.view === "agents") {
         Sound.play("finish");
       } else {
@@ -515,16 +561,26 @@ function handleHook(island: Island, payload: HookPayload) {
       }, 5200);
       break;
 
-    case "StopFailure":
+    case "StopFailure": {
       session.state = "error";
-      State.appendStep(taskId, payload.message ? `Stopped · ${payload.message}` : "Stopped with an error", "error");
+      const stopMsg = payload.message ? t("Stopped · {msg}", { msg: payload.message }) : t("Stopped with an error");
+      State.appendStep(taskId, stopMsg, "error");
       History.settle(who());
-      History.error(who(), payload.message ? `Stopped · ${payload.message}` : "Stopped with an error");
+      History.error(who(), stopMsg);
       Sound.play("error");
       session.pillBadge = "error";
       State.alertTaskId = taskId;
       island.alert("error", true);
+      pushNotification({
+        id: `err-${sessionId}-${Date.now()}`,
+        source: session.name,
+        title: t("Task Error"),
+        body: stopMsg,
+        timestamp: Date.now(),
+        kind: "error",
+      });
       break;
+    }
 
     case "SessionEnd":
       settleElsewhere(island, sessionId, () => true, "Request closed — the session ended");
@@ -545,13 +601,23 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
 
     // Hermes asks for approval in its own UI; a hook can't answer it.
-    case "HermesApproval":
+    case "HermesApproval": {
       session.state = "approval";
       session.pillBadge = "approval";
-      State.appendStep(taskId, `Waiting for your approval in Hermes · ${payload.message ?? ""}`, "info");
+      const hermesMsg = payload.message ? t("Waiting for your approval in Hermes · {msg}", { msg: payload.message }) : t("Waiting for your approval in Hermes");
+      State.appendStep(taskId, hermesMsg, "info");
       Sound.play("approval");
       island.toast("agents", 8);
+      pushNotification({
+        id: `hermes-${sessionId}-${Date.now()}`,
+        source: session.name,
+        title: t("Hermes Approval"),
+        body: hermesMsg,
+        timestamp: Date.now(),
+        kind: "approval",
+      });
       break;
+    }
 
     case "HermesApprovalDone":
       session.state = "working";

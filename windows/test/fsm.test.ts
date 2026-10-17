@@ -14,7 +14,7 @@ describe("IslandStateMachine", () => {
 
   it("greets on launch, then folds to compact", () => {
     fsm.launch();
-    expect(fsm.state).toBe("coucou");
+    expect(fsm.state).toBe("awuuu");
     fsm.greetComplete();
     vi.advanceTimersByTime(fsm.greetAutoCollapseDelay * 1000);
     expect(fsm.state).toBe("petit");

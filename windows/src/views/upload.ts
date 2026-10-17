@@ -15,6 +15,7 @@ import { VIEW_LAYOUTS, type IslandViewName } from "../core/layout";
 import { State, type PendingFile } from "../core/state";
 import { dropTitle, uploadLabel } from "../upload/canvas";
 import type { ViewActions, ViewHost } from "./views";
+import { Bridge } from "../core/bridge";
 import { t } from "../i18n/i18n";
 
 /** The card starts this far inside the island (#content's padding). */
@@ -164,6 +165,24 @@ export function buildChoose(actions: ViewActions): ViewHost {
   const title = h("div", { class: "title" });
   const chips = h("div", { class: "file-chips" });
   const ask = h("button", { class: "btn primary", onclick: () => actions.setView("prompt") });
+  const putOnShelf = h("button", {
+    class: "btn secondary",
+    text: t("Put on Shelf"),
+    onclick: async () => {
+      for (const f of State.droppedFiles) {
+        if (f.path) {
+          try {
+            await Bridge.shelfAdd(f.path);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      State.droppedFiles = [];
+      State.dropError = null;
+      actions.setView("dashboard");
+    },
+  });
   const cancel = () => {
     State.droppedFiles = [];
     State.dropError = null;
@@ -173,6 +192,7 @@ export function buildChoose(actions: ViewActions): ViewHost {
     "div",
     { class: "actions" },
     ask,
+    putOnShelf,
     h("button", { class: "btn secondary", text: t("Add more"), onclick: () => actions.setView("upload") }),
     h("button", { class: "btn secondary", text: t("Cancel"), onclick: cancel }),
   );

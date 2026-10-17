@@ -364,7 +364,7 @@ fn entry_is_ours(entry: &Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(Value::as_str)
-                    .map(|c| c.contains(MARKER) || c.contains("awuuu-hook"))
+                    .map(|c| c.contains(MARKER) || c.contains("awuuu-hook") || c.contains("coucou-hook"))
                     .unwrap_or(false)
             })
         })

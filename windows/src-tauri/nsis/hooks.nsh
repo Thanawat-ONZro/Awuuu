@@ -1,6 +1,6 @@
 ; Uninstall hooks for the NSIS installer.
 ;
-; The app stages coucou-hook.exe into %LOCALAPPDATA%\Coucou\bin at launch, so the
+; The app stages awuuu-hook.exe into %LOCALAPPDATA%\Awuuu\bin at launch, so the
 ; installer never recorded it and the default uninstaller leaves it behind. The
 ; inbox and the log live in the same place and are ours too.
 ;

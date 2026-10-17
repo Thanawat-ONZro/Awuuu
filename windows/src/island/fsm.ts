@@ -1,7 +1,7 @@
 // Island open/close FSM — port of IslandStateMachine.swift.
 // No DOM, no Tauri: it only reports transitions.
 
-export type FsmState = "hidden" | "petit" | "home" | "coucou";
+export type FsmState = "hidden" | "petit" | "home" | "awuuu";
 
 export class IslandStateMachine {
   state: FsmState = "hidden";
@@ -18,9 +18,9 @@ export class IslandStateMachine {
   petitToHiddenDelay = 5;
   /** While this says true (e.g. pinned approval), the hide timer will not hide. */
   keepVisible: (() => boolean) | null = null;
-  /** coucou → petit once the greeting animation ends (no hover). */
+  /** awuuu → petit once the greeting animation ends (no hover). */
   greetAutoCollapseDelay = 0.6;
-  /** coucou → petit while the mouse hovers the greeting. */
+  /** awuuu → petit while the mouse hovers the greeting. */
   greetHoverCollapseDelay = 10;
   /** An alert waiting for an answer stays open, even when the mouse leaves. */
   pinned = false;
@@ -34,7 +34,7 @@ export class IslandStateMachine {
 
   launch() {
     this.cancelTimers();
-    this.transition("coucou");
+    this.transition("awuuu");
   }
 
   mouseEntered() {
@@ -50,7 +50,7 @@ export class IslandStateMachine {
       case "home":
         this.clear("homeCollapse");
         break;
-      case "coucou":
+      case "awuuu":
         this.scheduleGreetCollapse(this.greetHoverCollapseDelay);
         break;
     }
@@ -68,7 +68,7 @@ export class IslandStateMachine {
       case "home":
         this.scheduleHomeCollapse();
         break;
-      case "coucou":
+      case "awuuu":
         this.clear("greetCollapse");
         this.transition("petit");
         break;
@@ -83,13 +83,13 @@ export class IslandStateMachine {
 
   /** Greeting animation finished (T.end). Doesn't override a running hover timer. */
   greetComplete() {
-    if (this.state !== "coucou") return;
+    if (this.state !== "awuuu") return;
     if (this.greetCollapse == null) this.scheduleGreetCollapse(this.greetAutoCollapseDelay);
   }
 
   /** Toast event (finished, integration update): show compact from hidden and auto-hide after duration. */
   revealToast(durationSec = this.toastDelay) {
-    if (this.state === "home" || this.state === "coucou") return;
+    if (this.state === "home" || this.state === "awuuu") return;
     this.clear("petitHide");
     this.clear("toastHide");
     if (this.state === "hidden") {
@@ -180,7 +180,7 @@ export class IslandStateMachine {
     this.clear("greetCollapse");
     this.greetCollapse = window.setTimeout(() => {
       this.greetCollapse = null;
-      if (this.state === "coucou") this.transition("petit");
+      if (this.state === "awuuu") this.transition("petit");
     }, delay * 1000);
   }
 

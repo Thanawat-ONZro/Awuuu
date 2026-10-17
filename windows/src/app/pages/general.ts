@@ -107,6 +107,20 @@ function generalSection(): HTMLElement {
       ),
     ),
     h("div", { class: "row" },
+      h("label", { text: t("Open the island on") }),
+      select(
+        [
+          ["dashboard", t("Dashboard")],
+          ["agents", t("Agents hub")],
+          ["last", t("Last used")],
+        ],
+        () => settings.openIslandOn ?? "dashboard",
+        (v) => {
+          settings.openIslandOn = v as Settings["openIslandOn"];
+        },
+      ),
+    ),
+    h("div", { class: "row" },
       h("label", { text: t("Sound") }),
       toggle(settings.soundEnabled, (v) => { settings.soundEnabled = v; void save(); }),
       volume,

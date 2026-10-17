@@ -36,6 +36,7 @@ pub const ACTIONS: &[ActionDef] = &[
     action("jumpToTerminal", "Ctrl+Alt+T", true, false),
     action("muteToggle", "Ctrl+Alt+S", true, false),
     action("toggleIsland", "Ctrl+Alt+I", false, false),
+    action("openDashboard", "Ctrl+Alt+B", false, false),
     ActionDef { id: "toggleDesktopDog", keys: "Ctrl+Alt+D", on_by_default: true, approval_only: false, desktop_only: true },
     action("approvalAllow", "Ctrl+Alt+Y", true, true),
     action("approvalDeny", "Ctrl+Alt+N", true, true),

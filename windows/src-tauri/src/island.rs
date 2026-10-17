@@ -354,117 +354,78 @@ pub fn apply_geometry(app: &AppHandle, s: &crate::settings::Settings, collapsed:
     Some(layout)
 }
 
-/// Where a window at `pos` (physical) sits inside the work-area overlay, in
-/// logical px: what the front end adds to its window coordinates to keep the
-/// island on the same spot of the screen once the window is the overlay.
-fn overlay_origin(pos: (f64, f64), work: Rect, scale: f64) -> (f64, f64) {
-    ((pos.0 - work.x) / scale, (pos.1 - work.y) / scale)
-}
-
-/// Moving the island: the window covers the display's work area so the front
-/// end can draw the island anywhere under the cursor, with the liquid effect.
-/// Returns the overlay's logical size and where the island window's top-left
-/// is inside it (`w, h, x, y`). `apply == false` only answers, so the front
-/// end can get ready before the window changes; `island_overlay_end` puts the
-/// window back.
-pub fn overlay_begin(app: &AppHandle, pref: &str, apply: bool) -> Option<(f64, f64, f64, f64)> {
-    let win = window(app)?;
-    let m = target_monitor(app, pref)?;
-    let (_, work) = rect_of(&m);
-    let scale = m.scale_factor();
-    let at = win.outer_position().ok()?;
-    let (ox, oy) = overlay_origin((at.x as f64, at.y as f64), work, scale);
-    if apply {
-        // One call for position and size: moved and resized in two steps, the
-        // island would be drawn in between at a place it never was.
-        if let Some(hwnd) = hwnd_of(&win) {
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    work.x as i32,
-                    work.y as i32,
-                    work.w as i32,
-                    work.h as i32,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
-        }
-        // Then through Tauri, so its own idea of the window agrees (no-ops
-        // when the call above did the job).
-        let size = PhysicalSize::new(work.w as u32, work.h as u32);
-        let _ = win.set_size(size);
-        let _ = win.set_position(PhysicalPosition::new(work.x as i32, work.y as i32));
-        let _ = win.set_size(size);
-        let _ = win.set_ignore_cursor_events(false);
+/// Computes the docked window rect (physical) and Layout for a proposed edge and along,
+/// without applying it. Matches compute() in apply_geometry / island_overlay_end.
+pub fn dock_rect(
+    app: &AppHandle,
+    s: &crate::settings::Settings,
+    edge: &str,
+    along: f64,
+    collapsed: bool,
+) -> Option<([f64; 4], Layout)> {
+    let m = target_monitor(app, &s.screen)?;
+    let (screen, work) = rect_of(&m);
+    let mut s = s.clone();
+    if matches!(edge, "top" | "bottom" | "left" | "right") {
+        s.position = edge.to_string();
+        s.along = along.clamp(0.0, 1.0);
     }
-    Some((work.w / scale, work.h / scale, ox, oy))
+    let ((x, y, pw, ph), layout) = compute(&s, screen, work, m.scale_factor(), collapsed);
+    Some(([x, y, pw, ph], layout))
 }
 
-/// Physical side of the square window while the island is carried.
-static CARRY_SIDE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
-/// The display being carried over (work area, physical) and the drop's radius (logical).
-static CARRY_WORK: Mutex<Option<(Rect, f64, f64)>> = Mutex::new(None);
-
-/// Carrying the island: instead of covering the display, the window shrinks to a
-/// square of `side` logical px around the centre of the card (`off_x`, `off_y`
-/// inside the window) and is then only ever moved (`carry_step`). Returns
-/// `[scale, work x, y, w, h (physical), centre x, y, cursor x, y]`.
-pub fn carry_begin(app: &AppHandle, pref: &str, off_x: f64, off_y: f64, side: f64, droplet: f64) -> Option<[f64; 9]> {
+/// Carrying the island: the window grows in place to `side`×`side` logical px
+/// (origin unchanged) and from then on only its origin is moved (`carry_step`).
+/// Returns `[scale, work x, y, w, h, monitor x, y, w, h, origin x, y, cursor x, y]` (all physical).
+pub fn carry_begin(app: &AppHandle, pref: &str, side: f64) -> Option<[f64; 13]> {
     let win = window(app)?;
     let m = target_monitor(app, pref)?;
-    let (_, work) = rect_of(&m);
+    let (screen, work) = rect_of(&m);
     let scale = m.scale_factor();
     let at = win.outer_position().ok()?;
-    let cx = at.x as f64 + off_x * scale;
-    let cy = at.y as f64 + off_y * scale;
     let s = (side * scale).round();
-    CARRY_SIDE.store(s as i32, Ordering::Relaxed);
-    let (x, y) = ((cx - s / 2.0).round(), (cy - s / 2.0).round());
-    // One call for position and size, so the island is never drawn in between.
+    // Origin unchanged: one SetWindowPos grows the window right and down to s × s physical px.
     if let Some(hwnd) = hwnd_of(&win) {
         unsafe {
-            let _ = SetWindowPos(hwnd, None, x as i32, y as i32, s as i32, s as i32, SWP_NOZORDER | SWP_NOACTIVATE);
+            let _ = SetWindowPos(hwnd, None, at.x, at.y, s as i32, s as i32, SWP_NOZORDER | SWP_NOACTIVATE);
         }
     }
     let size = PhysicalSize::new(s as u32, s as u32);
     let _ = win.set_size(size);
-    let _ = win.set_position(PhysicalPosition::new(x as i32, y as i32));
-    let _ = win.set_size(size);
-    let _ = win.set_ignore_cursor_events(false);
-    *CARRY_WORK.lock().unwrap() = Some((work, scale, droplet / 2.0));
-    // The water over the display, the island's small window above it.
-    crate::water::show(app, work.x, work.y, work.w, work.h);
-    crate::water::raise_island(app);
+    let _ = win.set_ignore_cursor_events(true);
     let (px, py) = cursor_physical()?;
-    Some([scale, work.x, work.y, work.w, work.h, cx, cy, px, py])
+    Some([
+        scale,
+        work.x, work.y, work.w, work.h,
+        screen.x, screen.y, screen.w, screen.h,
+        at.x as f64, at.y as f64,
+        px, py,
+    ])
 }
 
-/// Moves the carried window so its centre is at (`cx`, `cy`) physical; answers
+/// Moves the carried window to origin (`ox`, `oy`) physical; answers
 /// with the cursor and whether the left button is still down.
-pub fn carry_step(app: &AppHandle, cx: f64, cy: f64) -> Option<[f64; 3]> {
+pub fn carry_step(app: &AppHandle, ox: f64, oy: f64) -> Option<[f64; 3]> {
     let win = window(app)?;
-    let s = CARRY_SIDE.load(Ordering::Relaxed) as f64;
     if let Some(hwnd) = hwnd_of(&win) {
         unsafe {
             let _ = SetWindowPos(
                 hwnd,
                 None,
-                (cx - s / 2.0).round() as i32,
-                (cy - s / 2.0).round() as i32,
+                ox.round() as i32,
+                oy.round() as i32,
                 0,
                 0,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE,
             );
         }
     }
-    if let Some((work, scale, r)) = *CARRY_WORK.lock().unwrap() {
-        crate::water::ball(app, (cx - work.x) / scale, (cy - work.y) / scale, r);
-    }
     let (px, py) = cursor_physical()?;
     let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000 != 0;
-    Some([px, py, if down { 1.0 } else { 0.0 }])
+    let held = if down { 1.0 } else { 0.0 };
+    Some([px, py, held])
 }
+
 
 pub fn monitor_rects(app: &AppHandle, pref: &str) -> Option<(Rect, Rect, f64)> {
     let m = target_monitor(app, pref)?;
@@ -879,8 +840,8 @@ mod tests {
     #[test]
     fn default_is_top_centre() {
         let ((x, y, w, _), l) = compute(&Settings::default(), SCREEN, WORK, 1.0, false);
-        assert_eq!((x, y, w), (600.0, 0.0, 720.0));
-        assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", 360.0));
+        assert_eq!((x, y, w), (470.0, 0.0, 980.0));
+        assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", 490.0));
     }
 
     #[test]
@@ -888,7 +849,7 @@ mod tests {
         let s = Settings { along: 1.0, ..Settings::default() };
         let ((x, _, w, _), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!(x + w, 1920.0);
-        assert_eq!(l.anchor_x, 720.0); // the front end keeps the island inside
+        assert_eq!(l.anchor_x, 980.0); // the front end keeps the island inside
     }
 
     #[test]
@@ -905,8 +866,8 @@ mod tests {
     fn open_on_a_side_is_centred_on_the_pill_with_room_to_float() {
         let s = Settings { position: "left".into(), along: 0.5, ..Settings::default() };
         let ((x, y, w, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
-        assert_eq!((x, y, w, h), (0.0, 356.0, 720.0, 320.0));
-        assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", 160.0));
+        assert_eq!((x, y, w, h), (0.0, 271.0, 980.0, 490.0));
+        assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", 245.0));
         // The default island (640) plus its 10 px gap fits in the window.
         assert!(s.island_width + 10.0 <= l.panel_w);
     }
@@ -916,18 +877,9 @@ mod tests {
         let s = Settings { position: "left".into(), along: 1.0, ..Settings::default() };
         let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!(y + h, 1032.0);
-        assert_eq!(l.anchor_y, 320.0); // the front end keeps the island inside
+        assert_eq!(l.anchor_y, 490.0); // the front end keeps the island inside
         let top = Settings { position: "right".into(), along: 0.0, ..Settings::default() };
         let ((_, y, _, _), l) = compute(&top, SCREEN, WORK, 1.0, false);
         assert_eq!((y, l.anchor_y), (0.0, 0.0));
     }
-
-    #[test]
-    fn overlay_origin_is_the_window_inside_the_work_area() {
-        let work = Rect { x: 0.0, y: 48.0, w: 2880.0, h: 1752.0 };
-        assert_eq!(overlay_origin((900.0, 48.0), work, 1.5), (600.0, 0.0));
-        assert_eq!(overlay_origin((0.0, 648.0), work, 1.5), (0.0, 400.0));
-    }
-
-
 }

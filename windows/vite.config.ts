@@ -14,7 +14,7 @@ export const SOUNDS_DIR = resolve(__dirname, "../shared/sounds");
 function sharedSounds(): Plugin {
   const prefix = "/sounds/";
   return {
-    name: "coucou-shared-sounds",
+    name: "awuuu-shared-sounds",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (!req.url?.startsWith(prefix)) return next();
@@ -61,8 +61,8 @@ export default defineConfig({
         island: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
         dog: resolve(__dirname, "dog.html"),
-        water: resolve(__dirname, "water.html"),
       },
+
     },
   },
 });

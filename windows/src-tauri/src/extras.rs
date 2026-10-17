@@ -718,7 +718,7 @@ async fn ical_calendar(from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
 
 /// Events overlapping [from, to) from every signed-in account; the iCal link
 /// when nobody is signed in.
-async fn fetch_calendar(app: &AppHandle, from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
+pub(crate) async fn fetch_calendar(app: &AppHandle, from: i64, to: i64) -> Result<Vec<CalEvent>, String> {
     let accounts = signed_in();
     if accounts.is_empty() {
         return ical_calendar(from, to).await;

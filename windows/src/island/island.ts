@@ -3,7 +3,7 @@
 
 import { Tracked, Spring, clamp } from "../core/anim";
 import { animateView, directionBetween, type Direction } from "./transition";
-import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile, type NowPlaying } from "../core/bridge";
 import {
   EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
   ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
@@ -21,15 +21,18 @@ import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from ".
 import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
-import { h } from "../views/dom";
+import { h, svg } from "../views/dom";
+import { ICONS } from "../views/icons";
+import { isModuleEnabled, isModuleInCollapsedStrip } from "../core/modules";
 import { IslandStateMachine } from "./fsm";
 import { HoverOpen } from "./hover";
 import { DROPLET, Mover } from "./move";
-import { clampCornerRadius } from "./move-physics";
+import { clampCornerRadius, computeDockedTarget } from "./move-physics";
 import { Liquid } from "./liquid";
 import { DesktopDogLink } from "./desktop-dog";
 import { isDrag } from "../mochi/desktop-logic";
 import { t } from "../i18n/i18n";
+import { dismissNotification, pushNotification } from "../core/notifications";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -91,6 +94,9 @@ export class Island {
   private miniGrid!: HTMLElement;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
+  private compactStrip!: HTMLElement;
+  private compactMediaTimer: number | null = null;
+  private lastCompactKey = "";
   private mover!: Mover;
   /** The drop page was opened by a drag coming near (notch-drag-near). */
   private dropWoke = false;
@@ -171,6 +177,25 @@ export class Island {
     this.mover = new Mover(
       {
         rect: () => this.islandRect(),
+        currentGeometry: () => {
+          const w = this.width.value;
+          const h = this.height.value;
+          return {
+            w,
+            h,
+            radii: [
+              clampCornerRadius(this.cornerTL.value, w, h),
+              clampCornerRadius(this.cornerTR.value, w, h),
+              clampCornerRadius(this.cornerBR.value, w, h),
+              clampCornerRadius(this.cornerBL.value, w, h),
+            ],
+          };
+        },
+        applyDockedLayout: (layout) => {
+          geo.layout = { ...layout, anchorY: layout.anchorY ?? layout.panelH / 2 };
+          this.root.dataset.edge = layout.edge;
+          this.root.classList.toggle("at-bottom", this.atBottom);
+        },
         setMoveOverride: (at) => {
           const changed = (this.moveAt === null) !== (at === null);
           this.moveAt = at;
@@ -273,26 +298,15 @@ export class Island {
             : edge === "left" ? [r * lift, r, r, r * lift]
             : [r, r * lift, r * lift, r];
 
-          let cardX: number;
-          let cardY: number;
-          if (isSide) {
-            const gap = this.sideGap(w);
-            cardX = edge === "left" ? gap : layout.panelW - w - gap;
-            cardY = Math.min(Math.max(layout.anchorY - h / 2, 0), Math.max(0, layout.panelH - h));
-          } else {
-            cardX = Math.min(Math.max(layout.anchorX - w / 2, 0), Math.max(0, layout.panelW - w));
-            cardY = edge === "bottom" ? layout.panelH - h : 0;
-          }
-
-          const physCardX = dockRect[0] + cardX * scale;
-          const physCardY = dockRect[1] + cardY * scale;
-          const physCardW = w * scale;
-          const physCardH = h * scale;
-
-          const cx = (physCardX + physCardW / 2 - origin.x) / scale;
-          const cy = (physCardY + physCardH / 2 - origin.y) / scale;
-
-          return { cx, cy, w, h, radii };
+          return computeDockedTarget(
+            dockRect,
+            layout,
+            { w, h },
+            radii,
+            origin,
+            scale,
+            isSide ? this.sideGap(w) : 0
+          );
         },
         clearLiquid: () => {
           this.liquid.clear();
@@ -361,6 +375,7 @@ export class Island {
         for (const a of [...State.approvalQueue]) {
           if (a.sessionId === sid) {
             State.removeApproval(a.requestId);
+            dismissNotification(`approval-${a.requestId}`);
             void Bridge.approvalDecline(a.requestId);
           }
         }
@@ -400,6 +415,7 @@ export class Island {
         if (d === "deny" && req.isQuestion) void Bridge.approvalDecline(req.requestId);
         else void Bridge.approvalDecision(req.requestId, d, answers);
         State.removeApproval(req.requestId);
+        dismissNotification(`approval-${req.requestId}`);
         const next = State.pendingApproval;
         if (next) {
           this.setView("approval");
@@ -443,6 +459,7 @@ export class Island {
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
     this.countdown = h("div", { id: "countdown" });
+    this.compactStrip = h("div", { id: "compact-strip", style: "display:none" });
     this.resizeGrip = h("div", { id: "resize-grip", title: t("Drag to resize") });
     this.wireResize();
 
@@ -487,6 +504,9 @@ export class Island {
           if (State.mode === "expanded") this.collapse();
           else this.alert(State.defaultView(), true);
           break;
+        case "openDashboard":
+          this.alert("dashboard", true);
+          break;
         case "toggleDesktopDog":
           this.desktopDog.toggle();
           break;
@@ -521,6 +541,7 @@ export class Island {
       this.clipEl,
       this.botGlow,
       this.botCanvas,
+      this.compactStrip,
       this.miniGrid,
       this.countdown,
       this.resizeGrip,
@@ -557,23 +578,23 @@ export class Island {
     this.fsm.keepVisible = () => State.isPinned || State.pendingApproval != null;
     this.fsm.onTransition = (from, to) => {
       // The greeting is over, however it ended: the dog may go back to the desktop.
-      if (from === "coucou" && to !== "coucou") this.desktopDog.launch();
+      if (from === "awuuu" && to !== "awuuu") this.desktopDog.launch();
       switch (to) {
         case "hidden":
           this.setMode("hidden");
           break;
         case "petit":
-          if (from === "coucou") this.greeting.interrupt();
+          if (from === "awuuu") this.greeting.interrupt();
           else if (from === "hidden") Sound.play("peek");
           this.setMode("compact");
-          if (from === "coucou") State.view = State.defaultView();
+          if (from === "awuuu") State.view = State.defaultView();
           if (!this.wasInIsland) this.fsm.mouseLeft();
           break;
         case "home":
           this.expand(State.defaultView());
           if (!this.wasInIsland) this.fsm.mouseLeft();
           break;
-        case "coucou":
+        case "awuuu":
           this.expand("greeting");
           this.greeting.start();
           break;
@@ -608,6 +629,13 @@ export class Island {
       // it running would keep the frame loop awake — the island must cost
       // nothing while hidden.
       UploadSeq.deactivate();
+    }
+    if (mode !== "compact") {
+      if (this.compactStrip) this.compactStrip.style.display = "none";
+      if (this.compactMediaTimer != null) {
+        window.clearInterval(this.compactMediaTimer);
+        this.compactMediaTimer = null;
+      }
     }
     this.updateWindowCollapsed();
     this.animateGeometry(modeOrder(mode) < modeOrder(prev));
@@ -820,6 +848,14 @@ export class Island {
           // The same file dropped once by path and once as bytes: keep the first.
           const twin = State.droppedFiles.find((f) => f !== entry && f.path && same(f, entry));
           if (twin) State.droppedFiles = State.droppedFiles.filter((f) => f !== entry);
+          pushNotification({
+            id: `drop-${entry.id}`,
+            source: "Awuuu",
+            title: t("File Dropped"),
+            body: entry.name,
+            timestamp: Date.now(),
+            kind: "upload",
+          });
           State.notify();
         },
         (err) => this.dropFailed(entry, err),
@@ -1136,6 +1172,7 @@ export class Island {
   /** Rust placed the window: draw the island where it now belongs. */
   setLayout(layout: IslandLayout) {
     geo.layout = { ...layout, anchorY: layout.anchorY ?? layout.panelH / 2 };
+    this.moveAt = null;
     this.root.classList.toggle("at-bottom", this.atBottom);
     this.root.dataset.edge = layout.edge;
     this.applyGeometry();
@@ -1163,7 +1200,9 @@ export class Island {
     } else if (this.collapsed) {
       // Grow the window back before the island animates open.
       this.collapsed = false;
-      void Bridge.setCollapsed(false);
+      if (!this.moveAt) {
+        void Bridge.setCollapsed(false);
+      }
     }
   }
 
@@ -1302,7 +1341,7 @@ export class Island {
       y >= rect.y - HIT_MARGIN && y <= rect.y + rect.h + HIT_MARGIN;
 
     if (inIsland && !this.wasInIsland) {
-      if (this.fsm.state === "coucou") this.greeting.hover();
+      if (this.fsm.state === "awuuu") this.greeting.hover();
       this.fsm.mouseEntered();
       this.hover.enter();
       this.homeCollapseAt = null;
@@ -1648,6 +1687,8 @@ export class Island {
       }
     }
 
+    void this.syncCompactStrip();
+
     syncMiniBotStates(State.tasks);
     this.engine.setState(this.botState());
     this.syncGlow();
@@ -1714,6 +1755,167 @@ export class Island {
     this.applyGeometry();
     this.animateGeometry(false);
     State.notify();
+  }
+
+  /**
+   * Synchronises live module indicators into the compact strip (media, timer).
+   * Active only while the island is in compact mode; 0 % CPU while hidden or expanded.
+   */
+  private async syncCompactStrip() {
+    if (State.mode !== "compact") {
+      if (this.compactStrip) this.compactStrip.style.display = "none";
+      if (this.compactMediaTimer != null) {
+        window.clearInterval(this.compactMediaTimer);
+        this.compactMediaTimer = null;
+      }
+      return;
+    }
+
+    // 1. Live media if enabled in collapsed strip settings
+    if (isModuleEnabled("media") && isModuleInCollapsedStrip("media")) {
+      try {
+        const info = await Bridge.nowPlaying();
+        if (State.mode !== "compact") return;
+        if (info && info.active && info.playing) {
+          this.compactStrip.style.display = "flex";
+          const key = `media:${info.title}:${info.artist}:${info.playing}`;
+          if (this.lastCompactKey !== key) {
+            this.lastCompactKey = key;
+            this.renderCompactMedia(info);
+          }
+
+          if (this.compactMediaTimer == null) {
+            this.compactMediaTimer = window.setInterval(() => {
+              if (State.mode !== "compact") {
+                if (this.compactMediaTimer != null) {
+                  window.clearInterval(this.compactMediaTimer);
+                  this.compactMediaTimer = null;
+                }
+                return;
+              }
+              void this.syncCompactStrip();
+            }, 1000);
+          }
+          return;
+        }
+      } catch {
+        /* player query error ignored */
+      }
+    }
+
+    if (this.compactMediaTimer != null) {
+      window.clearInterval(this.compactMediaTimer);
+      this.compactMediaTimer = null;
+    }
+
+    // 2. Timer / Countdown if enabled in collapsed strip settings
+    if (isModuleInCollapsedStrip("dashboard")) {
+      const cdText = this.countdown.textContent?.trim();
+      if (cdText) {
+        this.compactStrip.style.display = "flex";
+        const key = `timer:${cdText}`;
+        if (this.lastCompactKey !== key) {
+          this.lastCompactKey = key;
+          const timerWrap = h(
+            "div",
+            { class: "compact-timer", title: t("Timer") },
+            svg(ICONS.timer, 12),
+            h("span", { text: cdText }),
+          );
+          timerWrap.addEventListener("click", (e: Event) => {
+            e.stopPropagation();
+            this.alert("dashboard", true);
+          });
+          this.compactStrip.replaceChildren(timerWrap);
+        }
+        return;
+      }
+    }
+
+    // None active: keep strip empty and hidden
+    this.lastCompactKey = "";
+    this.compactStrip.replaceChildren();
+    this.compactStrip.style.display = "none";
+  }
+
+  private renderCompactMedia(info: NowPlaying) {
+    const artIcon = svg(ICONS.play, 10);
+    const bars = h(
+      "div",
+      { class: "compact-media-bars" },
+      h("span", { class: "bar bar-1" }),
+      h("span", { class: "bar bar-2" }),
+      h("span", { class: "bar bar-3" }),
+    );
+    const art = h("div", { class: "compact-media-art" }, artIcon, bars);
+
+    const title = h("span", { class: "compact-media-title", text: info.title });
+    const infoBox = h("div", { class: "compact-media-info" }, art, title);
+
+    const prevBtn = h(
+      "button",
+      { class: "compact-media-btn", title: t("Previous"), "aria-label": t("Previous") },
+      svg(ICONS.prev, 10),
+    );
+    const playBtn = h(
+      "button",
+      {
+        class: "compact-media-btn",
+        title: info.playing ? t("Pause") : t("Play"),
+        "aria-label": info.playing ? t("Pause") : t("Play"),
+      },
+      svg(info.playing ? ICONS.pause : ICONS.play, 10),
+    );
+    const nextBtn = h(
+      "button",
+      { class: "compact-media-btn", title: t("Next"), "aria-label": t("Next") },
+      svg(ICONS.next, 10),
+    );
+
+    prevBtn.addEventListener("click", async (e: Event) => {
+      e.stopPropagation();
+      try {
+        await Bridge.mediaControl("prev");
+        void this.syncCompactStrip();
+      } catch {
+        /* ignore */
+      }
+    });
+
+    playBtn.addEventListener("click", async (e: Event) => {
+      e.stopPropagation();
+      try {
+        await Bridge.mediaControl("play_pause");
+        void this.syncCompactStrip();
+      } catch {
+        /* ignore */
+      }
+    });
+
+    nextBtn.addEventListener("click", async (e: Event) => {
+      e.stopPropagation();
+      try {
+        await Bridge.mediaControl("next");
+        void this.syncCompactStrip();
+      } catch {
+        /* ignore */
+      }
+    });
+
+    const controls = h("div", { class: "compact-media-controls" }, prevBtn, playBtn, nextBtn);
+
+    const wrap = h(
+      "div",
+      { class: "compact-media", title: `${info.title} — ${info.artist}` },
+      infoBox,
+      controls,
+    );
+    wrap.addEventListener("click", (e: Event) => {
+      e.stopPropagation();
+      this.alert("dashboard", true);
+    });
+
+    this.compactStrip.replaceChildren(wrap);
   }
 
   get panelSize() {
