@@ -72,21 +72,21 @@ export interface IslandLayout {
 export interface RectSize { w: number; h: number; }
 export interface OrientationSpec { min: RectSize; default: RectSize; max: RectSize; }
 export const ORIENTATION_GEOMETRY: Record<"landscape" | "side", OrientationSpec> = {
-  landscape: { min: { w: 780, h: 400 }, default: { w: 900, h: 460 }, max: { w: 1100, h: 640 } },
+  landscape: { min: { w: 800, h: 320 }, default: { w: 1000, h: 360 }, max: { w: 1100, h: 440 } },
   side: { min: { w: 320, h: 480 }, default: { w: 380, h: 560 }, max: { w: 520, h: 800 } },
 };
 export function getOrientationBounds(edge: "top" | "bottom" | "left" | "right"): OrientationSpec {
   return (edge === "left" || edge === "right") ? ORIENTATION_GEOMETRY.side : ORIENTATION_GEOMETRY.landscape;
 }
-export const EXPANDED_W = 900;
+export const EXPANDED_W = 1000;
 
 export const DEFAULT_LAYOUT: IslandLayout = {
-  anchorX: 500, anchorY: 230, h: "center", v: "top", edge: "top", vertical: false, panelW: 980, panelH: 490,
+  anchorX: 540, anchorY: 195, h: "center", v: "top", edge: "top", vertical: false, panelW: 1080, panelH: 390,
 };
 
-/** The header is a 34 px row: along the top, or along the bottom when the
+/** The header is a 30 px row: along the top, or along the bottom when the
  * island is docked to the bottom edge (upside down). */
-export const HEADER_SIZE = 34;
+export const HEADER_SIZE = 30;
 
 /** Docked to a side: the hidden tab and the compact pill stand upright
  * against the edge. Open, the island is the same card as on the top edge. */
@@ -110,9 +110,9 @@ export const SIDE_GAP = 10;
 export const geo = {
   layout: { ...DEFAULT_LAYOUT },
   /** Width of the open island. */
-  expandedW: 900,
+  expandedW: 1000,
   /** Height of the Agents hub. */
-  hubH: 460,
+  hubH: 360,
   /** Height of the chat; 0 = it grows with the conversation. */
   chatH: 0,
   /** Width of the open island while docked to a screen side. */
@@ -122,14 +122,14 @@ export const geo = {
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
 export const NOTCH_W = 184;
 export const NOTCH_H = 32;
-export const COMPACT_W = 288; // NOTCH_W + 104
+export const COMPACT_W = 360;
 
 export const ROUNDED_CORNER = 14; // compact
-export const EXPANDED_CORNER = 22;
+export const EXPANDED_CORNER = 30;
 export const NOTCH_TAB_CORNER = 8; // subtle notch tab
 
 /** Subtle notch tab dimensions in hidden/idle state */
-export const NOTCH_TAB_W = 120;
+export const NOTCH_TAB_W = 140;
 export const NOTCH_TAB_H = 10;
 
 /** Hover strip that wakes the island when hidden. */
@@ -137,27 +137,27 @@ export const WAKE_STRIP_W = 140;
 export const WAKE_STRIP_H = 14;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 300, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
-  agents: { height: 300, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
-  diff: { height: 300, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
-  empty: { height: 180, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
-  approval: { height: 180, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  error: { height: 180, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  finished: { height: 180, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  confused: { height: 180, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },
-  upload: { height: 190, botX: 140, botY: 104, botDiameter: 62, agentMode: "column" },
+  overview: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  agents: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
+  diff: { height: 360, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
+  empty: { height: 200, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
+  approval: { height: 200, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
+  error: { height: 200, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
+  finished: { height: 200, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
+  confused: { height: 200, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },
+  upload: { height: 220, botX: 140, botY: 104, botDiameter: 62, agentMode: "column" },
   // botY 103 = bar top (42 + 58) + 3, so the dot really rides the bar. The Swift
   // layout says 118 while its own comment says 103; the comment matches the spec.
-  uploading: { height: 190, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
-  choose: { height: 190, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
+  uploading: { height: 220, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
+  choose: { height: 220, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
   mail: { height: 260, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
-  prompt: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
+  prompt: { height: 400, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   searching: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   result: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  note: { height: 180, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
-  settings: { height: 180, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
+  note: { height: 360, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
+  settings: { height: 200, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 160, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
-  dashboard: { height: 460, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
+  dashboard: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
 };
 
 // The upload views above are only the fallback geometry. Once a file is actually
@@ -171,12 +171,13 @@ export function chatPromptHeight(messageCount: number): number {
 }
 
 /** Height of the header strip above every expanded view's card. */
-export const HEADER_BOTTOM = 42;
+export const HEADER_BOTTOM = 38;
 /** Space under the card, inside the island. */
-export const CARD_BOTTOM_GAP = 14;
-export const APPROVAL_MIN_H = 180;
+export const CARD_BOTTOM_GAP = 10;
+export const APPROVAL_MIN_H = 200;
+export const APPROVAL_MAX_H = 320;
 export function approvalMaxH(): number {
-  return geo.layout.panelH - 12;
+  return Math.min(APPROVAL_MAX_H, geo.layout.panelH - 12);
 }
 
 /**
@@ -185,7 +186,7 @@ export function approvalMaxH(): number {
  * height of the card's content; 0 = not measured yet.
  */
 export function approvalHeight(fit: number): number {
-  if (fit <= 0) return 220;
+  if (fit <= 0) return 200;
   return Math.round(Math.min(approvalMaxH(), Math.max(APPROVAL_MIN_H, HEADER_BOTTOM + fit + CARD_BOTTOM_GAP)));
 }
 
@@ -218,7 +219,8 @@ export function islandSize(
         const spec = ORIENTATION_GEOMETRY.side;
         return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))), h };
       }
-      return { w: geo.expandedW, h };
+      const w = (safeView === "agents" || safeView === "prompt") ? geo.expandedW : EXPANDED_W;
+      return { w, h };
     }
   }
 }

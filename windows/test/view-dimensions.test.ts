@@ -3,12 +3,12 @@ import { VIEW_LAYOUTS, approvalHeight, chatPromptHeight, APPROVAL_MIN_H, ORIENTA
 
 describe("Derived view heights", () => {
   it("keeps overview and agents aligned with hub default height", () => {
-    expect(VIEW_LAYOUTS.overview.height).toBe(300);
-    expect(VIEW_LAYOUTS.agents.height).toBe(300);
+    expect(VIEW_LAYOUTS.overview.height).toBe(360);
+    expect(VIEW_LAYOUTS.agents.height).toBe(360);
   });
   it("enforces updated minimum height for approval cards", () => {
-    expect(APPROVAL_MIN_H).toBe(180);
-    expect(approvalHeight(0)).toBe(220);
+    expect(APPROVAL_MIN_H).toBe(200);
+    expect(approvalHeight(0)).toBe(200);
   });
   it("scales chatPromptHeight inside the landscape bounds", () => {
     const min = ORIENTATION_GEOMETRY.landscape.min.h;

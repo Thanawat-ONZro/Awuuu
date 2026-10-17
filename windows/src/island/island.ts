@@ -1039,7 +1039,7 @@ export class Island {
     this.islandEl.style.transform = this.moveAt?.transform ?? "none";
     // The resize grip sits on the corner away from the docked edge.
     const L0 = geo.layout;
-    const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt" || State.view === "dashboard" || State.view === "overview");
+    const showGrip = State.mode === "expanded" && (State.view === "agents" || State.view === "prompt");
     this.resizeGrip.style.display = showGrip ? "block" : "none";
     this.resizeGrip.dataset.v = L0.v === "bottom" ? "bottom" : "top";
     this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
@@ -1143,17 +1143,16 @@ export class Island {
       const dw = L.h === "center" ? 2 * dx : L.h === "left" ? dx : -dx;
       // A click on the grip is not a resize: the chat keeps growing by itself.
       if (r.chat && geo.chatH === 0 && Math.abs(dx) + Math.abs(dy) < 3) return;
-      const initialAspect = r.w / r.h;
+      const dh = L.v === "bottom" ? -dy : dy;
       const rawW = Math.round(r.w + dw);
+      const rawH = Math.round(r.h + dh);
       const clampedW = Math.min(bounds.max.w, Math.max(bounds.min.w, rawW));
-      const uniformH = Math.round(clampedW / initialAspect);
-      const clampedH = Math.min(bounds.max.h, Math.max(bounds.min.h, uniformH));
-      const finalW = Math.round(clampedH * initialAspect);
+      const clampedH = Math.min(bounds.max.h, Math.max(bounds.min.h, rawH));
       if (onSide()) {
         geo.sideW = clampedW;
         geo.hubH = clampedH;
       } else {
-        geo.expandedW = finalW;
+        geo.expandedW = clampedW;
         if (r.chat) geo.chatH = clampedH;
         else geo.hubH = clampedH;
       }
@@ -1761,8 +1760,8 @@ export class Island {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
-    geo.expandedW = State.settings.islandWidth ?? 900;
-    geo.hubH = State.settings.hubHeight ?? 460;
+    geo.expandedW = State.settings.islandWidth ?? 1000;
+    geo.hubH = State.settings.hubHeight ?? 360;
     geo.chatH = State.settings.chatHeight ?? 0;
     // The Appearance page edits the dog live; the frame loop picks it up.
     this.ownLook = normalizeLook(State.settings.dog);
