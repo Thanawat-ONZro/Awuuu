@@ -660,10 +660,10 @@ class AppState {
   }
 
   get openIslandOn(): "overview" | "dashboard" | "agents" | "last" {
-    return (this.settings.openIslandOn as any) ?? "overview";
+    return this.settings.openIslandOn ?? "overview";
   }
   set openIslandOn(val: "overview" | "dashboard" | "agents" | "last") {
-    this.settings.openIslandOn = val as any;
+    this.settings.openIslandOn = val;
     this.notify();
   }
 

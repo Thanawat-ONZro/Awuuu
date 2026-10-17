@@ -1146,7 +1146,10 @@ export class Island {
       const y = Math.min(Math.max(L.anchorY - hh / 2, 0), Math.max(0, L.panelH - hh));
       return { x, y, w, h: hh };
     }
-    const x = Math.min(Math.max(L.anchorX - w / 2, 0), Math.max(0, L.panelW - w));
+    const earMargin = L.edge === "top" ? 14 : 0;
+    const minX = earMargin;
+    const maxX = Math.max(minX, L.panelW - w - earMargin);
+    const x = Math.min(Math.max(L.anchorX - w / 2, minX), maxX);
     return { x, y: this.atBottom ? L.panelH - hh : 0, w, h: hh };
   }
 

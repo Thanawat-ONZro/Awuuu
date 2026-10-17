@@ -135,10 +135,21 @@ class MockElement {
     }
     return res;
   }
+
+  scrollIntoView() {}
+  getBoundingClientRect() {
+    return { x: 0, y: 0, width: 100, height: 30, top: 0, bottom: 30, left: 0, right: 100 };
+  }
+  remove() {
+    this.children = [];
+    this.childNodes = [];
+  }
 }
 
 if (typeof (globalThis as any).document === "undefined") {
+  const body = new MockElement("body");
   (globalThis as any).document = {
+    body,
     createElement(tag: string) {
       return new MockElement(tag);
     },
@@ -148,6 +159,14 @@ if (typeof (globalThis as any).document === "undefined") {
     createTextNode(text: string) {
       return { nodeType: 3, textContent: text };
     },
+    querySelector(selector: string) {
+      return body.querySelector(selector);
+    },
+    querySelectorAll(selector: string) {
+      return body.querySelectorAll(selector);
+    },
+    addEventListener(_event: string, _fn: Function, _capture?: boolean) {},
+    removeEventListener(_event: string, _fn: Function, _capture?: boolean) {},
   };
 }
 
@@ -156,5 +175,27 @@ if (typeof (globalThis as any).ResizeObserver === "undefined") {
     observe() {}
     unobserve() {}
     disconnect() {}
+  };
+}
+
+if (typeof (globalThis as any).DOMRect === "undefined") {
+  (globalThis as any).DOMRect = class DOMRect {
+    x: number; y: number; width: number; height: number;
+    top: number; right: number; bottom: number; left: number;
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x; this.y = y; this.width = width; this.height = height;
+      this.top = y; this.left = x; this.bottom = y + height; this.right = x + width;
+    }
+  };
+}
+
+if (typeof (globalThis as any).window === "undefined") {
+  (globalThis as any).window = {
+    innerWidth: 1024,
+    innerHeight: 768,
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    addEventListener(_event: string, _fn: Function, _capture?: boolean) {},
+    removeEventListener(_event: string, _fn: Function, _capture?: boolean) {},
   };
 }

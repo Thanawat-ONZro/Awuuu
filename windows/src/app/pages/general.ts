@@ -110,11 +110,11 @@ function generalSection(): HTMLElement {
       h("label", { text: t("Open the island on") }),
       select(
         [
-          ["dashboard", t("Dashboard")],
+          ["overview", t("Home")],
           ["agents", t("Agents hub")],
           ["last", t("Last used")],
         ],
-        () => settings.openIslandOn ?? "dashboard",
+        () => (settings.openIslandOn === "dashboard" ? "overview" : (settings.openIslandOn ?? "overview")),
         (v) => {
           settings.openIslandOn = v as Settings["openIslandOn"];
         },

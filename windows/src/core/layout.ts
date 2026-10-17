@@ -23,6 +23,8 @@ export type IslandViewName =
   | "note"
   | "settings"
   | "greeting"
+  // Retired in WS8 (merged into "overview"): retained for backwards compatibility
+  // with persisted settings, replayed history, and hooks. State.view normalizes it to "overview".
   | "dashboard";
 
 export type BotStateName =
@@ -81,7 +83,7 @@ export function getOrientationBounds(edge: "top" | "bottom" | "left" | "right"):
 export const EXPANDED_W = 1000;
 
 export const DEFAULT_LAYOUT: IslandLayout = {
-  anchorX: 540, anchorY: 195, h: "center", v: "top", edge: "top", vertical: false, panelW: 1080, panelH: 390,
+  anchorX: 590, anchorY: 235, h: "center", v: "top", edge: "top", vertical: false, panelW: 1180, panelH: 470,
 };
 
 /** The header is a 30 px row: along the top, or along the bottom when the
@@ -162,6 +164,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   note: { height: 360, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 200, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 360, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  // Retired in WS8 (merged into overview): retained for geometry tests and legacy view resolution.
   dashboard: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
 };
 
@@ -349,9 +352,11 @@ export function shouldShowEars(
 
 /**
  * Selects agent tasks for the right-hand column (up to 4, excluding the active/focused task).
+ * One dot per session minus the focused one (which is already displayed in the main card).
+ * When no session is focused, all sessions are candidate dots up to the 4-dot column cap.
  */
 export function getColumnAgents<T extends { id: string }>(tasks: T[], activeId?: string | null): T[] {
-  const list = activeId ? tasks.filter((t) => t.id !== activeId) : tasks.slice(1);
+  const list = activeId ? tasks.filter((t) => t.id !== activeId) : tasks;
   return list.slice(0, 4);
 }
 
