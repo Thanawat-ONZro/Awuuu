@@ -27,8 +27,9 @@ describe("Terminal & Log Focus fixes", () => {
       expect(session!.ancestorPids).toEqual([100, 200]);
     });
 
-    it("clears stale terminal_hwnd and ancestor_pids when subsequent event lacks them", () => {
-      // First event with hwnd and pids
+    it("keeps the last known terminal when a later event omits it (hidden console)", () => {
+      // The hook drops terminal_hwnd while the console is hidden, so an event
+      // without it must not wipe the handle we already have.
       handleHook({} as any, {
         hook_event_name: "PreToolUse",
         session_id: "session-1",
@@ -38,16 +39,15 @@ describe("Terminal & Log Focus fixes", () => {
 
       const session = State.agentSessions.find((s) => s.id === "session_session-1");
       expect(session!.terminalHwnd).toBe(12345);
-      expect(session!.ancestorPids).toEqual([100, 200]);
 
-      // Next event for the same session has no hwnd or pids (e.g. ConPTY or closed)
+      // Next event for the same session has no hwnd or pids (e.g. ConPTY or minimised)
       handleHook({} as any, {
         hook_event_name: "PostToolUse",
         session_id: "session-1",
       });
 
-      expect(session!.terminalHwnd).toBeUndefined();
-      expect(session!.ancestorPids).toBeUndefined();
+      expect(session!.terminalHwnd).toBe(12345);
+      expect(session!.ancestorPids).toEqual([100, 200]);
     });
 
     it("overwrites terminal_hwnd and ancestor_pids when new values arrive", () => {
@@ -71,7 +71,7 @@ describe("Terminal & Log Focus fixes", () => {
       expect(session!.ancestorPids).toEqual([300]);
     });
 
-    it("treats terminal_hwnd = 0 and empty ancestor_pids as absent", () => {
+    it("ignores a zero hwnd and an empty pid list instead of storing them", () => {
       handleHook({} as any, {
         hook_event_name: "PreToolUse",
         session_id: "session-1",
@@ -88,8 +88,8 @@ describe("Terminal & Log Focus fixes", () => {
         ancestor_pids: [],
       });
 
-      expect(session!.terminalHwnd).toBeUndefined();
-      expect(session!.ancestorPids).toBeUndefined();
+      expect(session!.terminalHwnd).toBe(12345);
+      expect(session!.ancestorPids).toEqual([100, 200]);
     });
   });
 

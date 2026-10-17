@@ -409,22 +409,13 @@ export function handleHook(island: Island, payload: HookPayload) {
   const session = State.getOrCreateSession(sessionId, cwd, source);
   const taskId = session.id;
 
-  const incomingHwnd = payload.terminal_hwnd || undefined;
-  if (session.terminalHwnd !== incomingHwnd) {
-    session.terminalHwnd = incomingHwnd;
-  }
-
-  const incomingPids = payload.ancestor_pids && payload.ancestor_pids.length > 0 ? payload.ancestor_pids : undefined;
-  const pidsDiffer =
-    (session.ancestorPids == null && incomingPids != null) ||
-    (session.ancestorPids != null && incomingPids == null) ||
-    (session.ancestorPids != null &&
-      incomingPids != null &&
-      (session.ancestorPids.length !== incomingPids.length ||
-        session.ancestorPids.some((pid, i) => pid !== incomingPids[i])));
-  if (pidsDiffer) {
-    session.ancestorPids = incomingPids;
-  }
+  // Keep the last known window/pids: the hook omits terminal_hwnd whenever the
+  // console is hidden (win.rs `terminal_window()` returns None for a minimised or
+  // ConPTY stand-in window), so treating an absent field as "gone" would drop a
+  // perfectly good handle. A dead handle is rejected when it is used, by
+  // `usable()` in win_user.rs, and the caller now reports that failure.
+  if (payload.terminal_hwnd) session.terminalHwnd = payload.terminal_hwnd;
+  if (payload.ancestor_pids?.length) session.ancestorPids = payload.ancestor_pids;
 
   let tool = payload.tool_name ?? "";
   let input = payload.tool_input ?? {};
