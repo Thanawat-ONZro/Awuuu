@@ -2466,6 +2466,17 @@ input[type="range"]::-webkit-slider-thumb {
   grid-auto-rows: minmax(0, 1fr);
 }
 
+.dashboard-grid .widget-media {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+#root[data-edge="left"] .dashboard-grid .widget-media,
+#root[data-edge="right"] .dashboard-grid .widget-media,
+.dashboard-grid.cols-1 .widget-media {
+  grid-column: 1;
+}
+
 .dashboard-grid:not(.has-media) .widget-date {
   grid-column: 1 / -1;
 }
@@ -2542,6 +2553,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .widget-media {
+  grid-column: 1 / -1;
+  order: -1;
   display: flex;
   flex-direction: row;
   align-items: center;

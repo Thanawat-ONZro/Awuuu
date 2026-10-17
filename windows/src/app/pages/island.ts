@@ -6,7 +6,7 @@ import { h } from "../../views/dom";
 import { layoutRefreshers, pageOf, save, select, settings, slider, toggle } from "../ui";
 import { t } from "../../i18n/i18n";
 
-const SIZE_PRESETS: Record<string, [number, number]> = { M: [640, 290], L: [820, 420], XL: [1000, 560] };
+export const SIZE_PRESETS: Record<string, [number, number]> = { S: [800, 320], M: [1000, 360], L: [1100, 440] };
 
 function layoutSection(): HTMLElement {
   const edge = select(
@@ -49,9 +49,9 @@ function layoutSection(): HTMLElement {
     h("div", { class: "row" }, h("label", { text: t("Size") }), presets,
       h("span", { class: "hint", text: t("or drag the island's bottom-right corner") })),
     h("div", { class: "row" }, h("label", { text: t("Width") }),
-      slider(520, 1100, 10, () => settings.islandWidth ?? 640, (v) => (settings.islandWidth = v))),
+      slider(800, 1100, 10, () => Math.min(1100, Math.max(800, settings.islandWidth ?? 1000)), (v) => (settings.islandWidth = v))),
     h("div", { class: "row" }, h("label", { text: t("Hub height") }),
-      slider(220, 640, 10, () => settings.hubHeight ?? 290, (v) => (settings.hubHeight = v))),
+      slider(320, 440, 10, () => Math.min(440, Math.max(320, settings.hubHeight ?? 360)), (v) => (settings.hubHeight = v))),
     h("h2", {}, h("span", { text: t("Agents hub") })),
     h("div", { class: "row" }, h("label", { text: t("Text size") }), scale),
     h("div", { class: "row" }, h("label", { text: t("Log") }), lines),
