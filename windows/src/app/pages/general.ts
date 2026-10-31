@@ -90,7 +90,7 @@ function generalSection(): HTMLElement {
     },
   });
 
-  return h(
+  const section = h(
     "section",
     {},
     h("h2", {}, h("span", { text: t("General") })),
@@ -177,6 +177,22 @@ function generalSection(): HTMLElement {
       toggle(settings.autostart, (v) => { settings.autostart = v; void save(); }),
     ),
   );
+  const categories: [string, string[]][] = [
+    [t("General"), [t("Language"), t("Open the island on"), t("Launch at startup")]],
+    [t("Sound"), [t("Sound"), t("Your sounds"), t("Quiet hours")]],
+    [t("Island behaviour"), [t("Auto-close"), t("Notification auto-hide"), t("Open on hover")]],
+    [t("Display & desktop"), [t("Island lives on"), t("Dog on desktop")]],
+    [t("Updates"), [t("Updates")]],
+  ];
+  const rows = Array.from(section.querySelectorAll<HTMLElement>(".row"));
+  const assigned = new Set<HTMLElement>();
+  const groups = categories.map(([title, labels]) => {
+    const group = h("section", {}, h("h2", {}, h("span", { text: title })));
+    rows.filter(row => labels.includes(Array.from(row.children).find(child => child.tagName === "LABEL")?.textContent ?? "")).forEach(row => { group.append(row); assigned.add(row); });
+    return group;
+  });
+  rows.filter(row => !assigned.has(row)).forEach(row => groups[0].append(row));
+  return h("div", { class: "settings-groups" }, ...groups);
 }
 
 

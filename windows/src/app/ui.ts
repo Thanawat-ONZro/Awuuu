@@ -12,8 +12,15 @@ import { t } from "../i18n/i18n";
 export const settings: Settings = { ...DEFAULT_SETTINGS };
 
 export async function save() {
-  applyAccent(settings.dog);
-  await Bridge.saveSettings(settings);
+  window.dispatchEvent(new CustomEvent("settings-save-state", { detail: "saving" }));
+  try {
+    applyAccent(settings.dog);
+    await Bridge.saveSettings(settings);
+    window.dispatchEvent(new CustomEvent("settings-save-state", { detail: "saved" }));
+  } catch (error) {
+    window.dispatchEvent(new CustomEvent("settings-save-state", { detail: "error" }));
+    throw error;
+  }
 }
 
 /** A card with a heading — what every page is made of. */
@@ -34,6 +41,7 @@ export function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement
   el.addEventListener("click", () => {
     const next = !el.classList.contains("on");
     el.classList.toggle("on", next);
+    el.setAttribute("aria-pressed", String(next));
     onChange(next);
   });
   return el;
@@ -71,16 +79,30 @@ export function testRow(id: string): HTMLElement {
 
 export function secretField(key: string, placeholder: string): HTMLElement {
   const input = h("input", { type: "password", placeholder, autocomplete: "off", spellcheck: "false", style: "flex:1 1 auto;min-width:0" }) as HTMLInputElement;
+  const note = h("span", { class: "hint", role: "status", "aria-live": "polite" });
+  const remove = h("button", { text: t("Remove"), hidden: true }) as HTMLButtonElement;
   void Bridge.secretPresent(key).then((has) => {
-    if (has) input.placeholder = "••••••••  (stored)";
-  });
-  const saveBtn = h("button", { text: t("Save") });
+    remove.hidden = !has;
+    if (has) { input.placeholder = t("Stored securely on this PC"); if (!input.value) note.textContent = t("Saved on this PC"); }
+  }).catch(() => { note.textContent = t("Could not read saved status"); });
+  const saveBtn = h("button", { text: t("Save"), disabled: true }) as HTMLButtonElement;
+  input.addEventListener("input", () => { saveBtn.disabled = !input.value.trim(); note.textContent = input.value ? t("Unsaved changes") : ""; });
   saveBtn.addEventListener("click", async () => {
-    await Bridge.secretSet(key, input.value.trim());
-    input.placeholder = input.value.trim() ? "••••••••  (stored)" : placeholder;
-    input.value = "";
+    saveBtn.disabled = true; note.textContent = t("Saving…");
+    try {
+      await Bridge.secretSet(key, input.value.trim());
+      input.placeholder = t("Stored securely on this PC"); input.value = "";
+      remove.hidden = false;
+      note.textContent = t("Saved on this PC");
+    } catch { note.textContent = t("Could not save. Please try again."); saveBtn.disabled = false; }
   });
-  return h("span", { style: "display:flex;gap:6px;flex:1 1 auto;min-width:0" }, input, saveBtn);
+  remove.addEventListener("click", async () => {
+    remove.disabled = true;
+    try { await Bridge.secretSet(key, ""); input.value = ""; input.placeholder = placeholder; remove.hidden = true; saveBtn.disabled = true; note.textContent = t("Removed."); }
+    catch { note.textContent = t("Could not save. Please try again."); }
+    finally { remove.disabled = false; }
+  });
+  return h("span", { class: "secret-field" }, input, saveBtn, remove, note);
 }
 
 export function textField(get: () => string, set: (v: string) => void, placeholder: string): HTMLInputElement {

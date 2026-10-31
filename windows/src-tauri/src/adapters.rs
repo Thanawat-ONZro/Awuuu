@@ -6,7 +6,7 @@
 // refuse what is not what we expect) are unit tested. hooks.rs does the
 // preview, backup and write for every adapter exactly as it does for Claude Code.
 //
-// Gemini CLI and Cursor go through here. Copilot CLI is not here: its relay
+// Cursor go through here. Copilot CLI is not here: its relay
 // side (camelCase payload, fail-closed permissionRequest answer) isn't built.
 // Codex and OpenCode have their own, older code in hooks.rs.
 
@@ -42,16 +42,6 @@ impl std::fmt::Debug for Adapter {
 }
 
 pub const ADAPTERS: &[Adapter] = &[
-    Adapter {
-        id: "gemini",
-        name: "Gemini CLI",
-        file: &[".gemini", "settings.json"],
-        home_dir: ".gemini",
-        exe: "gemini",
-        merge: gemini_merge,
-        remove: gemini_remove,
-        installed: gemini_installed,
-    },
     Adapter {
         id: "cursor",
         name: "Cursor Agent",
@@ -191,56 +181,6 @@ fn root_object(root: &Value) -> Result<Map<String, Value>, String> {
     }
 }
 
-// ── Gemini CLI: ~/.gemini/settings.json ───────────────────────────────────────
-//
-// Claude-style groups with a `*` matcher and timeouts in milliseconds. Gemini
-// CLI runs hook commands with PowerShell, hence `& '<exe>'`. The event the
-// island should see goes on the command line (the relay also maps Gemini's own
-// names). AfterModel is left out: it fires on every response chunk.
-
-/// (Gemini's event, the island's event, timeout in ms)
-const GEMINI_EVENTS: &[(&str, &str, u64)] = &[
-    ("SessionStart", "SessionStart", 10000),
-    ("SessionEnd", "SessionEnd", 10000),
-    ("BeforeTool", "PreToolUse", 5000),
-    ("AfterTool", "PostToolUse", 5000),
-    ("BeforeAgent", "UserPromptSubmit", 5000),
-    ("AfterAgent", "Stop", 5000),
-];
-
-fn gemini_command(exe: &str, event: &str) -> String {
-    format!("& '{}' --agent gemini {event}", exe.replace('\'', "''"))
-}
-
-fn gemini_merge(root: &Value, exe: &str) -> Result<Value, String> {
-    let events = GEMINI_EVENTS.iter().map(|(theirs, ours, timeout)| {
-        (
-            theirs.to_string(),
-            json!({
-                "matcher": "*",
-                "hooks": [{ "type": "command", "command": gemini_command(exe, ours), "timeout": timeout }],
-            }),
-        )
-    });
-    groups_install(root, "gemini", events).map(Value::Object)
-}
-
-fn gemini_remove(root: &Value) -> Result<Value, String> {
-    groups_uninstall(root, "gemini").map(Value::Object)
-}
-
-fn gemini_installed(root: &Value) -> bool {
-    groups_have_ours(root, "gemini")
-}
-
-// ── Cursor Agent: ~/.cursor/hooks.json ────────────────────────────────────────
-//
-// `{"version": 1, "hooks": {"<event>": [{"command": …}]}}` with camelCase
-// events. Cursor doesn't document its shell, so the path is bare when it has
-// nothing that needs quoting and double-quoted otherwise. Nothing is ever
-// printed back: no permission is given on Cursor's behalf.
-
-/// (Cursor's event, the island's event)
 const CURSOR_EVENTS: &[(&str, &str)] = &[
     ("sessionStart", "SessionStart"),
     ("sessionEnd", "SessionEnd"),
@@ -362,9 +302,6 @@ mod tests {
 
     #[test]
     fn commands_name_the_agent_and_the_event() {
-        let g = gemini_command(EXE, "PreToolUse");
-        assert!(g.starts_with("& '") && g.ends_with("--agent gemini PreToolUse"), "{g}");
-        assert!(gemini_command(r"C:\it's\awuuu-hook.exe", "Stop").contains("it''s"));
         assert_eq!(cursor_command(EXE, "Stop"), format!("{EXE} --agent cursor Stop"));
         assert!(cursor_command(r"C:\Program Files\A\awuuu-hook.exe", "Stop").starts_with('"'));
     }
@@ -377,6 +314,6 @@ mod tests {
 
     #[test]
     fn registry_is_findable() {
-        assert!(find("Gemini").is_some() && find("cursor").is_some() && find("nope").is_none());
+        assert!(find("cursor").is_some() && find("nope").is_none());
     }
 }

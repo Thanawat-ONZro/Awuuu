@@ -2,7 +2,7 @@
 
 Awuuu ships no OAuth app of its own: you create one with each provider, once, for free, and paste its ID into Awuuu. Your mail and calendar then travel only between your PC and that provider.
 
-Where the IDs go: **Awuuu window → Integrations → Advanced / other providers → OAuth client IDs**.
+Where the IDs go: **Awuuu window → Integrations → the provider card → Open setup steps**.
 
 What Awuuu asks for is read-only: unread mail and today's events. Refresh tokens are kept in the Windows Credential Manager; access tokens stay in memory.
 
@@ -25,7 +25,7 @@ What Awuuu asks for is read-only: unread mail and today's events. Refresh tokens
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - Application type **Desktop app**. No redirect URI to enter: desktop clients accept `http://127.0.0.1:<any port>`.
 5. Copy the **Client ID** and the **Client secret**.
-6. In Awuuu, Advanced → Google: paste the client ID, then paste the client secret and press **Save**.
+6. In Awuuu, Calendar & mail → Connect an account → Google: paste the client ID, then paste the client secret and press **Save**.
 7. Back at the top of the page, click **Sign in with Google**.
 
 Good to know:
@@ -46,7 +46,7 @@ Good to know:
 4. **Authentication → Advanced settings → Allow public client flows: Yes**. Save. There is no client secret.
 5. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: `User.Read`, `Mail.Read`, `Calendars.Read`, `offline_access`. (No admin consent is needed for a personal account.)
 6. **Overview**: copy the **Application (client) ID**.
-7. In Awuuu, Advanced → Microsoft: paste the client ID. Then click **Sign in with Microsoft**.
+7. In Awuuu, Calendar & mail → Connect an account → Microsoft: paste the client ID. Then click **Sign in with Microsoft**.
 
 Good to know:
 
@@ -65,18 +65,18 @@ Good to know:
 2. Name "Awuuu"; Homepage URL and Authorization callback URL can be anything (e.g. `http://localhost`) — the device flow does not use them.
 3. Tick **Enable Device Flow**. Register the application.
 4. Copy the **Client ID** (starts with `Ov23li…`). No client secret is needed.
-5. In Awuuu, Advanced → GitHub: paste the client ID.
+5. In Awuuu, GitHub → Device Flow: paste the client ID.
 6. On the GitHub card click **Sign in with a code**, press **Copy**, then **Open GitHub**, paste the code and approve. The card turns to "Connected" by itself.
 
 Good to know:
 
 - Awuuu asks for `repo`, `read:org` and `notifications` (review requests, failing workflow runs, notifications).
 - **"Device flow is off…"** — step 3 was skipped.
-- A classic personal access token still works: Advanced → "GitHub with a personal access token".
+- A classic personal access token still works: GitHub → "GitHub with a personal access token".
 - Remove access at <https://github.com/settings/applications>.
 
 ---
 
 ## No account to sign in with?
 
-Advanced also keeps the older ways, used only when nobody is signed in: mail over IMAP with an **app password**, and a calendar's private **iCal link**.
+The Calendar and Mail cards also offer alternatives, used only when nobody is signed in: mail over IMAP with an **app password**, and a calendar's private **iCal link**.

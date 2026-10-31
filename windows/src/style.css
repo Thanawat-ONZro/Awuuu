@@ -2862,7 +2862,10 @@ input[type="range"]::-webkit-slider-thumb {
 .compact-media-btn {
   background: transparent;
   border: none;
-  padding: 2px 3px;
+  padding: 0;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
   color: var(--dim-1);
   cursor: pointer;
   display: flex;
@@ -2891,6 +2894,8 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 2px;
   height: 5px;
 }
+
+.compact-media.paused .compact-media-bars .bar { animation-play-state: paused; opacity: .45; }
 
 .compact-volume { display: flex; align-items: center; gap: 9px; width: 100%; }
 .compact-volume svg { flex: 0 0 auto; color: #f5f5f5; }

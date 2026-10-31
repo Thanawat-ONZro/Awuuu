@@ -58,7 +58,7 @@ function welcomeSection(): HTMLElement {
     onclick: async () => {
       settings.onboarded = true;
       await save();
-      navigate("agents");
+      navigate("modules");
     },
   });
 
@@ -68,25 +68,31 @@ function welcomeSection(): HTMLElement {
     h("h2", {}, h("span", { text: t("Welcome to Awuuu") })),
     h("div", {
       class: "hint",
-      text: t("Awuuu lives on the edge of your screen and keeps an eye on your coding agents. Hover the little tab to wake it, click to open, drag the ⋮⋮ grip (or Alt + drag) to put it on any edge, and drop files on it."),
+      text: t("Awuuu lives on the edge of your screen. Hover the little tab to wake it, click to open, and drag the ⋮⋮ grip (or Alt + drag) to move it."),
     }),
-    h("h3", { text: t("1 · Connect your agents — hooks") }),
+    h("h3", { text: t("1 · Use what is ready") }),
+    h("div", { class: "hint", text: t("Music controls, notes, to-dos, quick toggles and the temporary file shelf work on this PC without an account. Open the island to try them. Shelf files stay local and are removed after seven days.") }),
+    h("div", { class: "row" }, h("button", { text: t("Choose features"), onclick: () => void navigate("modules") })),
+    h("h3", { text: t("2 · Connect a coding agent (optional)") }),
     h("div", {
       class: "hint",
-      text: t("An agent tells Awuuu what it is doing through a hook: a small entry in that agent's own settings that calls Awuuu's relay. You install it once per agent, from this page — Awuuu shows exactly what changes and keeps a dated backup. Without its hook, Awuuu can't see that agent."),
+      text: t("If you use a supported coding agent, choose Set up below to install its hook once. Awuuu shows the change and keeps a dated backup. You can skip this and still use the local features."),
     }),
     agents,
     h("div", {
       class: "hint",
       text: t("Some agents ask once before running new hooks: Hermes (answer its prompt, or run `hermes hooks list`), Codex (run /hooks). OpenCode loads its plugin when it restarts."),
     }),
-    h("h3", { text: t("2 · aw — an optional shortcut") }),
+    h("h3", { text: t("3 · Add online features only when needed") }),
+    h("div", { class: "hint", text: t("Weather needs a city and internet. Calendar, mail, translation and developer services need a source or account. Open Features to see the shortest setup path for each one.") }),
+    h("div", { class: "row" }, h("button", { text: t("Open integrations"), onclick: () => void navigate("integrations") })),
+    h("h3", { text: t("Optional · aw command") }),
     h("div", {
       class: "hint",
       text: t("aw is a command you can type instead of the agent's name — `aw claude`, `aw agy`, `aw hermes`… It starts Awuuu if it isn't running, checks that agent's hook and offers to set it up, then runs the agent. The hooks do the real work; aw only makes sure they are there. `aw status` lists what is connected."),
     }),
     h("div", { class: "row" }, awBtn, awState),
-    h("h3", { text: t("3 · Try it") }),
+    h("h3", { text: t("Try an agent session") }),
     h("div", {
       class: "hint",
       text: t("Start a session in any connected agent: its steps appear in the island's terminal page, questions and permission requests pop up as cards you answer with a click, and \"Open terminal\" takes you back to that session's window."),

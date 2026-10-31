@@ -6,6 +6,7 @@ import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
 import { State, DEFAULT_SETTINGS, type Settings } from "./core/state";
+import { resolveModuleSettings } from "./core/module-settings";
 import { applyAccent } from "./core/accent";
 import { setLanguage } from "./i18n/i18n";
 import { Island } from "./island/island";
@@ -33,7 +34,7 @@ async function main() {
     State.settings = {
       ...State.settings,
       ...boot.settings,
-      modules: { ...DEFAULT_SETTINGS.modules, ...(boot.settings?.modules ?? {}) },
+      modules: resolveModuleSettings(boot.settings),
       collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(boot.settings?.collapsedModules ?? {}) },
     };
   }
@@ -91,7 +92,7 @@ async function main() {
     State.settings = {
       ...State.settings,
       ...s,
-      modules: { ...DEFAULT_SETTINGS.modules, ...(s?.modules ?? {}) },
+      modules: resolveModuleSettings(s),
       collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(s?.collapsedModules ?? {}) },
     };
     setLanguage(State.settings.language);

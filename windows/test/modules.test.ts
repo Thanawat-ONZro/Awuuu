@@ -12,6 +12,7 @@ import {
   type ModuleDescriptor,
 } from "../src/core/modules";
 import { State } from "../src/core/state";
+import { resolveModuleSettings } from "../src/core/module-settings";
 
 describe("module registry", () => {
   it("keeps declaration order and filters disabled modules", () => {
@@ -193,7 +194,7 @@ describe("collapsed strip eligibility", () => {
 });
 
 describe("moduleOn and collapsedModuleOn helpers (B1 regression)", () => {
-  it("returns default-on modules when visibleModules is passed an empty object {}", () => {
+  it("shows only ready-to-use modules on a new installation", () => {
     const visible = visibleModules({});
     const visibleIds = visible.map((m) => m.id);
     expect(visibleIds).toEqual([
@@ -201,15 +202,22 @@ describe("moduleOn and collapsedModuleOn helpers (B1 regression)", () => {
       "media",
       "todo",
       "notes",
-      "calendar",
       "toggles",
       "shelf",
       "notifications",
-      "translation",
     ]);
     expect(visibleIds).not.toContain("weather");
     expect(visibleIds).not.toContain("system");
     expect(visibleIds).not.toContain("screentime");
+    expect(visibleIds).not.toContain("calendar");
+    expect(visibleIds).not.toContain("translation");
+  });
+
+  it("keeps old implicit calendar and translation choices while respecting explicit switches", () => {
+    expect(resolveModuleSettings({ onboarded: false, modules: {} }).calendar).toBe(false);
+    expect(resolveModuleSettings({ onboarded: true, modules: {} }).calendar).toBe(true);
+    expect(resolveModuleSettings({ onboarded: true, modules: {} }).translation).toBe(true);
+    expect(resolveModuleSettings({ onboarded: true, modules: { calendar: false, translation: false } }).calendar).toBe(false);
   });
 
   it("evaluates moduleOn correctly with explicit values and fallbacks", () => {

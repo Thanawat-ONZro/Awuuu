@@ -5,6 +5,7 @@ import type { ChatProvider } from "../../core/state";
 import { h, clear } from "../../views/dom";
 import { pageOf, save, select, settings, statusDot, textField } from "../ui";
 import { t } from "../../i18n/i18n";
+import { serviceCost } from "../service-cost";
 
 // ── Agent / API section ────────────────────────────────────────────────────────
 
@@ -372,5 +373,5 @@ function personalitySection(): HTMLElement {
 export async function page(): Promise<HTMLElement> {
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   return pageOf(t("Chat & models"), t("The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server."),
-    personalitySection(), hermesSection(), providersSection(), apiSection(hasKey));
+    serviceCost("Cloud chat"), providersSection(), hermesSection(), apiSection(hasKey), personalitySection());
 }

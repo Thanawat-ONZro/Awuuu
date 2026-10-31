@@ -399,7 +399,7 @@ export function handleHook(island: Island, payload: HookPayload) {
 
   // awuuu-hook always says who is calling (`--agent`, or Claude Code for
   // installs that predate the flag).
-  // Any other agent (`awuuu-hook --agent gemini`) gets its own pill and history name.
+  // Any other agent (`awuuu-hook --agent custom-agent`) gets its own pill and history name.
   const custom = typeof payload.awuuu_agent === "string" && /^[a-z0-9-]{2,24}$/.test(payload.awuuu_agent) ? payload.awuuu_agent : null;
   const source: AgentSource = custom ? "custom" : KNOWN_SOURCES.has(payload.agent_source as AgentSource)
     ? (payload.agent_source as AgentSource)

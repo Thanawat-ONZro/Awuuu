@@ -20,6 +20,8 @@ import { page as privacyPage } from "./pages/privacy";
 import { page as aboutPage } from "./pages/about";
 import { page as modulesPage } from "./pages/modules";
 import { t } from "../i18n/i18n";
+import { setupGuide, enhanceSettingsSelects, organizeSettingsSections } from "./setup-guide";
+import { layoutRefreshers } from "./ui";
 
 export type PageId =
   | "sessions" | "stats"
@@ -60,22 +62,27 @@ const groups = (): { title: string; pages: PageDef[] }[] => [
     ],
   },
   {
-    title: t("Set up"),
+    title: t("Get started"),
     pages: [
       { id: "welcome", label: t("Getting started"), icon: I.welcome, build: welcomePage },
       { id: "agents", label: t("Agents"), icon: I.agents, build: agentsPage },
       { id: "chat", label: t("Chat & models"), icon: I.chat, build: chatPage },
+    ],
+  },
+  {
+    title: t("Features"),
+    pages: [
+      { id: "modules", label: t("Modules"), icon: I.modules, build: modulesPage },
       { id: "integrations", label: t("Integrations"), icon: I.integrations, build: integrationsPage },
     ],
   },
   {
-    title: t("Look & feel"),
+    title: t("Personalize"),
     pages: [
       { id: "appearance", label: t("Appearance"), icon: I.appearance, build: appearancePage },
       { id: "island", label: t("Island"), icon: I.island, build: islandPage },
       { id: "general", label: t("Sound & behaviour"), icon: I.general, build: generalPage },
       { id: "shortcuts", label: t("Shortcuts"), icon: I.shortcuts, build: shortcutsPage },
-      { id: "modules", label: t("Modules"), icon: I.modules, build: modulesPage },
     ],
   },
   {
@@ -151,6 +158,7 @@ export async function navigate(id: PageId, anchor?: string) {
       /* a page's clean-up must never block navigation */
     }
   }
+  layoutRefreshers.length = 0;
   currentId = def.id;
   navButtons.forEach((b, k) => b.classList.toggle("on", k === def.id));
   moveSideThumb();
@@ -170,6 +178,19 @@ export async function navigate(id: PageId, anchor?: string) {
   Array.from(content.children).forEach((c) => { if (!c.classList.contains("hero-band")) c.remove(); });
   setHeroPage(def.id);
   content.append(el);
+  organizeSettingsSections(el, def.id);
+  const saved = h("span", { class: "settings-save-status", role: "status", "aria-live": "polite", text: t("Preferences save automatically. Use Save for connection fields.") });
+  el.querySelector(".page-head")?.append(saved);
+  const showSaved = (event: Event) => {
+    const state = (event as CustomEvent<string>).detail;
+    saved.textContent = state === "saving" ? t("Saving…") : state === "saved" ? t("Saved on this PC") : t("Could not save. Please try again.");
+    saved.dataset.state = state;
+  };
+  window.addEventListener("settings-save-state", showSaved);
+  onLeave(() => window.removeEventListener("settings-save-state", showSaved));
+  const guide = setupGuide(def.id);
+  if (guide) el.querySelector(".page-head")?.after(guide);
+  onLeave(enhanceSettingsSelects(el));
   content.scrollTop = 0;
   // The first page of a session appears without motion; later ones ease in.
   // Navigation never waits on this animation.
@@ -189,6 +210,11 @@ export async function navigate(id: PageId, anchor?: string) {
   if (anchor) {
     const target = document.getElementById(anchor);
     if (target) {
+      let parent: HTMLElement | null = target;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
       target.scrollIntoView({ behavior: "smooth", block: "start" });
       target.classList.add("flash");
       window.setTimeout(() => target.classList.remove("flash"), 1600);
@@ -227,7 +253,7 @@ export function mountShell(root: HTMLElement, ver: string, first: PageId) {
   for (const g of groups()) {
     nav.append(h("div", { class: "side-group", text: g.title }));
     for (const p of g.pages) {
-      const b = h("button", { class: "side-item", onclick: () => void navigate(p.id) },
+      const b = h("button", { class: "side-item", title: p.label, onclick: () => void navigate(p.id) },
         svg(p.icon, 15, { stroke: 1.8 }), h("span", { text: p.label }));
       navButtons.set(p.id, b);
       nav.append(b);

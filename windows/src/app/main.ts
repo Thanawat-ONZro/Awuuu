@@ -7,6 +7,7 @@ import "../settings/settings.css";
 import "./app.css";
 import { Bridge, onEvent } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
+import { resolveModuleSettings } from "../core/module-settings";
 import { layoutRefreshers, settings } from "./ui";
 import { applyAccent } from "../core/accent";
 import { setLanguage, currentLanguage } from "../i18n/i18n";
@@ -17,7 +18,7 @@ async function main() {
   const boot = await Bridge.boot();
   if (boot) {
     Object.assign(settings, boot.settings, {
-      modules: { ...DEFAULT_SETTINGS.modules, ...(boot.settings?.modules ?? {}) },
+      modules: resolveModuleSettings(boot.settings),
       collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(boot.settings?.collapsedModules ?? {}) },
     });
   }
@@ -39,7 +40,7 @@ async function main() {
 
   void onEvent<Settings>("settings-changed", (s) => {
     Object.assign(settings, s, {
-      modules: { ...DEFAULT_SETTINGS.modules, ...(s?.modules ?? {}) },
+      modules: resolveModuleSettings(s),
       collapsedModules: { ...DEFAULT_SETTINGS.collapsedModules, ...(s?.collapsedModules ?? {}) },
     });
     const before = currentLanguage();

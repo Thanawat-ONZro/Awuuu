@@ -4,10 +4,10 @@
 
 # Awuuu 🐾
 
-**Your loyal AI dog companion and dynamic island living at the top of your screen on Windows.**
-*Connected directly to your local Hermes Agent and watching over your Claude Code & AGY sessions.*
+**A small Windows island for music, files, notes and coding agent activity.**
+*Use the local tools immediately. Connect an agent, chat provider or online service only when you want it.*
 
-Approve permissions with 1 click, chat with your full-context Hermes Agent, drop files, and watch your companion react — all without leaving your workflow.
+Control the music playing on your PC, keep temporary files close, and follow coding agent sessions from the edge of your screen.
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
@@ -24,38 +24,59 @@ Approve permissions with 1 click, chat with your full-context Hermes Agent, drop
 
 **Awuuu** is an expressive, adorable dog companion (บางทีก็หมาต๋อง, หมาป่า, หมาบ้า, หมาน่ารัก) that peeks out from the top edge of your screen. Awuuu has animated floppy/perky ears with spring physics, a wagging tail, a cute black snout, a panting tongue (blep), and an expressive howling mouth when excited!
 
-### ⚡ Powered by Local Hermes Agent
+### Optional local chat
 
-Unlike generic chat apps, Awuuu connects directly to your running **local Hermes Agent** (`http://127.0.0.1:8642`) with **0ms startup lag**:
-- **Full Context & Memory**: Hermes Agent on your server (`thanawat`) knows who you are, your memories, projects, and active tasks.
-- **Tools & Subagents**: Seamless access to terminal, browser, skill sync, and subagent orchestration.
-- **Zero API Cost for Local Hermes**: Connects directly via the local NSSM `HermesGateway` service using `API_SERVER_KEY` discovered automatically from `%LOCALAPPDATA%\hermes\.env`.
+If you already run Hermes Agent on this PC, Awuuu can connect to its local gateway at `http://127.0.0.1:8642`. Chat is optional; music, notes, to-dos and Shelf do not need Hermes. Cloud chat providers are also optional and may have their own costs.
 
 ---
 
-## ✨ Features
+## ✨ Features and setup effort
 
-- 🐕 **Awuuu the Dog Mascot** — 60 FPS HTML5 Canvas 2D engine with spring physics, animated dog ears with twitching physics, cute snout & nose, wagging tail behind the body, and panting tongue.
-- 🤖 **Claude Code & AGY, Live** — see every session at the top of your screen: tool calls, file edits, and shell commands.
-- ✅ **1-Click Approvals** — permission prompts show up instantly with **Allow / Deny** buttons so you never have to context-switch to the terminal.
-- 💬 **Direct Hermes Chat** — talk directly to your Hermes Agent with file drops and window context support.
-- 🔊 **28 Custom Procedural Sounds** — 100% royalty-free open-source sound effects including puppy howls ("Awuuu!"), alert barks, happy tail-wag confirmation chirps, and collar chimes.
-- 🫥 **Non-intrusive & Sleek** — retracts seamlessly into the top notch when idle; peeks out when your cursor approaches the top edge.
-- 🔒 **Private & Secure** — runs 100% locally on your machine. API keys and tokens are stored in the **Windows Credential Manager**.
+| Feature | To start | Internet |
+| --- | --- | --- |
+| Music controls, volume, notes, to-dos, quick toggles | Open the island; play music in a Windows media app to see its controls | No for Awuuu's local controls |
+| Shelf (temporary files) | Drop a file onto the island or Shelf; copies are kept locally for seven days | No |
+| Coding agent sessions and approvals | Install a supported agent, then connect its hook once in **Get started → Agents** | The agent may need internet; Awuuu's hook is local |
+| Weather | Enter a city in **Features → Integrations** or **Features → Modules** | Yes; no API key |
+| Calendar | Paste a private iCal link in **Features → Integrations**; account connection is optional | Yes |
+| Mail | Connect Google or Microsoft, or use an app password on the Mail card | Yes; provider setup required |
+| Translation | Configure a running local LibreTranslate service or add a DeepL/Google API key in **Features → Modules** | Depends on provider |
+| Hermes or another chat provider | Open **Get started → Chat & models**, choose a provider and test it | Depends on provider |
+| Developer services (GitHub, Stripe, Vercel and others) | Open **Features → Integrations**; connect only what you use | Yes |
+
+Awuuu does not require an account for local features. Tokens and API keys entered in the app are stored in Windows Credential Manager. Online integrations contact the providers you configure; see **Privacy & history** in Settings for details.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Install and use
 
-### Prerequisites
+1. On Windows 10/11, download the Windows installer from this project's [Releases](https://github.com/Thanawat-ONZro/Awuuu/releases) and run it. You do not need Rust, Node.js, Visual Studio Build Tools or Hermes to use the local features.
+2. Open Awuuu from Start or the tray. Hover the small tab at the screen edge, then click to open the island.
+3. Try music, notes, to-dos or Shelf. Open **Features → Modules** to show, hide or reorder what appears.
+4. If you use a coding agent, open **Get started → Agents**, choose a detected agent, review the hook change and click **Set up**. Restart the agent if its page asks you to.
+5. Add online features only when needed. **Features → Integrations** lists the no-account options first, followed by calendar, mail, GitHub and advanced services.
 
-- [Rust](https://rustup.rs)
-- [Node.js 20+](https://nodejs.org)
-- Visual Studio Build Tools with **"Desktop development with C++"**
-- Windows 10/11 (WebView2 included by default)
-- Local Hermes Agent service running (`HermesGateway` on `http://127.0.0.1:8642`)
+### Shortest setup for online features
 
-### Build & Run from Source
+1. **Weather:** Enter a city and choose a temperature unit in **Integrations → No account needed**. In **Modules**, turn Weather on if you want its island card. No account or API key is needed.
+2. **Calendar:** Copy your calendar's private iCal/ICS address and paste it into **Integrations → Calendar & mail → Calendar**. Keep the address private. In **Modules**, turn Calendar on. Google and Microsoft account sign-in is an optional alternative that currently requires creating your own OAuth client ID; [follow these steps](docs/OAUTH-SETUP.md) only if you need account access.
+3. **Mail:** In **Integrations → Calendar & mail**, choose Google or Microsoft. Those buttons guide you to the one-time OAuth app setup. If your provider supports app passwords, **Mail → Mail with an app password** is an alternative. Never enter your normal account password there.
+4. **Translation:** In **Modules → Translation · provider setup**, choose an already-running local LibreTranslate service, or save a DeepL/Google key. Then turn Translation on. It is off on a new installation until a provider is configured.
+5. **GitHub:** If GitHub CLI (`gh`) is already installed and signed in, use **Integrations → GitHub → Use GitHub CLI login**. Otherwise, the code sign-in needs a client ID; a personal access token is on the same GitHub card.
+
+Calendar and Translation are off for new installations until configured. Existing users keep their saved module choices. If you only need local features, you can skip this entire online setup.
+
+### Costs and usage
+
+Each provider card includes **Cost & usage limits**. Google OAuth requests consume the project's API quota. Standard Gmail/Calendar API use has no additional charge, but Google documents Calendar billing thresholds and announced changes for excess usage; [check its current limits](https://developers.google.com/workspace/calendar/api/guides/quota). Other Google Cloud products have separate pricing. Private iCal feeds do not use your Google Cloud API project.
+
+Cloud chat and translation can incur provider API charges. A local Hermes gateway can also call a paid cloud model. Check the selected model and provider plan before entering a key. Connecting a developer service does not remove its existing subscription or usage fees.
+
+Setup forms show whether values are unsaved, saving or saved on this PC. **Saved** confirms storage; use **Test** to check the connection. Illustrated examples contain anonymized screenshots and can be enlarged from their setup panel.
+
+## 🧰 Build from source (contributors)
+
+Prerequisites: [Rust](https://rustup.rs), [Node.js 20+](https://nodejs.org), Visual Studio Build Tools with **Desktop development with C++**, and Windows 10/11 with WebView2. Hermes is needed only to exercise local chat.
 
 ```powershell
 cd windows
@@ -81,16 +102,9 @@ for UI work. The app log lives in `%LOCALAPPDATA%\Awuuu\awuuu.log`.
 
 ---
 
-## 🛠️ Configuration & Setup
+## 🛠️ Where settings live
 
-Click the **Awuuu** tray icon in your Windows taskbar → **Settings…**:
-
-1. **Claude Code & AGY Hooks**: Click **Install hooks** to register `awuuu-hook.exe` into `%USERPROFILE%\.claude\settings.json`. A dated backup is created automatically.
-2. **Hermes Agent Connection**:
-   - URL: `http://127.0.0.1:8642/v1/chat/completions` (default)
-   - Model: `hermes-agent` (default)
-   - Secret key: Automatically discovered from `%LOCALAPPDATA%\hermes\.env` (`API_SERVER_KEY`), or can be stored in Windows Credential Manager under `hermes-api-key`.
-3. **Optional Anthropic API**: If you select a `claude-*` model, you can provide an Anthropic API key saved securely into Windows Credential Manager.
+Open **Settings…** from the Awuuu tray icon. **Getting started** covers agents and chat; **Features** covers island modules and external integrations; **Personalize** covers appearance, island position, sounds and shortcuts; **Privacy & history** shows what leaves this PC. Each provider has one setup location on its own card. Other services holds optional developer integrations.
 
 ---
 

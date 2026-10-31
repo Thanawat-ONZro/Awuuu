@@ -13,6 +13,8 @@ import {
   collapsedModuleOn,
 } from "../../core/modules";
 import { saveValue } from "../../core/store";
+import { navigate } from "../shell";
+import { serviceCost } from "../service-cost";
 
 export function page(): HTMLElement {
   function persistModulesState() {
@@ -126,14 +128,32 @@ export function page(): HTMLElement {
       const iconEl = h("div", { class: "module-icon" }, iconSvg);
       const titleEl = h("span", { class: "module-title", text: t(m.titleKey) });
       let titleCol: HTMLElement = titleEl;
-      if (m.id === "screentime") {
+      const setupHint = m.id === "calendar"
+        ? t("Needs a calendar link or connected account")
+        : m.id === "translation"
+          ? t("Needs a translation provider")
+          : m.id === "weather"
+            ? t("Needs a city and internet")
+            : m.id === "screentime"
+              ? t("Samples active apps every 5s while dashboard is open")
+              : "";
+      if (setupHint) {
         const descEl = h("span", {
           class: "module-desc",
-          text: t("Samples active apps every 5s while dashboard is open"),
+          text: setupHint,
           style: "display:block; font-size:10px; opacity:0.6; font-weight:normal; margin-top:1px;",
         });
         titleCol = h("div", { class: "module-title-col", style: "display:flex; flex-direction:column;" }, titleEl, descEl);
       }
+      const setupButton = m.id === "calendar" || m.id === "weather"
+        ? h("button", { class: "module-setup-link", text: t("Set up"), onclick: () => void navigate("integrations", m.id === "calendar" ? "everyday" : "no-account") })
+        : m.id === "translation"
+          ? h("button", { class: "module-setup-link", text: t("Set up"), onclick: () => {
+            const target = document.getElementById("translation-settings") as HTMLDetailsElement | null;
+            if (target) target.open = true;
+            target?.scrollIntoView({ behavior: "smooth", block: "center" });
+          } })
+          : null;
 
       // Collapsed strip checkbox (media, timer/dashboard, calendar, weather)
       let collapsedEl: HTMLElement;
@@ -182,6 +202,7 @@ export function page(): HTMLElement {
         iconEl,
         titleCol,
         h("span", { class: "spacer" }),
+        setupButton,
         collapsedEl,
         sw,
       );
@@ -244,35 +265,10 @@ export function page(): HTMLElement {
   });
 
   const modulesCard = card(
-    t("Modules"),
+    t("Show, hide & reorder"),
+    h("p", { class: "hint", text: t("Music, notes, to-dos, quick toggles and Shelf work without an account. Calendar, weather and translation need setup before they can show data.") }),
     h("div", { class: "row", style: "justify-content: flex-end; margin-bottom: 4px;" }, resetBtn),
     moduleListContainer,
-  );
-
-  // ── Weather settings (City & Unit) ──────────────────────────────────────────
-  const weatherCityInput = textField(
-    () => settings.weatherCity ?? "",
-    (v) => {
-      settings.weatherCity = v;
-    },
-    t("Bangkok"),
-  );
-
-  const unitSelect = select(
-    [
-      ["c", t("Celsius")],
-      ["f", t("Fahrenheit")],
-    ],
-    () => settings.weatherUnit ?? "c",
-    (v) => {
-      settings.weatherUnit = v as "c" | "f";
-    },
-  );
-
-  const weatherCard = card(
-    t("Weather"),
-    h("div", { class: "row" }, h("label", { text: t("City") }), weatherCityInput),
-    h("div", { class: "row" }, h("label", { text: t("Temperature unit") }), unitSelect),
   );
 
   // ── Translation settings ────────────────────────────────────────────────────
@@ -300,8 +296,10 @@ export function page(): HTMLElement {
   const deeplKeyField = secretField("deepl-api-key", t("DeepL Auth Key"));
   const googleKeyField = secretField("google-translate-api-key", t("Google Cloud API Key"));
 
-  const translationCard = card(
-    t("Translation"),
+  const translationCard = h("details", { id: "translation-settings", class: "module-settings-details" },
+    h("summary", { text: t("Translation · provider setup") }),
+    h("p", { class: "hint", text: t("Choose one provider below, then turn on Translation above. Local LibreTranslate must already be running; DeepL and Google need an API key.") }),
+    serviceCost("Translation"),
     h("div", { class: "row" }, h("label", { text: t("LibreTranslate endpoint") }), libreUrlInput),
     h("div", { class: "row" }, h("label", { text: t("Preferred provider") }), providerSelect),
     h("div", { class: "row" }, h("label", { text: t("DeepL API key") }), deeplKeyField),
@@ -336,10 +334,9 @@ export function page(): HTMLElement {
 
   return pageOf(
     t("Modules"),
-    t("Configure dashboard modules, order, and collapsed strip items."),
+    t("Choose what appears in the island. Local features work immediately; online features show their setup steps below."),
     defaultCard,
     modulesCard,
-    weatherCard,
     translationCard,
     notificationsCard,
   );

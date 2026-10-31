@@ -9,7 +9,7 @@ import type { Settings } from "./state";
 import type { IslandLayout } from "./layout";
 
 /** Agents whose hooks Awuuu installs (Rust hooks::HookAgent). */
-export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex" | "gemini" | "cursor";
+export type HookAgentId = "claude" | "agy" | "hermes" | "opencode" | "codex" | "cursor";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

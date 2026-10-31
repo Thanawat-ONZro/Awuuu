@@ -102,7 +102,7 @@ pub enum HookAgent {
     OpenCode,
     /// ~/.codex/hooks.json (Experimental: Codex asks to trust new hooks).
     Codex,
-    /// A JSON hooks file described in adapters.rs (Gemini CLI, Cursor).
+    /// A JSON hooks file described in adapters.rs (Cursor).
     Adapter(&'static crate::adapters::Adapter),
 }
 

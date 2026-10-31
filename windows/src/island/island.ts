@@ -28,6 +28,7 @@ import { ICONS } from "../views/icons";
 import { isModuleEnabled, isModuleInCollapsedStrip } from "../core/modules";
 import { IslandStateMachine } from "./fsm";
 import { HoverOpen } from "./hover";
+import { isCompactMediaButtonPress } from "./compact-actions";
 import { DROPLET, Mover } from "./move";
 import { clampCornerRadius, computeDockedTarget } from "./move-physics";
 import { Liquid } from "./liquid";
@@ -1371,8 +1372,11 @@ export class Island {
 
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
-      this.hover.clicked();
       State.lastActivity = performance.now();
+      // Buttons in the compact strip are quick actions. Expanding here would
+      // remove them before their click event can reach the media player.
+      if (isCompactMediaButtonPress(State.mode, e.target)) return;
+      this.hover.clicked();
       if (State.mode === "hidden") {
         this.fsm.mouseEntered();
         this.fsm.click();
@@ -2001,7 +2005,7 @@ export class Island {
         }
         const info = this.compactMedia;
         if (State.mode !== "compact") return;
-        if (info && info.active && info.playing) {
+        if (info && info.active) {
           this.compactStrip.style.display = "flex";
           const key = `media:${info.title}:${info.artist}:${info.playing}:${!!this.compactArtwork}`;
           if (this.lastCompactKey !== key) {
@@ -2086,41 +2090,31 @@ export class Island {
       svg(ICONS.next, 10),
     );
 
-    prevBtn.addEventListener("click", async (e: Event) => {
+    const runAction = async (action: "prev" | "play_pause" | "next") => {
+      await Bridge.mediaControl(action);
+      this.onMediaChanged(await Bridge.nowPlaying());
+    };
+
+    prevBtn.addEventListener("click", (e: Event) => {
       e.stopPropagation();
-      try {
-        await Bridge.mediaControl("prev");
-        void this.syncCompactStrip();
-      } catch {
-        /* ignore */
-      }
+      void runAction("prev");
     });
 
-    playBtn.addEventListener("click", async (e: Event) => {
+    playBtn.addEventListener("click", (e: Event) => {
       e.stopPropagation();
-      try {
-        await Bridge.mediaControl("play_pause");
-        void this.syncCompactStrip();
-      } catch {
-        /* ignore */
-      }
+      void runAction("play_pause");
     });
 
-    nextBtn.addEventListener("click", async (e: Event) => {
+    nextBtn.addEventListener("click", (e: Event) => {
       e.stopPropagation();
-      try {
-        await Bridge.mediaControl("next");
-        void this.syncCompactStrip();
-      } catch {
-        /* ignore */
-      }
+      void runAction("next");
     });
 
     const controls = h("div", { class: "compact-media-controls" }, prevBtn, playBtn, nextBtn);
 
     const wrap = h(
       "div",
-      { class: "compact-media", title: `${info.title} — ${info.artist}` },
+      { class: info.playing ? "compact-media" : "compact-media paused", title: `${info.title} — ${info.artist}` },
       infoBox,
       controls,
     );

@@ -15,7 +15,7 @@ export const AGENT_INFO: Record<Exclude<AgentSource, "integration">, { name: str
   hermes: { name: "Hermes Agent", short: "Hermes", color: "#8B5CF6" },
   opencode: { name: "OpenCode", short: "OpenCode", color: "#00D26A" },
   codex: { name: "Codex CLI", short: "Codex", color: "#10A37F" },
-  /** Any other agent that calls `awuuu-hook --agent <name>` (Gemini CLI, Cursor, a script). */
+  /** Any other agent that calls `awuuu-hook --agent <name>` (Cursor, a script). */
   custom: { name: "Other agent", short: "Agent", color: "#94A3B8" },
 };
 
@@ -350,12 +350,12 @@ export const DEFAULT_SETTINGS: Settings = {
     todo: true,
     notes: true,
     system: false,
-    calendar: true,
+    calendar: false,
     toggles: true,
     shelf: true,
     screentime: false,
     notifications: true,
-    translation: true,
+    translation: false,
   },
   moduleOrder: [
     "dashboard",

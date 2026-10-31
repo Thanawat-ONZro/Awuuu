@@ -14,7 +14,7 @@
 //!   asks in the terminal exactly as if Awuuu were not installed.
 //!
 //! Usage: `awuuu-hook [--agent <claude|agy|hermes|opencode|codex|any-name>] <EventName>`
-//! (any other name, such as `gemini` or `cursor`, shows as its own agent and
+//! (any other name, such as `custom-agent` or `cursor`, shows as its own agent and
 //! must send Claude Code-shaped hook JSON)
 //! (the event name is also read from the JSON). Without `--agent` the caller is
 //! Claude Code, which is what installs older than the flag wrote.
@@ -172,7 +172,7 @@ enum Wait {
 /// `--agent <id>` and the event name, in any order.
 struct Args {
     agent: Option<Agent>,
-    /// `--agent <name>` that isn't one of ours (Gemini CLI, Cursor, a script…):
+    /// `--agent <name>` that isn't one of ours (Cursor, a script…):
     /// it shows as its own agent and is treated like Claude Code's hooks.
     custom: Option<String>,
     event: String,
@@ -518,7 +518,7 @@ fn read_event(args: &Args) -> Option<HookEvent> {
         .map(str::to_string)
         .filter(|s| !s.is_empty())
         .unwrap_or(arg_event);
-    // Gemini CLI and Cursor name their events their own way.
+    // Cursor name their events their own way.
     let event = canonical_event(&event).to_string();
     map.insert("hook_event_name".into(), serde_json::Value::String(event.clone()));
     // Cursor has no session_id; its conversation is the session.
@@ -603,7 +603,7 @@ fn truncate_strings(value: &mut serde_json::Value) {
     }
 }
 
-/// Gemini CLI's and Cursor's event names as the island knows them (Claude
+/// Cursor's event names as the island knows them (Claude
 /// Code's). Everything else, including Claude's own names, passes through.
 fn canonical_event(name: &str) -> &str {
     match name {
@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn gemini_and_cursor_events_are_mapped() {
+    fn cursor_events_are_mapped() {
         assert_eq!(canonical_event("BeforeTool"), "PreToolUse");
         assert_eq!(canonical_event("beforeSubmitPrompt"), "UserPromptSubmit");
         assert_eq!(canonical_event("Stop"), "Stop");
@@ -776,8 +776,8 @@ mod tests {
         assert_eq!((a.agent, a.event.as_str()), (Some(Agent::Hermes), "Stop"));
         let a = parse_args(["SessionStart".into()]);
         assert_eq!((a.agent, a.event.as_str()), (None, "SessionStart"));
-        let a = parse_args(["--agent".to_string(), "gemini".to_string(), "PreToolUse".to_string()]);
-        assert_eq!((a.agent, a.custom.as_deref()), (None, Some("gemini")));
+        let a = parse_args(["--agent".to_string(), "custom-agent".to_string(), "PreToolUse".to_string()]);
+        assert_eq!((a.agent, a.custom.as_deref()), (None, Some("custom-agent")));
         let a = parse_args(["--agent=Bad Name!".to_string()]);
         assert_eq!(a.custom, None);
     }
