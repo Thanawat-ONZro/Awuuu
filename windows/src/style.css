@@ -68,6 +68,10 @@ body {
   z-index: 10;
 }
 
+#root.mode-hidden #wake-strip {
+  background: transparent;
+}
+
 /* ── Island ─────────────────────────────────────────────────────────────── */
 
 #island {
@@ -84,11 +88,46 @@ body {
   cursor: pointer;
   transition: border-color var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1),
               box-shadow var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1),
+              filter var(--m-fast, 140ms) ease,
               background-color var(--m-fast, 140ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* View accent washes sit on the island surface beneath every view. */
+#island::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(420px 260px at 50% 110%, var(--view-wash, transparent), transparent 75%);
+  pointer-events: none;
+}
+
+#root.music-home-active #island::before { display: none; }
+
 #island:hover {
   border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* The notch fillets meet the island at its side edges. A side border leaves a
+   visible seam through that join while the island is docked to the top. */
+#root[data-edge="top"]:not(.moving) #island {
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+
+#root.mode-hidden[data-edge="top"] #island {
+  border: 0;
+}
+
+/* Shadow the combined island and its fillets as one silhouette. */
+#root[data-edge="top"]:not(.moving).mode-compact #island {
+  box-shadow: none;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.46));
+}
+
+#root[data-edge="top"]:not(.moving).mode-hidden #island {
+  box-shadow: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.46));
 }
 
 /* ── Top-corner ears (notch fillets, Coucou prototype:97-99) ─────────────── */
@@ -111,14 +150,28 @@ body {
   background: radial-gradient(circle at 100% 100%, transparent 13.5px, var(--bg-kibble-flat, #120f0c) 14px);
 }
 
+/* Shorter fillets meet the side exactly where the tab's bottom curve begins. */
+#root.mode-hidden .island-ear {
+  width: 5px;
+  height: 5px;
+}
+
+#root.mode-hidden #ear-left {
+  background: radial-gradient(circle at 0 100%, transparent 4.5px, var(--bg-kibble-flat, #120f0c) 5px);
+}
+
+#root.mode-hidden #ear-right {
+  background: radial-gradient(circle at 100% 100%, transparent 4.5px, var(--bg-kibble-flat, #120f0c) 5px);
+}
+
 /* Subtle notch indicator in idle/hidden state */
 #notch-nub {
   position: absolute;
   top: 3px;
   left: 50%;
   transform: translateX(-50%);
-  width: 28px;
-  height: 3px;
+  width: 22px;
+  height: 2px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.35);
   pointer-events: none;
@@ -607,23 +660,13 @@ body {
 .card {
   position: relative;
   height: 100%;
-  border-radius: 22px;
-  background: var(--card);
-  border: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  border: 0;
   overflow: hidden;
 }
 
-.card.wash::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    280px 280px at 50% 130%,
-    var(--wash) 0%,
-    rgba(0, 0, 0, 0) 70%
-  );
-  pointer-events: none;
-}
+.card.wash::after { content: none; }
 
 .row {
   display: flex;
@@ -1974,9 +2017,8 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* The focused agent tints the hub: a soft glow at the card's edge. */
 .hub-view .card {
-  border-color: var(--agent-soft, var(--hairline));
-  transition: border-color 0.2s, box-shadow 0.2s;
-  box-shadow: inset 0 0 0 1px var(--agent-soft, transparent), inset 0 -40px 60px -50px var(--agent, transparent);
+  /* The focused agent's colour is painted on the island surface. */
+  box-shadow: none;
 }
 
 .hub-pill-row {
@@ -2158,6 +2200,8 @@ input[type="range"]::-webkit-slider-thumb {
 /* Nothing to show: centred in the room the list would take. */
 .today-empty {
   margin: auto;
+  width: 100%;
+  min-width: 0;
   max-width: 400px;
   padding: 8px 4px 14px;
   display: flex;
@@ -2165,6 +2209,10 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center;
   gap: 6px;
   text-align: center;
+}
+
+.today-empty .sub {
+  width: 100%;
 }
 
 .today-empty .link-btn {
@@ -2731,7 +2779,9 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   position: relative;
   cursor: pointer;
   padding: 2px 4px;
@@ -2744,8 +2794,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .compact-media-art {
-  width: 16px;
-  height: 16px;
+  width: 23px;
+  height: 23px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
   display: flex;
@@ -2756,18 +2806,22 @@ input[type="range"]::-webkit-slider-thumb {
   flex-shrink: 0;
 }
 
+.compact-media-art img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
 .compact-media-info {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 120px;
   transition: opacity var(--m-fast, 140ms) ease;
 }
 
 .compact-media-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 500;
   font-size: 10px;
   color: var(--ink);
@@ -2777,7 +2831,14 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .compact-media-controls {
+  position: absolute;
+  right: 0;
+  left: 34px;
+  top: 0;
+  bottom: 0;
+  background: #111;
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 1px;
   opacity: 0;
@@ -2791,8 +2852,11 @@ input[type="range"]::-webkit-slider-thumb {
   pointer-events: auto;
 }
 
-.compact-media:hover .compact-media-info {
-  opacity: 0.15;
+.compact-media:hover .compact-media-title,
+.compact-media:hover .compact-media-bars,
+.compact-media:focus-within .compact-media-title,
+.compact-media:focus-within .compact-media-bars {
+  opacity: 0;
 }
 
 .compact-media-btn {
@@ -2813,21 +2877,43 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .compact-media-bars {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
+  position: static;
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-end;
-  gap: 1px;
-  height: 6px;
+  gap: 2px;
+  height: 14px;
 }
 
 .compact-media-bars .bar {
-  width: 1px;
-  background: var(--accent);
-  border-radius: 0.5px;
-  height: 2px;
+  width: 2px;
+  background: #f8a56d;
+  border-radius: 2px;
+  height: 5px;
 }
+
+.compact-volume { display: flex; align-items: center; gap: 9px; width: 100%; }
+.compact-volume svg { flex: 0 0 auto; color: #f5f5f5; }
+.compact-volume-track { display: block; flex: 1; height: 5px; border-radius: 4px; background: #3b3b3b; overflow: hidden; }
+.compact-volume-fill { display: block; height: 100%; border-radius: inherit; background: #f4f4f4; transition: width 120ms ease; }
+.compact-volume-level { min-width: 31px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+#root[data-edge="left"] #compact-strip,
+#root[data-edge="right"] #compact-strip { left: 0; right: 0; top: 47px; bottom: 47px; }
+#root[data-edge="left"] .compact-media,
+#root[data-edge="right"] .compact-media { justify-content: center; padding: 3px; }
+#root[data-edge="left"] .compact-media-title,
+#root[data-edge="right"] .compact-media-title { display: none; }
+#root[data-edge="left"] .compact-media-info,
+#root[data-edge="right"] .compact-media-info { flex-direction: column; gap: 4px; }
+#root[data-edge="left"] .compact-media-controls,
+#root[data-edge="right"] .compact-media-controls { left: 0; right: 0; top: 0; bottom: 0; flex-direction: column; justify-content: center; }
+#root[data-edge="left"] .compact-volume,
+#root[data-edge="right"] .compact-volume { flex-direction: column; gap: 3px; }
+#root[data-edge="left"] .compact-volume-track,
+#root[data-edge="right"] .compact-volume-track { display: none; }
+#root[data-edge="left"] .compact-volume-level,
+#root[data-edge="right"] .compact-volume-level { min-width: 0; font-size: 9px; }
 
 @media (prefers-reduced-motion: no-preference) {
   .compact-media-bars .bar-1 {

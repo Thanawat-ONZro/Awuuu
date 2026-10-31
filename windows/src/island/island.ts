@@ -3,10 +3,10 @@
 
 import { Tracked, Spring, clamp } from "../core/anim";
 import { animateView, directionBetween, type Direction } from "./transition";
-import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile, type NowPlaying } from "../core/bridge";
+import { Bridge, IS_TAURI, onDragDrop, onEvent, type DroppedFile, type NowPlaying, type SystemVolume } from "../core/bridge";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
-  ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
+  EXPANDED_CORNER, GREETING_W, NOTCH_TAB_CORNER, NOTCH_W, geo, onSide, type IslandLayout,
+  ROUNDED_CORNER, VIEW_LAYOUTS, WAKE_STRIP_H, WAKE_STRIP_W, TOP_STRIP_WINDOW_W, TOP_STRIP_WINDOW_H, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize, getOrientationBounds,
   type IslandMode, type IslandViewName, SIDE_COMPACT, SIDE_GAP,
   agentColumnPosition, shouldShowEars, getColumnAgents,
@@ -113,6 +113,13 @@ export class Island {
   private compactStrip!: HTMLElement;
   private compactMediaTimer: number | null = null;
   private lastCompactKey = "";
+  private compactMedia: NowPlaying | null = null;
+  private compactMediaReady = false;
+  private compactArtwork: string | null = null;
+  private compactTrackKey = "";
+  private volumeHudUntil = 0;
+  private volumeHudTimer: number | null = null;
+  private volumeHud: SystemVolume | null = null;
   private mover!: Mover;
   /** The drop page was opened by a drag coming near (notch-drag-near). */
   private dropWoke = false;
@@ -490,6 +497,8 @@ export class Island {
     this.earRight = h("div", { id: "ear-right", class: "island-ear" });
     this.countdown = h("div", { id: "countdown" });
     this.compactStrip = h("div", { id: "compact-strip", style: "display:none" });
+    void onEvent<NowPlaying | null>("media-changed", (info) => this.onMediaChanged(info));
+    void onEvent<SystemVolume>("system-volume-changed", (volume) => this.onSystemVolumeChanged(volume));
     this.resizeGrip = h("div", { id: "resize-grip", title: t("Drag to resize") });
     this.wireResize();
 
@@ -581,8 +590,8 @@ export class Island {
     );
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.greetingCanvas.width = Math.round(EXPANDED_W * dpr);
-    this.greetingCanvas.height = Math.round(360 * dpr);
+    this.greetingCanvas.width = Math.round(GREETING_W * dpr);
+    this.greetingCanvas.height = Math.round(VIEW_LAYOUTS.greeting.height * dpr);
 
     this.liquidCanvas = h("canvas", { id: "liquid", class: "move-layer" }) as HTMLCanvasElement;
     this.liquidCanvas.style.display = "none";
@@ -627,7 +636,7 @@ export class Island {
           break;
         case "awuuu":
           this.expand("greeting");
-          this.greeting.fit(this.viewsEl, this.width.value || geo.expandedW, this.height.value || 360);
+          this.greeting.fit(this.viewsEl, this.width.value || GREETING_W, this.height.value || VIEW_LAYOUTS.greeting.height);
           this.greeting.start();
           break;
       }
@@ -637,6 +646,7 @@ export class Island {
 
   launch() {
     this.fsm.launch();
+    void Bridge.nowPlaying().then((info) => this.onMediaChanged(info));
     // Should the greeting never end, the desktop dog still comes out.
     window.setTimeout(() => this.desktopDog.launch(), 10000);
   }
@@ -1064,9 +1074,9 @@ export class Island {
     this.resizeGrip.style.display = showGrip ? "block" : "none";
     this.resizeGrip.dataset.v = L0.v === "bottom" ? "bottom" : "top";
     this.resizeGrip.dataset.h = L0.h === "right" ? "left" : "right";
-    // The wake strip fills the window while it is only the strip.
+    // Keep the shadow margin transparent and limit the wake layer to the tab.
     this.wakeStrip.style.cssText = this.collapsed
-      ? "left:0;top:0;width:100%;height:100%;transform:none;display:block"
+      ? `left:${rect0.x}px;top:${rect0.y}px;width:${rect0.w}px;height:${rect0.h}px;transform:none;display:block`
       : "display:none";
     this.islandEl.style.left = `${rect0.x}px`;
     this.islandEl.style.top = `${rect0.y}px`;
@@ -1079,9 +1089,11 @@ export class Island {
     this.earLeft.style.display = showEars ? "block" : "none";
     this.earRight.style.display = showEars ? "block" : "none";
     if (showEars) {
-      this.earLeft.style.left = "-14px";
+      // Overlap the body by one pixel to avoid a transparent seam at fractional widths.
+      const earSize = State.mode === "hidden" ? 5 : 14;
+      this.earLeft.style.left = `${1 - earSize}px`;
       this.earLeft.style.top = "0px";
-      this.earRight.style.left = `${w}px`;
+      this.earRight.style.left = `${w - 1}px`;
       this.earRight.style.top = "0px";
     }
 
@@ -1132,8 +1144,8 @@ export class Island {
     const L = geo.layout;
     if (this.collapsed) {
       // The window is only the wake strip; the tab sits in it.
-      const sw = L.vertical ? WAKE_STRIP_H : WAKE_STRIP_W;
-      const sh = L.vertical ? WAKE_STRIP_W : WAKE_STRIP_H;
+      const sw = L.vertical ? WAKE_STRIP_H : (L.edge === "top" ? TOP_STRIP_WINDOW_W : WAKE_STRIP_W);
+      const sh = L.vertical ? WAKE_STRIP_W : (L.edge === "top" ? TOP_STRIP_WINDOW_H : WAKE_STRIP_H);
       const x = L.h === "left" ? 0 : L.h === "right" ? sw - w : (sw - w) / 2;
       const y = L.vertical ? (sh - hh) / 2 : L.v === "bottom" ? sh - hh : 0;
       return { x, y, w, h: hh };
@@ -1655,15 +1667,9 @@ export class Island {
     const ctx = this.botCanvas.getContext("2d");
     if (!ctx) return;
 
-    const focus = State.focusTask;
-    // Awuuu wears the owner's own look, except where a pill is picked: the
-    // overview becomes the focused integration's dog, the Agents hub the dog
-    // of the session you tapped.
+    // The Agents hub can dress Awuuu as the selected session's agent.
     const tapped = State.view === "agents" && State.mode === "expanded" ? State.focusedAgentSession : null;
-    const worn = State.mode === "expanded" && State.view === "overview" && !State.overviewToday && focus?.isIntegration
-      ? focus
-      : tapped;
-    this.engine.setLook(worn ? lookForAgent(worn.source, worn.color) : this.ownLook);
+    this.engine.setLook(tapped ? lookForAgent(tapped.source, tapped.color) : this.ownLook);
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();
@@ -1723,6 +1729,7 @@ export class Island {
   private syncDom() {
     const expanded = State.mode === "expanded";
     const greetingActive = expanded && State.view === "greeting";
+    this.root.classList.toggle("music-home-active", expanded && State.view === "overview");
 
     this.contentEl.style.opacity = expanded && !greetingActive ? "1" : "0";
     this.contentEl.style.pointerEvents = expanded && !greetingActive ? "auto" : "none";
@@ -1750,6 +1757,12 @@ export class Island {
       view.el.classList.toggle("on", on);
       if (on) view.sync();
     }
+    const activeView = this.views.get(State.view)?.el;
+    const washCard = activeView?.querySelector<HTMLElement>(".card.wash");
+    const wash = washCard?.style.getPropertyValue("--wash")
+      || (State.view === "agents" ? activeView?.style.getPropertyValue("--agent-soft") : "")
+      || "transparent";
+    this.islandEl.style.setProperty("--view-wash", wash);
 
     // The chat is the only view with a text field, so it is the only time the
     // island is allowed to take keyboard focus.
@@ -1900,6 +1913,57 @@ export class Island {
     State.notify();
   }
 
+  private onMediaChanged(info: NowPlaying | null) {
+    const wasPlaying = !!this.compactMedia?.playing;
+    const previousTitle = this.compactMedia?.title;
+    const previousArtist = this.compactMedia?.artist;
+    this.compactMediaReady = true;
+    this.compactMedia = info?.active ? info : null;
+    const key = this.compactMedia
+      ? [this.compactMedia.sourceApp, this.compactMedia.title, this.compactMedia.artist, this.compactMedia.album].join("|")
+      : "";
+    const trackChanged = key !== this.compactTrackKey;
+    if (trackChanged) {
+      this.compactTrackKey = key;
+      this.compactArtwork = null;
+      if (key) void Bridge.mediaArtwork().then((artwork) => {
+        if (this.compactTrackKey !== key) return;
+        this.compactArtwork = artwork;
+        this.lastCompactKey = "";
+        void this.syncCompactStrip();
+      });
+    }
+    if (trackChanged || wasPlaying !== !!this.compactMedia?.playing
+      || previousTitle !== this.compactMedia?.title || previousArtist !== this.compactMedia?.artist) {
+      this.lastCompactKey = "";
+      void this.syncCompactStrip();
+    }
+  }
+
+  private onSystemVolumeChanged(volume: SystemVolume) {
+    this.volumeHud = volume;
+    this.volumeHudUntil = Date.now() + 2300;
+    this.lastCompactKey = "";
+    if (this.volumeHudTimer != null) window.clearTimeout(this.volumeHudTimer);
+    this.volumeHudTimer = window.setTimeout(() => {
+      this.volumeHudTimer = null;
+      this.volumeHudUntil = 0;
+      this.lastCompactKey = "";
+      void this.syncCompactStrip();
+    }, 2300);
+    if (State.mode !== "expanded") this.fsm.revealToast(2.5);
+    void this.syncCompactStrip();
+  }
+
+  private renderCompactVolume(volume: SystemVolume) {
+    const icon = svg(volume.muted ? ICONS.speakerOff : ICONS.speakerOn, 17);
+    const fill = h("span", { class: "compact-volume-fill", style: `width:${volume.muted ? 0 : volume.level}%` });
+    const bar = h("span", { class: "compact-volume-track" }, fill);
+    const level = h("span", { class: "compact-volume-level", text: `${volume.level}%` });
+    this.compactStrip.replaceChildren(h("div", { class: "compact-volume", role: "status", "aria-label": `${t("Volume")} ${volume.level}%` }, icon, bar, level));
+    this.compactStrip.style.display = "flex";
+  }
+
   /**
    * Synchronises live module indicators into the compact strip (media, timer).
    * Active only while the island is in compact mode; 0 % CPU while hidden or expanded.
@@ -1914,30 +1978,35 @@ export class Island {
       return;
     }
 
+    if (this.volumeHud && Date.now() < this.volumeHudUntil) {
+      if (this.lastCompactKey !== `volume:${this.volumeHud.level}:${this.volumeHud.muted}`) {
+        this.lastCompactKey = `volume:${this.volumeHud.level}:${this.volumeHud.muted}`;
+        this.renderCompactVolume(this.volumeHud);
+      }
+      return;
+    }
+
     // 1. Live media if enabled in collapsed strip settings
     if (isModuleEnabled("media") && isModuleInCollapsedStrip("media")) {
+      if (this.compactMediaTimer == null) {
+        this.compactMediaTimer = window.setInterval(() => {
+          if (State.mode !== "compact") return;
+          void Bridge.nowPlaying().then((latest) => this.onMediaChanged(latest));
+        }, 3500);
+      }
       try {
-        const info = await Bridge.nowPlaying();
+        if (!this.compactMediaReady) {
+          this.onMediaChanged(await Bridge.nowPlaying());
+          return;
+        }
+        const info = this.compactMedia;
         if (State.mode !== "compact") return;
         if (info && info.active && info.playing) {
           this.compactStrip.style.display = "flex";
-          const key = `media:${info.title}:${info.artist}:${info.playing}`;
+          const key = `media:${info.title}:${info.artist}:${info.playing}:${!!this.compactArtwork}`;
           if (this.lastCompactKey !== key) {
             this.lastCompactKey = key;
             this.renderCompactMedia(info);
-          }
-
-          if (this.compactMediaTimer == null) {
-            this.compactMediaTimer = window.setInterval(() => {
-              if (State.mode !== "compact") {
-                if (this.compactMediaTimer != null) {
-                  window.clearInterval(this.compactMediaTimer);
-                  this.compactMediaTimer = null;
-                }
-                return;
-              }
-              void this.syncCompactStrip();
-            }, 1000);
           }
           return;
         }
@@ -1946,7 +2015,7 @@ export class Island {
       }
     }
 
-    if (this.compactMediaTimer != null) {
+    if ((!isModuleEnabled("media") || !isModuleInCollapsedStrip("media")) && this.compactMediaTimer != null) {
       window.clearInterval(this.compactMediaTimer);
       this.compactMediaTimer = null;
     }
@@ -1982,7 +2051,9 @@ export class Island {
   }
 
   private renderCompactMedia(info: NowPlaying) {
-    const artIcon = svg(ICONS.play, 10);
+    const artIcon = this.compactArtwork
+      ? h("img", { src: this.compactArtwork, alt: "" })
+      : svg(ICONS.play, 10);
     const bars = h(
       "div",
       { class: "compact-media-bars" },
@@ -1990,10 +2061,10 @@ export class Island {
       h("span", { class: "bar bar-2" }),
       h("span", { class: "bar bar-3" }),
     );
-    const art = h("div", { class: "compact-media-art" }, artIcon, bars);
+    const art = h("div", { class: "compact-media-art" }, artIcon);
 
     const title = h("span", { class: "compact-media-title", text: info.title });
-    const infoBox = h("div", { class: "compact-media-info" }, art, title);
+    const infoBox = h("div", { class: "compact-media-info" }, art, title, bars);
 
     const prevBtn = h(
       "button",

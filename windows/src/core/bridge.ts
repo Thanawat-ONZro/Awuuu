@@ -248,6 +248,12 @@ export const Bridge = {
   /** Windows SMTC Media Transport Controls query. */
   nowPlaying: () => call<NowPlaying>("now_playing"),
 
+  mediaArtwork: () => call<string | null>("media_artwork"),
+  mediaSeek: (positionMs: number) => call<void>("media_seek", { positionMs }),
+  systemVolume: () => call<SystemVolume>("system_volume"),
+  changeSystemVolume: (delta: number) => call<SystemVolume>("change_system_volume", { delta }),
+  toggleSystemMute: () => call<SystemVolume>("toggle_system_mute"),
+
   /** Windows SMTC Media Transport Controls action (play_pause, next, prev). */
   mediaControl: (action: "play_pause" | "next" | "prev") => call<void>("media_control", { action }),
 
@@ -368,10 +374,18 @@ export interface NowPlaying {
   active: boolean;
   title: string;
   artist: string;
+  album: string;
+  sourceApp: string;
   status: string;
   playing: boolean;
   positionMs?: number;
   durationMs?: number;
+  canSeek: boolean;
+}
+
+export interface SystemVolume {
+  level: number;
+  muted: boolean;
 }
 
 export interface DiskStats {

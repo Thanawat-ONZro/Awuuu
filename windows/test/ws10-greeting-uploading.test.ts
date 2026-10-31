@@ -87,8 +87,8 @@ describe("WS10: Uploading sequence maths and dog travel scaling", () => {
 });
 
 describe("WS10: Greeting overlay sizing, proportions, and centering", () => {
-  it("gives greeting view a height of 360 consistent with content views", () => {
-    expect(VIEW_LAYOUTS.greeting.height).toBe(360);
+  it("keeps the launch greeting close to its 104px card without changing the hub height", () => {
+    expect(VIEW_LAYOUTS.greeting.height).toBe(138);
 
     geo.layout.edge = "top";
     geo.layout.vertical = false;
@@ -96,24 +96,25 @@ describe("WS10: Greeting overlay sizing, proportions, and centering", () => {
     geo.hubH = 360;
 
     const sz = islandSize("expanded", "greeting");
-    expect(sz.w).toBe(1000);
-    expect(sz.h).toBe(360);
+    expect(sz.w).toBe(640);
+    expect(sz.h).toBe(138);
+    expect(islandSize("expanded", "overview").h).toBe(252);
 
-    // Follows expandedW when resized
+    // The greeting stays fitted to its card when the normal island width changes
     geo.expandedW = 1100;
-    expect(islandSize("expanded", "greeting").w).toBe(1100);
-    expect(islandSize("expanded", "greeting").h).toBe(360);
+    expect(islandSize("expanded", "greeting").w).toBe(640);
+    expect(islandSize("expanded", "greeting").h).toBe(138);
 
     geo.expandedW = 800;
-    expect(islandSize("expanded", "greeting").w).toBe(800);
-    expect(islandSize("expanded", "greeting").h).toBe(360);
+    expect(islandSize("expanded", "greeting").w).toBe(640);
+    expect(islandSize("expanded", "greeting").h).toBe(138);
 
-    // Side edge uses side geometry width and 360 height
+    // Side edge uses its own width and the same compact greeting height
     geo.layout.edge = "left";
     geo.sideW = 380;
     const sideSz = islandSize("expanded", "greeting");
     expect(sideSz.w).toBe(380);
-    expect(sideSz.h).toBe(360);
+    expect(sideSz.h).toBe(138);
 
     // Restore layout
     geo.layout.edge = "top";
@@ -121,17 +122,30 @@ describe("WS10: Greeting overlay sizing, proportions, and centering", () => {
   });
 
   it("centers the dog and card on the island while preserving 620×104 card proportions at 800, 1000, 1100", () => {
+    setGreetingBox({ w: 252, h: 32 }, undefined, "top");
+    expect(getGreetingBox().w).toBe(252);
+    expect(getGreetingBox().cx).toBe(126);
+
+    setGreetingBox({ w: 640, h: 138 }, undefined, "top");
+    const compact = getGreetingBox();
+    expect(compact.cardW).toBe(620);
+    expect(compact.cardH).toBe(104);
+    expect(compact.cardX).toBe(10);
+    expect(compact.cardY).toBe(22);
+    expect(compact.h - compact.cardY - compact.cardH).toBe(12);
+    expect(compact.cardY + compact.cardH).toBeLessThan(compact.h);
+
     // 1000 × 360 landscape
     setGreetingBox({ w: 1000, h: 360 }, undefined, "top");
     const b1000 = getGreetingBox();
     expect(b1000.w).toBe(1000);
     expect(b1000.h).toBe(360);
     expect(b1000.cx).toBe(500); // 1000 / 2
-    expect(b1000.cy).toBe(194); // 38 + (360 - 48)/2
+    expect(b1000.cy).toBe(185); // 22 + (360 - 34)/2
     expect(b1000.cardW).toBe(620); // Not stretched to 980
     expect(b1000.cardH).toBe(104); // Proportions preserved
     expect(b1000.cardX).toBe(190); // 500 - 310
-    expect(b1000.cardY).toBe(142); // 194 - 52
+    expect(b1000.cardY).toBe(133); // 185 - 52
     expect(b1000.cardX + b1000.cardW / 2).toBe(b1000.cx); // Card centered on island
 
     // 800 × 320 landscape
@@ -140,11 +154,11 @@ describe("WS10: Greeting overlay sizing, proportions, and centering", () => {
     expect(b800.w).toBe(800);
     expect(b800.h).toBe(320);
     expect(b800.cx).toBe(400); // 800 / 2
-    expect(b800.cy).toBe(174); // 38 + (320 - 48)/2
+    expect(b800.cy).toBe(165); // 22 + (320 - 34)/2
     expect(b800.cardW).toBe(620);
     expect(b800.cardH).toBe(104);
     expect(b800.cardX).toBe(90); // 400 - 310
-    expect(b800.cardY).toBe(122); // 174 - 52
+    expect(b800.cardY).toBe(113); // 165 - 52
     expect(b800.cardX + b800.cardW / 2).toBe(b800.cx);
 
     // 1100 × 440 landscape
@@ -153,11 +167,11 @@ describe("WS10: Greeting overlay sizing, proportions, and centering", () => {
     expect(b1100.w).toBe(1100);
     expect(b1100.h).toBe(440);
     expect(b1100.cx).toBe(550); // 1100 / 2
-    expect(b1100.cy).toBe(234); // 38 + (440 - 48)/2
+    expect(b1100.cy).toBe(225); // 22 + (440 - 34)/2
     expect(b1100.cardW).toBe(620);
     expect(b1100.cardH).toBe(104);
     expect(b1100.cardX).toBe(240); // 550 - 310
-    expect(b1100.cardY).toBe(182); // 234 - 52
+    expect(b1100.cardY).toBe(173); // 225 - 52
     expect(b1100.cardX + b1100.cardW / 2).toBe(b1100.cx);
   });
 

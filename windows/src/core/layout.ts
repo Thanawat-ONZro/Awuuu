@@ -81,6 +81,7 @@ export function getOrientationBounds(edge: "top" | "bottom" | "left" | "right"):
   return (edge === "left" || edge === "right") ? ORIENTATION_GEOMETRY.side : ORIENTATION_GEOMETRY.landscape;
 }
 export const EXPANDED_W = 1000;
+export const GREETING_W = 640;
 
 export const DEFAULT_LAYOUT: IslandLayout = {
   anchorX: 590, anchorY: 235, h: "center", v: "top", edge: "top", vertical: false, panelW: 1180, panelH: 470,
@@ -126,25 +127,31 @@ export const geo = {
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
 export const NOTCH_W = 184;
 export const NOTCH_H = 32;
-export const COMPACT_W = 360;
+export const COMPACT_W = 252;
 
 export const ROUNDED_CORNER = 14; // compact
 export const EXPANDED_CORNER = 30;
-export const NOTCH_TAB_CORNER = 8; // subtle notch tab
+export const NOTCH_TAB_CORNER = 6; // subtle notch tab
 
 /** Subtle notch tab dimensions in hidden/idle state */
-export const NOTCH_TAB_W = 140;
-export const NOTCH_TAB_H = 10;
+export const NOTCH_TAB_W = 112;
+export const NOTCH_TAB_H = 8;
+/** Visible top tab with short side fillets. */
+export const TOP_NOTCH_TAB_H = 11;
 
 /** Hover strip that wakes the island when hidden. */
-export const WAKE_STRIP_W = 140;
-export const WAKE_STRIP_H = 14;
+export const WAKE_STRIP_W = 112;
+export const WAKE_STRIP_H = 11;
+/** Room for the tab's side fillets and the fading shadow. */
+export const TOP_STRIP_WINDOW_W = WAKE_STRIP_W + 22;
+/** The visible 11px tab leaves 7px below it for the shadow. */
+export const TOP_STRIP_WINDOW_H = 18;
 
 /** Default open height for the chat prompt view. */
 export const CHAT_DEFAULT_H = 400;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
+  overview: { height: 252, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
   agents: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   diff: { height: 360, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
   empty: { height: 200, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
@@ -163,7 +170,7 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   result: { height: 180, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   note: { height: 360, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 200, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
-  greeting: { height: 360, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  greeting: { height: 138, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
   // Retired in WS8 (merged into overview): retained for geometry tests and legacy view resolution.
   dashboard: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
 };
@@ -207,7 +214,9 @@ export function islandSize(
   switch (mode) {
     case "hidden":
       // Subtle notch tab protruding slightly from the screen edge
-      return geo.layout.vertical ? { w: NOTCH_TAB_H, h: NOTCH_TAB_W } : { w: NOTCH_TAB_W, h: NOTCH_TAB_H };
+      return geo.layout.vertical
+        ? { w: NOTCH_TAB_H, h: NOTCH_TAB_W }
+        : { w: NOTCH_TAB_W, h: geo.layout.edge === "top" ? TOP_NOTCH_TAB_H : NOTCH_TAB_H };
     case "compact":
       return onSide() ? { ...SIDE_COMPACT } : { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
@@ -219,7 +228,9 @@ export function islandSize(
           ? approvalHeight(approvalFit)
           : safeView === "agents"
           ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
-          : safeView === "diff" || safeView === "overview" || safeView === "dashboard" || safeView === "greeting"
+          : safeView === "overview"
+          ? Math.round(geo.hubH * 0.7)
+          : safeView === "diff" || safeView === "dashboard"
           ? geo.hubH
           : (VIEW_LAYOUTS[safeView]?.height ?? geo.hubH);
       if (onSide()) {
@@ -229,7 +240,7 @@ export function islandSize(
         const spec = ORIENTATION_GEOMETRY.side;
         return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))), h };
       }
-      const w = (safeView === "agents" || safeView === "prompt" || safeView === "greeting") ? geo.expandedW : EXPANDED_W;
+      const w = safeView === "greeting" ? GREETING_W : geo.expandedW;
       return { w, h };
     }
   }

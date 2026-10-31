@@ -7,7 +7,7 @@ import {
   drawBrows, drawCollarTag, drawEars, drawEarsFront, drawMuzzle, drawTail, earTwitch, ownerPalette, paintCoat,
   type EarPose, type FacePose, type Palette,
 } from "./dog";
-import { COMPACT_W, EXPANDED_W, NOTCH_H, NOTCH_W, geo } from "../core/layout";
+import { COMPACT_W, GREETING_W, NOTCH_H, NOTCH_W, VIEW_LAYOUTS, geo } from "../core/layout";
 
 // ── Timing (mirrors greeting-v2.html `T`) ─────────────────────────────────────
 
@@ -51,14 +51,14 @@ export interface GreetingBox {
 }
 
 const box: GreetingBox = {
-  w: EXPANDED_W,
-  h: 360,
-  cardX: 190,
-  cardY: 142,
+  w: GREETING_W,
+  h: VIEW_LAYOUTS.greeting.height,
+  cardX: 10,
+  cardY: 22,
   cardW: 620,
   cardH: 104,
-  cx: 500,
-  cy: 194,
+  cx: 320,
+  cy: 74,
   earY: 16,
 };
 
@@ -67,15 +67,16 @@ export function setGreetingBox(
   card?: { x: number; y: number; w: number; h: number },
   edge: "top" | "bottom" | "left" | "right" = "top",
 ) {
-  const w = Math.max(320, island.w);
-  const h = Math.max(150, island.h);
+  const w = Math.max(COMPACT_W, island.w);
+  const h = Math.max(VIEW_LAYOUTS.greeting.height, island.h);
   box.w = w;
   box.h = h;
 
   let contentX = 10;
-  let contentY = 38;
+  // The greeting has no visible header; leave only enough room for the dog's ears.
+  let contentY = 22;
   let contentW = w - 20;
-  let contentH = h - 48;
+  let contentH = h - 34;
 
   if (card && card.w > 0 && card.h > 0) {
     contentX = card.x;
@@ -705,9 +706,11 @@ export class Greeting {
     this.timers = [];
   }
 
-  fit(cardEl?: HTMLElement | null, islandW = EXPANDED_W, islandH = 360) {
+  fit(cardEl?: HTMLElement | null, islandW = GREETING_W, islandH = VIEW_LAYOUTS.greeting.height) {
     const edge = geo.layout.edge;
-    if (cardEl && cardEl.offsetWidth > 0 && cardEl.offsetHeight > 0) {
+    if (edge === "top") {
+      setGreetingBox({ w: islandW, h: islandH }, undefined, edge);
+    } else if (cardEl && cardEl.offsetWidth > 0 && cardEl.offsetHeight > 0) {
       setGreetingBox(
         { w: islandW, h: islandH },
         { x: cardEl.offsetLeft, y: cardEl.offsetTop, w: cardEl.offsetWidth, h: cardEl.offsetHeight },

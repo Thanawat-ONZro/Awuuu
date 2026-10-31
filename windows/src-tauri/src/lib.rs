@@ -957,6 +957,11 @@ pub fn run() {
             desktop_dog::desktop_dog_forget,
             media::now_playing,
             media::media_control,
+            media::media_artwork,
+            media::media_seek,
+            media::system_volume,
+            media::change_system_volume,
+            media::toggle_system_mute,
             system::system_stats,
             store::store_read,
             store::store_write,
@@ -1021,6 +1026,8 @@ pub fn run() {
                 });
             }
             pipe::start(handle.clone());
+            media::watch(handle.clone());
+            media::watch_volume(handle.clone());
             integrations::start(handle.clone());
             updater::start(handle.clone());
             Ok(())

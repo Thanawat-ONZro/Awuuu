@@ -1,0 +1,75 @@
+.music-home { overflow: hidden; }
+
+/* The colour belongs to the island itself, underneath the content. */
+#root.music-home-active #island {
+  background: linear-gradient(180deg, #090909 18%, var(--music-tint, transparent) 100%), #090909;
+}
+
+.music-surface { width: 100%; height: 100%; color: #f6f4f2; position: relative; }
+.music-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #a49fa1; font-size: 16px; }
+.music-main { display: none; }
+.music-surface.has-media .music-main {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px 28px 12px;
+}
+.music-surface.has-media .music-empty { display: none; }
+
+.music-cover-column { flex: 0 0 150px; display: flex; align-items: center; }
+.music-art { display: grid; place-items: center; width: 150px; height: 150px; overflow: hidden; border-radius: 19px; color: #bbb6b4; background: #242424; box-shadow: 0 10px 25px rgba(0,0,0,.25); }
+.music-art img { display: none; width: 100%; height: 100%; object-fit: cover; }
+.music-art.has-art img { display: block; }
+.music-art.has-art .music-art-fallback { display: none; }
+.music-art-fallback { font-size: 60px; font-weight: 300; line-height: 1; }
+
+.music-detail { display: flex; flex: 1; flex-direction: column; justify-content: center; min-width: 0; height: 100%; }
+.music-source { min-height: 14px; font-size: 10px; color: #aaa5a4; letter-spacing: .1em; text-transform: uppercase; }
+.music-title { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 25px; font-weight: 700; letter-spacing: -.03em; }
+.music-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: #a9a5a4; }
+
+.music-progress { display: grid; grid-template-columns: 38px minmax(0,1fr) 45px; align-items: center; gap: 12px; margin-top: 21px; }
+.music-time { color: #a9a5a4; font-size: 12px; font-variant-numeric: tabular-nums; }
+.music-time:last-child { text-align: right; }
+.music-progress input.music-seek { width: 100%; margin: 0; appearance: none; height: 5px; border-radius: 3px; background: linear-gradient(to right, #f6f4f2 var(--music-progress), #575456 var(--music-progress)); cursor: pointer; }
+.music-seek:disabled { cursor: default; }
+.music-seek::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; border-radius: 50%; background: #f6f4f2; opacity: 0; }
+.music-seek:not(:disabled):hover::-webkit-slider-thumb, .music-seek:focus-visible::-webkit-slider-thumb { opacity: 1; }
+
+.music-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.music-transport, .music-volume-controls { display: flex; align-items: center; }
+.music-transport { gap: 23px; }
+.music-volume-controls { gap: 4px; }
+.music-control, .music-volume-button { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; border: 0; background: transparent; color: #dfdbd9; cursor: pointer; opacity: .75; }
+.music-control:nth-child(2) { opacity: 1; }
+.music-control:hover, .music-volume-button:hover { opacity: 1; }
+.music-control svg { width: 20px; height: 20px; }
+.music-volume-button { font-size: 20px; }
+.music-volume-button svg { width: 17px; height: 17px; }
+.music-volume-level { min-width: 31px; color: #aaa5a4; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+
+#root[data-edge="left"] .music-main,
+#root[data-edge="right"] .music-main { flex-direction: row; align-items: center; gap: 10px; padding: 10px 13px; }
+#root[data-edge="left"] .music-cover-column,
+#root[data-edge="right"] .music-cover-column { flex: 0 0 76px; }
+#root[data-edge="left"] .music-art,
+#root[data-edge="right"] .music-art { width: 76px; height: 76px; border-radius: 12px; }
+#root[data-edge="left"] .music-detail,
+#root[data-edge="right"] .music-detail { justify-content: center; min-width: 0; }
+#root[data-edge="left"] .music-title,
+#root[data-edge="right"] .music-title { font-size: 20px; }
+#root[data-edge="left"] .music-progress,
+#root[data-edge="right"] .music-progress { margin-top: 12px; }
+#root[data-edge="left"] .music-controls,
+#root[data-edge="right"] .music-controls { flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+#root[data-edge="left"] .music-transport,
+#root[data-edge="right"] .music-transport { gap: 9px; }
+#root[data-edge="left"] .music-volume-controls,
+#root[data-edge="right"] .music-volume-controls { gap: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .music-control, .music-volume-button { transition: none; }
+}

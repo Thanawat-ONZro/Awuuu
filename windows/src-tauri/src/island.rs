@@ -27,8 +27,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 /// Logical size of the subtle notch tab when the island is in hidden/idle state.
-pub const STRIP_W: f64 = 140.0;
-pub const STRIP_H: f64 = 14.0;
+pub const STRIP_W: f64 = 112.0;
+pub const STRIP_H: f64 = 11.0;
+/// The top-docked strip leaves room beside the 5 px fillets for the shadow.
+pub const TOP_STRIP_WINDOW_W: f64 = STRIP_W + 22.0;
+/// The visible 11px tab leaves 7px below it for the fading shadow.
+pub const TOP_STRIP_WINDOW_H: f64 = 18.0;
 
 pub const WINDOW_LABEL: &str = "island";
 
@@ -269,6 +273,7 @@ pub fn compute(
     let vertical = matches!(edge.as_str(), "left" | "right");
     let (lw, lh) = match (collapsed, vertical) {
         (true, true) => (STRIP_H, STRIP_W),
+        (true, false) if edge == "top" => (TOP_STRIP_WINDOW_W, TOP_STRIP_WINDOW_H),
         (true, false) => (STRIP_W, STRIP_H),
         _ => (panel_w, panel_h),
     };
@@ -850,6 +855,13 @@ mod tests {
         assert_eq!((x, y, w), ((SCREEN.w - pw) / 2.0, 0.0, pw));
         assert_eq!((l.h, l.v, l.anchor_x), ("center", "top", pw / 2.0));
         assert_eq!(l.panel_h, ph);
+    }
+
+    #[test]
+    fn collapsed_top_window_keeps_both_notch_fillets_visible() {
+        let ((_, _, w, h), l) = compute(&Settings::default(), SCREEN, WORK, 1.0, true);
+        assert_eq!((w, h), (134.0, TOP_STRIP_WINDOW_H));
+        assert_eq!(l.anchor_x, 67.0);
     }
 
     #[test]

@@ -5,7 +5,7 @@ import { buildDashboardView, buildToolsPanel } from "../src/views/dashboard";
 import { defaultIslandView } from "../src/core/modules";
 import { buildHeader, buildViews } from "../src/views/views";
 import { State } from "../src/core/state";
-import { t } from "../src/i18n/i18n";
+import { setLanguage, t } from "../src/i18n/i18n";
 
 describe("Dashboard Island View & Merged Home Page", () => {
   it("registers dashboard in VIEW_LAYOUTS with full hub height and no bot overlay", () => {
@@ -14,9 +14,9 @@ describe("Dashboard Island View & Merged Home Page", () => {
     expect(VIEW_LAYOUTS["dashboard"].botDiameter).toBe(0);
   });
 
-  it("registers overview in VIEW_LAYOUTS with full hub height and no bot overlay", () => {
+  it("registers Music at 70% hub height and no bot overlay", () => {
     expect(VIEW_LAYOUTS.overview).toBeDefined();
-    expect(VIEW_LAYOUTS.overview.height).toBe(360);
+    expect(VIEW_LAYOUTS.overview.height).toBe(252);
     expect(VIEW_LAYOUTS.overview.botDiameter).toBe(0);
   });
 
@@ -45,7 +45,7 @@ describe("Dashboard Island View & Merged Home Page", () => {
   it("handles undefined view safely without throwing", () => {
     const size = islandSize("expanded", undefined as any);
     expect(size.w).toBe(1000);
-    expect(size.h).toBe(360);
+    expect(size.h).toBe(252);
   });
 
   it("gates sync() so module hosts are only refreshed on transition into open (B2)", () => {
@@ -123,7 +123,7 @@ describe("Dashboard Island View & Merged Home Page", () => {
     geo.expandedW = 1000;
   });
 
-  it("header has 4 tabs with Home first, and no Tools tab remains", () => {
+  it("header has 4 tabs with Music first, and no Tools tab remains", () => {
     const actions = {
       setView: vi.fn(),
       blip: vi.fn(),
@@ -140,14 +140,14 @@ describe("Dashboard Island View & Merged Home Page", () => {
     const tabs = tabsContainer!.querySelectorAll(".tab");
     expect(tabs.length).toBe(4);
 
-    // First tab is Home
+    // The former Home tab now opens Music.
     const firstTab = tabs[0];
-    expect(firstTab.getAttribute("title")).toBe(t("Home"));
+    expect(firstTab.getAttribute("title")).toBe("Music");
 
-    // Verify all titles: Home, Agent Sessions, Ask, Feed Awuuu a file
+    // Verify all titles: Music, Agent Sessions, Ask, Feed Awuuu a file
     const titles = Array.from(tabs).map((el) => el.getAttribute("title"));
     expect(titles).toEqual([
-      t("Home"),
+      "Music",
       t("Agent Sessions"),
       t("Ask"),
       t("Feed Awuuu a file"),
@@ -157,7 +157,8 @@ describe("Dashboard Island View & Merged Home Page", () => {
     expect(titles).not.toContain(t("Tools"));
   });
 
-  it("merged overview page renders both panels (tools and today) and no standalone dashboard view is in buildViews", () => {
+  it("replaces Home with Music and keeps the other views", () => {
+    setLanguage("th");
     const actions = {
       setView: vi.fn(),
       blip: vi.fn(),
@@ -177,30 +178,16 @@ describe("Dashboard Island View & Merged Home Page", () => {
     const overviewView = views.get("overview");
     expect(overviewView).toBeDefined();
 
-    // Renders two panels inside overview
-    const panels = overviewView!.el.querySelector(".overview-panels");
-    expect(panels).toBeDefined();
-
-    const toolsPanel = panels!.querySelector(".overview-tools");
-    expect(toolsPanel).toBeDefined();
-    expect(toolsPanel!.querySelector(".dashboard-grid")).toBeDefined();
-
-    const todayPanel = panels!.querySelector(".overview-today");
-    expect(todayPanel).toBeDefined();
-    expect(todayPanel!.querySelector(".today-body")).toBeDefined();
-
-    // Side dock yields one column and adds side-dock class to panels
-    geo.layout.edge = "left";
-    geo.layout.vertical = true;
+    expect(overviewView!.el.querySelector(".music-surface")).not.toBeNull();
+    expect(overviewView!.el.querySelector(".music-empty")?.textContent).toBe("ยังไม่มีเพลงที่กำลังเล่น");
+    setLanguage("en");
     overviewView!.sync();
-
-    expect(panels!.classList.contains("side-dock")).toBe(true);
-    const grid = toolsPanel!.querySelector(".dashboard-grid")!;
-    expect(grid.classList.contains("cols-1")).toBe(true);
+    expect(overviewView!.el.querySelector(".music-empty")?.textContent).toBe("No music playing");
+    expect(overviewView!.el.querySelector(".overview-panels")).toBeNull();
+    expect(views.get("agents")).toBeDefined();
+    expect(views.get("prompt")).toBeDefined();
 
     // Reset layout
-    geo.layout.edge = "top";
-    geo.layout.vertical = false;
     geo.expandedW = 1000;
   });
 

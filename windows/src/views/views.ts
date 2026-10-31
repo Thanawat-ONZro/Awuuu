@@ -13,14 +13,12 @@ import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
 import { buildDiffView, showDiff } from "./diff-view";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
-import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
-import { EXTRA_IDS, hasExtraData, renderExtraCard, renderToday, weatherChip } from "./today";
 import "./hub-extra.css";
 import { planHeadline } from "../island/plan";
 import { refreshUsage } from "../island/usage";
 import { t } from "../i18n/i18n";
 import { createCardShell } from "./card-shell";
-import { buildToolsPanel } from "./dashboard";
+import { buildMusicHome } from "./music";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -105,7 +103,7 @@ const ICON_DASHBOARD =
 const ICON_CLEAR = "M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5";
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: t("Home"), onclick: () => go("overview") }, svg(ICONS.kennel, 13));
+  const tabHome = h("button", { class: "tab", title: "Music", "aria-label": "Music", onclick: () => go("overview") }, svg(ICONS.music, 14));
   const tabAgents = h("button", { class: "tab", title: t("Agent Sessions"), onclick: () => go("agents") }, svg(ICONS.terminal, 13));
   const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: t("Feed Awuuu a file"), onclick: () => go("upload") }, svg(ICONS.bone, 13));
@@ -186,107 +184,6 @@ export function buildHeader(actions: ViewActions): ViewHost {
       soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
       soundBtn.title = State.settings.soundEnabled ? t("Mute") : t("Unmute");
       el.style.opacity = v === "confused" ? "0" : "1";
-    },
-  };
-}
-
-// ── Overview (Integrations) ──────────────────────────────────────────────────
-
-function buildOverview(actions: ViewActions): ViewHost {
-  const tools = buildToolsPanel(actions);
-
-  // Today first: one list of what needs you, from every integration. Tap a
-  // pill for that integration's own card; tap Today to come back.
-  const pills = h("div", { class: "hub-pills" });
-  const todayPill = h("button", { class: "today-pill", text: t("Today") });
-  todayPill.addEventListener("click", () => {
-    State.overviewToday = true;
-    cardKey = "";
-    actions.blip();
-    State.notify();
-  });
-  const weather = h("span", { class: "today-weather-slot" });
-  const body = h("div", { class: "today-body" });
-  const todayWrap = h("div", { class: "overview-today today-wrap" },
-    h("div", { class: "hub-pill-row" }, todayPill, pills, weather),
-    body,
-  );
-  const panels = h("div", { class: "overview-panels" }, tools.el, todayWrap);
-  const el = h("div", { class: "view hub-view overview" }, card(null, panels));
-
-  let pillKey = "";
-  let cardKey = "";
-  let detailOpen = false;
-
-  const hooks: IntegrationCardHooks = {
-    get detailOpen() {
-      return detailOpen;
-    },
-    openDetail() {
-      detailOpen = true;
-      cardKey = "";
-      State.notify();
-    },
-    closeDetail() {
-      detailOpen = false;
-      cardKey = "";
-      State.notify();
-    },
-    openSettings: () => actions.openSettingsWindow(),
-  };
-
-  return {
-    el,
-    sync() {
-      panels.classList.toggle("side-dock", onSide());
-      tools.sync();
-
-      const tasks = State.tasks.filter((t) => t.isIntegration);
-      const focused = State.overviewToday ? null : State.focusTask?.isIntegration ? State.focusTask : null;
-      todayPill.classList.toggle("on", !focused);
-
-      const nextPills = tasks.map((t) => `${t.id}:${t.pillBadge ?? ""}:${focused?.id === t.id ? 1 : 0}`).join("|");
-      if (nextPills !== pillKey) {
-        pillKey = nextPills;
-        clear(pills);
-        for (const t of tasks) {
-          pills.append(buildPill(t, {
-            ...actions,
-            setFocus: (id) => {
-              State.overviewToday = false;
-              detailOpen = false;
-              actions.setFocus(id);
-            },
-          }, focused?.id === t.id));
-        }
-        pruneMiniBots();
-      }
-
-      const w = weatherChip();
-      clear(weather);
-      if (w) weather.append(w);
-
-      const key = focused
-        ? [focused.id, detailOpen, focused.state, focused.steps.join("|"), JSON.stringify(State.integrations[focused.id] ?? {})].join("~")
-        : `today~${JSON.stringify(State.integrations)}~${Math.floor(Date.now() / 30000)}`;
-      if (key === cardKey) return;
-      cardKey = key;
-      clear(body);
-      if (!focused) {
-        body.append(renderToday(() => actions.openSettingsWindow()));
-      } else if (EXTRA_IDS.has(focused.id)) {
-        const info = State.integrations[focused.id];
-        body.append(hasExtraData(focused.id)
-          ? renderExtraCard(focused.id)
-          : h("div", { class: "today-sub", text: info?.error ?? (info?.configured ? t("Loading…") : t("Not set up — see Settings.")) }));
-      } else {
-        body.append(renderIntegrationCard(focused, hooks));
-      }
-      el.style.setProperty("--agent", focused?.color ?? "#C9956A");
-      el.style.setProperty("--agent-soft", `${focused?.color ?? "#C9956A"}33`);
-    },
-    tick(nowMs) {
-      tools.tick?.(nowMs);
     },
   };
 }
@@ -935,7 +832,7 @@ export function buildViews(
   onApprovalHeightChange: (shrinking: boolean) => void,
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
-  map.set("overview", buildOverview(actions));
+  map.set("overview", buildMusicHome());
   map.set("agents", buildAgentsHub(actions));
   map.set("diff", buildDiffView(actions));
   map.set("empty", buildEmpty(actions));

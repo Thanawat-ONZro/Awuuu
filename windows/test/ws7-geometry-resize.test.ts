@@ -9,6 +9,9 @@ import {
   CARD_BOTTOM_GAP,
   NOTCH_TAB_W,
   NOTCH_TAB_H,
+  TOP_NOTCH_TAB_H,
+  TOP_STRIP_WINDOW_H,
+  TOP_STRIP_WINDOW_W,
   COMPACT_W,
   APPROVAL_MIN_H,
   APPROVAL_MAX_H,
@@ -47,9 +50,21 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     expect(HEADER_SIZE).toBe(30);
     expect(HEADER_BOTTOM).toBe(38);
     expect(CARD_BOTTOM_GAP).toBe(10);
-    expect(NOTCH_TAB_W).toBe(140);
-    expect(NOTCH_TAB_H).toBe(10);
-    expect(COMPACT_W).toBe(360);
+    expect(NOTCH_TAB_W).toBe(112);
+    expect(NOTCH_TAB_H).toBe(8);
+    expect(TOP_NOTCH_TAB_H).toBe(11);
+    expect(TOP_STRIP_WINDOW_H).toBe(18);
+    geo.layout.edge = "top";
+    geo.layout.vertical = false;
+    expect(islandSize("hidden", "overview")).toEqual({ w: 112, h: 11 });
+    geo.layout.edge = "left";
+    geo.layout.vertical = true;
+    expect(islandSize("hidden", "overview")).toEqual({ w: 8, h: 112 });
+    geo.layout.edge = "top";
+    geo.layout.vertical = false;
+    expect(TOP_STRIP_WINDOW_W).toBe(134);
+    expect(COMPACT_W).toBe(252);
+    expect(islandSize("compact", "overview").w).toBe(252);
     expect(APPROVAL_MIN_H).toBe(200);
     expect(APPROVAL_MAX_H).toBe(320);
     expect(DEFAULT_SETTINGS.islandWidth).toBe(1000);
@@ -57,8 +72,8 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
   });
 
   it("pins per-view height table in VIEW_LAYOUTS", () => {
-    // Home / Hub group (360)
-    expect(VIEW_LAYOUTS.overview.height).toBe(360);
+    // Music is 30% shorter than the 360px hub.
+    expect(VIEW_LAYOUTS.overview.height).toBe(252);
     expect(VIEW_LAYOUTS.dashboard.height).toBe(360);
     expect(VIEW_LAYOUTS.agents.height).toBe(360);
     expect(VIEW_LAYOUTS.diff.height).toBe(360);
@@ -84,10 +99,10 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     expect(VIEW_LAYOUTS.mail.height).toBe(260);
     expect(VIEW_LAYOUTS.searching.height).toBe(180);
     expect(VIEW_LAYOUTS.result.height).toBe(180);
-    expect(VIEW_LAYOUTS.greeting.height).toBe(360);
+    expect(VIEW_LAYOUTS.greeting.height).toBe(138);
   });
 
-  it("enforces fixed 1000 width policy for non-resizable views", () => {
+  it("keeps every normal view within the width selected in settings", () => {
     geo.layout.edge = "top";
     geo.layout.vertical = false;
     geo.expandedW = 1050; // User had resized agents/prompt
@@ -96,8 +111,7 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     expect(islandSize("expanded", "agents").w).toBe(1050);
     expect(islandSize("expanded", "prompt").w).toBe(1050);
 
-    // All other views remain fixed at 1000 width
-    const fixedViews: IslandViewName[] = [
+    const normalViews: IslandViewName[] = [
       "overview",
       "dashboard",
       "diff",
@@ -116,10 +130,16 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
       "result",
     ];
 
-    for (const v of fixedViews) {
+    for (const v of normalViews) {
       const sz = islandSize("expanded", v);
-      expect(sz.w).toBe(1000);
+      expect(sz.w).toBe(1050);
     }
+
+    geo.expandedW = 800;
+    for (const v of normalViews) {
+      expect(islandSize("expanded", v).w).toBe(800);
+    }
+    expect(islandSize("expanded", "greeting").w).toBe(640);
 
     // Reset geo.expandedW
     geo.expandedW = 1000;
@@ -210,7 +230,7 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
 
     expect(islandSize("expanded", "agents").h).toBe(360);
     expect(islandSize("expanded", "dashboard").h).toBe(360);
-    expect(islandSize("expanded", "overview").h).toBe(360);
+    expect(islandSize("expanded", "overview").h).toBe(252);
     expect(islandSize("expanded", "diff").h).toBe(360);
 
     // Simulate dragging agents card to 415px
@@ -219,9 +239,9 @@ describe("WS7: Landscape-First Geometry and Chrome Constants", () => {
     // agents view reflects the dragged height
     expect(islandSize("expanded", "agents").h).toBe(415);
 
-    // dashboard, overview, and diff MUST stay fixed at geo.hubH (360)
+    // The Music height stays at 70% of hubH; other pages keep hubH.
     expect(islandSize("expanded", "dashboard").h).toBe(360);
-    expect(islandSize("expanded", "overview").h).toBe(360);
+    expect(islandSize("expanded", "overview").h).toBe(252);
     expect(islandSize("expanded", "diff").h).toBe(360);
 
     // Resetting agentsH back to 0 restores default hubH for agents
