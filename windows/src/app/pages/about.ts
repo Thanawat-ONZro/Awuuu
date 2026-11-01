@@ -69,13 +69,31 @@ function doctorSection(): HTMLElement {
     list);
 }
 
+function connectionsSection(): HTMLElement {
+  const result=h("div", {class:"doctor",role:"status","aria-live":"polite"});
+  const button=h("button",{text:t("Test saved connections"),onclick:async()=>{
+    button.disabled=true;button.textContent=t("Checking…");result.replaceChildren();
+    try{
+      const checks=await Bridge.checkSavedConnections();
+      const skipped=checks.filter(check=>check.status==="not-configured").length;
+      for(const check of checks.filter(check=>check.status!=="not-configured")){
+        result.append(h("div",{class:`doctor-row d-${check.status}`},h("span",{class:"doctor-mark",text:check.status==="ok"?"✓":check.status==="warn"?"!":"×"}),h("span",{class:"doctor-main"},h("strong",{text:check.name}),h("p",{class:"hint",text:t(check.detail)}))));
+      }
+      result.append(h("p",{class:"hint",text:t("{n} services are not configured; no request was sent to them.",{n:skipped})}));
+    }catch(error){result.append(h("p",{class:"notice err",text:String(error)}));}
+    finally{button.disabled=false;button.textContent=t("Test saved connections");}
+  }});
+  return h("section",{},h("h2",{},h("span",{text:t("Saved connections")})),h("p",{class:"hint",text:t("Makes read-only requests using your saved connections. Provider API quotas apply. Keys and account data are not shown in this report.")}),h("div",{class:"row"},button),result);
+}
+
 export function page(): HTMLElement {
   return pageOf(t("About & aw"), "",
     h("section", {},
       h("h2", {}, h("span", { text: t("Awuuu {v}", { v: version() }) })),
-      h("div", { class: "hint", text: t("No telemetry. Network requests only go to the services you configure yourself.") }),
+      h("div", { class: "hint", text: t("No telemetry or analytics. Online connections happen when you configure a service or explicitly share a Shelf file.") }),
       h("div", { class: "row" }, h("button", { text: t("Check for updates"), onclick: () => void Bridge.updateCheckNow() })),
     ),
     doctorSection(),
+    connectionsSection(),
     awSection());
 }

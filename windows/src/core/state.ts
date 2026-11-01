@@ -196,6 +196,8 @@ export interface Settings {
   along: number;
   /** Width of the open island, px. */
   islandWidth: number;
+  sideWidth: number;
+  sideHeight: number;
   /** Height of the Agents hub, px. */
   hubHeight: number;
   providers: ChatProvider[];
@@ -302,6 +304,8 @@ export const DEFAULT_SETTINGS: Settings = {
   position: "top",
   along: 0.5,
   islandWidth: 1000,
+  sideWidth: 380,
+  sideHeight: 560,
   hubHeight: 360,
   providers: [],
   chatProvider: "",
@@ -419,6 +423,7 @@ class AppState {
   uploadProgress = 0;
   uploadDuration = 2.4;
   fileDragOver = false;
+  fileDragOut = false;
 
   promptContext: PromptContext | null = null;
   /** Dropped files the next question is about, in drop order. */

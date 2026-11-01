@@ -6,6 +6,7 @@ export type IslandMode = "hidden" | "compact" | "expanded";
 
 export type IslandViewName =
   | "overview"
+  | "shelf"
   | "agents"
   | "diff"
   | "empty"
@@ -122,6 +123,7 @@ export const geo = {
   agentsH: 0,
   /** Width of the open island while docked to a screen side. */
   sideW: 380,
+  sideH: 560,
 };
 
 // No notch on a PC: hidden/compact sizes carried over from the original Coucou spec.
@@ -152,6 +154,7 @@ export const CHAT_DEFAULT_H = 400;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   overview: { height: 252, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
+  shelf: { height: 360, botX: 62, botY: 92, botDiameter: 0, agentMode: "none" },
   agents: { height: 360, botX: 62, botY: 92, botDiameter: 58, agentMode: "pills" },
   diff: { height: 360, botX: 44, botY: 62, botDiameter: 40, agentMode: "none" },
   empty: { height: 200, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
@@ -230,15 +233,15 @@ export function islandSize(
           ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
           : safeView === "overview"
           ? Math.round(geo.hubH * 0.7)
-          : safeView === "diff" || safeView === "dashboard"
+          : safeView === "diff" || safeView === "dashboard" || safeView === "shelf"
           ? geo.hubH
           : (VIEW_LAYOUTS[safeView]?.height ?? geo.hubH);
       if (onSide()) {
-        // Docked to a side the card keeps the height its own view asks for; only
-        // the width comes from the side geometry, so a view is never stretched
-        // into a fixed slab.
+        // Portrait docks have their own dimensions; landscape page heights
+        // would squeeze five navigation tabs and all actions into 200px.
         const spec = ORIENTATION_GEOMETRY.side;
-        return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))), h };
+        return { w: Math.round(Math.min(spec.max.w, Math.max(spec.min.w, geo.sideW))),
+          h: safeView === "greeting" ? h : Math.round(Math.min(spec.max.h, Math.max(spec.min.h, geo.sideH), Math.max(240, geo.layout.panelH - 30))) };
       }
       const w = safeView === "greeting" ? GREETING_W : geo.expandedW;
       return { w, h };
@@ -293,6 +296,9 @@ function expandedBot(
   const safeView = view || "overview";
   const layout = VIEW_LAYOUTS[safeView] || VIEW_LAYOUTS.overview;
   const w = islandW ?? (onSide() ? geo.sideW : geo.expandedW);
+  if (onSide() && layout.botDiameter > 0 && view !== "uploading") {
+    return { cx: 70, cy: 52, diameter: 28, opacity: 1 };
+  }
   if (view === "uploading") {
     const { x0, x1 } = uploadingBarRange(w);
     const progress = Math.max(0, Math.min(1, uploadProgress));

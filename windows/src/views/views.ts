@@ -19,6 +19,7 @@ import { refreshUsage } from "../island/usage";
 import { t } from "../i18n/i18n";
 import { createCardShell } from "./card-shell";
 import { buildMusicHome } from "./music";
+import { createShelfModuleHost } from "./modules/shelf";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -107,6 +108,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const tabAgents = h("button", { class: "tab", title: t("Agent Sessions"), onclick: () => go("agents") }, svg(ICONS.terminal, 13));
   const tabChat = h("button", { class: "tab", title: t("Ask"), onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
   const tabDrop = h("button", { class: "tab", title: t("Feed Awuuu a file"), onclick: () => go("upload") }, svg(ICONS.bone, 13));
+  const tabShelf = h("button", { class: "tab", title: t("Shelf"), "aria-label": t("Shelf"), onclick: () => go("shelf") }, svg(ICONS.stack, 14));
 
   // Both open the Awuuu window: the gear where it was left, the list on Sessions.
   const open = (page?: string) => () => {
@@ -141,6 +143,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     agents: tabAgents,
     prompt: tabChat,
     upload: tabDrop,
+    shelf: tabShelf,
   };
   let thumbPos: number | null = null;
   let lastSide: boolean | null = null;
@@ -153,7 +156,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, thumb, tabHome, tabAgents, tabChat, tabDrop),
+    h("div", { class: "tabs" }, thumb, tabHome, tabAgents, tabChat, tabDrop, tabShelf),
     grip,
     h("div", { class: "header-actions" }, soundBtn, dashBtn, gearBtn, collapseBtn),
   );
@@ -166,6 +169,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabAgents.classList.toggle("on", tabOf(v) === "agents");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
+      tabShelf.classList.toggle("on", v === "shelf");
       const lit = tabOf(v);
       thumb.classList.toggle("on", lit !== null);
       const side = onSide();
@@ -833,6 +837,18 @@ export function buildViews(
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildMusicHome());
+  const shelf = createShelfModuleHost({ actions, open: (view) => actions.setView(view) });
+  let shelfRefreshedAt = 0;
+  map.set("shelf", {
+    el: h("div", { class: "view shelf-view" }, shelf.el),
+    sync() {
+      if (Date.now() - shelfRefreshedAt < 5000) return;
+      shelfRefreshedAt = Date.now();
+      void shelf.refresh?.();
+    },
+    focus: () => { void shelf.refresh?.(); },
+    tick: (nowMs) => shelf.tick?.(nowMs),
+  });
   map.set("agents", buildAgentsHub(actions));
   map.set("diff", buildDiffView(actions));
   map.set("empty", buildEmpty(actions));

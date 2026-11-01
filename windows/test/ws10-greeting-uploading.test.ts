@@ -10,6 +10,14 @@ import { setUploadBox, USC } from "../src/upload/sequence";
 import { getGreetingBox, setGreetingBox } from "../src/mochi/greeting";
 
 describe("WS10: Uploading sequence maths and dog travel scaling", () => {
+  it("separates the dog, text and progress in a narrow portrait upload", () => {
+    setUploadBox({ x: 48, y: 10, w: 270, h: 450 });
+    expect(USC.W).toBe(290);
+    expect(USC.REST_Y + USC.D_BOX / 2).toBeLessThan(USC.TEXT_Y - 20);
+    expect(USC.BAR_X1).toBeLessThan(USC.W);
+    expect(USC.BAR_X1).toBeGreaterThan(USC.BAR_X0 + 150);
+    setUploadBox({ x: 10, y: 42, w: 620, h: 124 });
+  });
   it("scales the upload bar X range with island width (800, 1000, 1100)", () => {
     // Width 800: track starts at 46 (cardInset 10 + trackLeft 36), ends at 680 (800 - 120)
     const range800 = uploadingBarRange(800);

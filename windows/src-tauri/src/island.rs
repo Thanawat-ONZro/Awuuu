@@ -19,7 +19,7 @@ use windows::Win32::Foundation::{HWND, POINT};
 use windows::core::BOOL;
 use windows::Win32::Foundation::LPARAM;
 use windows::Win32::System::Ole::RevokeDragDrop;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_NOACTIVATE,
@@ -265,7 +265,9 @@ pub fn compute(
     scale: f64,
     collapsed: bool,
 ) -> ((f64, f64, f64, f64), Layout) {
-    let (panel_w, panel_h) = s.panel_size();
+    let (requested_w, requested_h) = s.panel_size();
+    let panel_w = requested_w.min(work.w / scale);
+    let panel_h = requested_h.min(work.h / scale);
     let edge = match s.position.as_str() {
         "bottom" | "left" | "right" => s.position.clone(),
         _ => "top".to_string(),
@@ -427,7 +429,8 @@ pub fn carry_step(app: &AppHandle, ox: f64, oy: f64) -> Option<[f64; 3]> {
     }
     let (px, py) = cursor_physical()?;
     let down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000 != 0;
-    let held = if down { 1.0 } else { 0.0 };
+    let escaped = unsafe { GetAsyncKeyState(VK_ESCAPE.0 as i32) } as u16 & 0x8000 != 0;
+    let held = if escaped { -1.0 } else if down { 1.0 } else { 0.0 };
     Some([px, py, held])
 }
 
@@ -885,24 +888,35 @@ mod tests {
 
     #[test]
     fn open_on_a_side_is_centred_on_the_pill_with_room_to_float() {
-        let (pw, ph) = panel();
         let s = Settings { position: "left".into(), along: 0.5, ..Settings::default() };
+        let (pw, ph) = s.panel_size();
         let ((x, y, w, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!((x, y, w, h), (0.0, (WORK.h - ph) / 2.0, pw, ph));
         assert_eq!((l.h, l.v, l.anchor_y), ("left", "center", ph / 2.0));
         // The island plus its 10 px gap fits in the window.
-        assert!(s.island_width.clamp(800.0, 1100.0) + 10.0 <= l.panel_w);
+        assert!(s.side_width + 10.0 <= l.panel_w);
+        assert!(ph > pw);
     }
 
     #[test]
     fn side_window_stays_in_the_work_area_and_says_where_the_pill_is() {
-        let (_, ph) = panel();
         let s = Settings { position: "left".into(), along: 1.0, ..Settings::default() };
+        let (_, ph) = s.panel_size();
         let ((_, y, _, h), l) = compute(&s, SCREEN, WORK, 1.0, false);
         assert_eq!(y + h, 1032.0);
         assert_eq!(l.anchor_y, ph); // the front end keeps the island inside
         let top = Settings { position: "right".into(), along: 0.0, ..Settings::default() };
         let ((_, y, _, _), l) = compute(&top, SCREEN, WORK, 1.0, false);
         assert_eq!((y, l.anchor_y), (0.0, 0.0));
+    }
+
+    #[test]
+    fn portrait_window_respects_available_work_area_at_high_dpi() {
+        let s = Settings { position: "right".into(), side_height: 800.0, side_width: 520.0, ..Settings::default() };
+        let work = Rect { x: -1280.0, y: 0.0, w: 1280.0, h: 680.0 };
+        let ((x, y, w, h), layout) = compute(&s, work, work, 1.5, false);
+        assert!(x >= work.x && x + w <= work.x + work.w);
+        assert!(y >= work.y && y + h <= work.y + work.h);
+        assert!(layout.panel_h * 1.5 <= work.h);
     }
 }

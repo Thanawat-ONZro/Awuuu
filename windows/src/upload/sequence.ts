@@ -17,7 +17,7 @@ const box = { w: 640, cardH: 124, x: 0, y: 0 };
  * (10, 42) in sequence points, whichever edge the island hangs from.
  */
 export function setUploadBox(card: { x: number; y: number; w: number; h: number }) {
-  box.w = Math.max(320, card.w + 20);
+  box.w = Math.max(240, card.w + 20);
   box.cardH = Math.max(100, card.h);
   box.x = card.x - 10;
   box.y = card.y - 42;
@@ -37,16 +37,16 @@ export const USC = {
   get CARD_W() { return box.w - 20; },
   get CARD_H() { return box.cardH; },
   CARD_R: 20,
-  get REST_X() { return Math.round(box.w * (140 / 640)); },
-  REST_Y: 104,
+  get REST_X() { return box.w < 520 ? Math.round(box.w / 2) : Math.round(box.w * (140 / 640)); },
+  get REST_Y() { return box.w < 520 ? Math.round(42 + box.cardH * .3) : 104; },
   D_BOX: 62,
   FOLLOW_MIN: 60, // CARD_X + 50
   get FOLLOW_MAX() { return box.w - 60; }, // CARD_X + CARD_W - 50
-  get TEXT_X() { return Math.round(box.w * (196 / 640)); },
-  TEXT_Y: 94,
-  get BAR_X0() { return 46; },
-  get BAR_X1() { return Math.max(46, box.w - 120); },
-  BAR_Y: 118,
+  get TEXT_X() { return box.w < 520 ? 24 : Math.round(box.w * (196 / 640)); },
+  get TEXT_Y() { return box.w < 520 ? Math.round(42 + box.cardH * .62) : 94; },
+  get BAR_X0() { return box.w < 520 ? 32 : 46; },
+  get BAR_X1() { return box.w < 520 ? box.w - 32 : Math.max(46, box.w - 120); },
+  get BAR_Y() { return box.w < 520 ? Math.round(42 + box.cardH * .72) : 118; },
   LOCK_IN: 60,
   LOCK_OUT: 90,
   MOUTH_AJAR: 0.2,
@@ -501,7 +501,7 @@ class UploadSequence {
     // Content alphas.
     f.zoneOver = this.entered >= 0 && pt < USC.T_CHEW_END;
     f.zoneAlpha = 1 - seg(pt, USC.T_CHEW_END, USC.T_CHEW_END + 0.2);
-    f.textAlpha = f.zoneAlpha * (x > USC.TEXT_X - 40 && isDragging ? 0.25 : 1);
+    f.textAlpha = f.zoneAlpha * (USC.W >= 520 && x > USC.TEXT_X - 40 && isDragging ? 0.25 : 1);
     f.barReveal =
       eOut(seg(pt, USC.T_BAR_IN, USC.T_BAR_IN + 0.25)) * (1 - seg(pt, growStart, growStart + 0.2));
     f.barAlpha =

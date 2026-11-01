@@ -104,7 +104,7 @@ function fact(title: string, ...text: (Node | string)[]): HTMLElement {
 function leavesCard(): HTMLElement {
   const updates = settings.updateCheck === true;
   return card(t("What leaves this PC"),
-    h("div", { class: "notice ok", text: t("Nothing by default. No telemetry, no analytics, no account. Awuuu only talks to services you set up yourself.") }),
+    h("div", { class: "notice ok", text: t("No telemetry or analytics. Online connections happen when you configure a service or explicitly share a Shelf file.") }),
     h("div", { class: "facts-list" },
       fact(t("Chat"), t("What you type in the chat, and a file you drop on it, go to the chat provider you picked — by default your local Hermes Agent on this PC (127.0.0.1). Pick a cloud model or another provider and that conversation goes to them.")),
       fact(t("Integrations"), t("Each integration you connect (GitHub, Stripe, Vercel, n8n, Resend, Notion, Cal.com, mail, weather, feeds, uptime checks) is polled at its own service. Not connected means never called.")),
@@ -115,9 +115,27 @@ function leavesCard(): HTMLElement {
       fact(t("Agent sessions"), t("Awuuu follows Claude Code, Codex and the others through local hooks and files. What it sees stays in the history above. The agents themselves talk to their own services, as they do without Awuuu.")),
       fact(t("Usage limits"), t("Read from files your agents write on this PC.")),
       fact(t("Keys & tokens"), t("Stored in Windows Credential Manager, never in Awuuu’s settings file.")),
+      fact(t("Clipboard"), t("Opt-in session history on this PC: up to 50 text/image items, cleared when Awuuu exits. Clipboard contents are never uploaded automatically.")),
+      fact(t("Shelf sharing"), t("Only files you explicitly upload are sent to the Awuuu sharing service. Filename and content are encrypted on this PC. The service sees encrypted bytes, request IPs, sizes and timing. Anyone with the complete link can download until expiry or revocation.")),
       fact(t("Exports"), t("“Export” writes a .md and a .json to your Downloads folder. Nothing is uploaded.")),
     ),
   );
+}
+
+function clipboardCard(): HTMLElement {
+  let enabled = settings.modules?.clipboardPaused !== true;
+  const feedback = h("span", { class: "hint", role: "status" });
+  const recording = h("button", { text: enabled ? t("Pause recording") : t("Start recording"), onclick: async () => {
+    recording.disabled = true;
+    try { await Bridge.clipboardEnable(!enabled); enabled = !enabled; recording.textContent = enabled ? t("Pause recording") : t("Start recording"); feedback.textContent = t("Saved on this PC"); }
+    catch (error) { feedback.textContent = String(error); }
+    finally { recording.disabled = false; }
+  } });
+  return card(t("Clipboard"),
+    h("p", { class: "hint", text: t("Clipboard history is automatic. Local only · up to 50 items · cleared when Awuuu closes. You can pause it here.") }),
+    h("div", { class: "row" }, recording, h("button", { text: t("Clear history"), onclick: async () => {
+      try { await Bridge.clipboardRemove(); feedback.textContent = t("Removed."); } catch (error) { feedback.textContent = String(error); }
+    } }), feedback));
 }
 
 function awarenessCard(): HTMLElement {
@@ -134,8 +152,8 @@ function awarenessCard(): HTMLElement {
 
 export function page(): HTMLElement {
   const root = pageOf(t("Privacy & history"),
-    t("Awuuu keeps everything on this PC. Nothing is sent anywhere unless you connect a service yourself."),
-    awarenessCard(), historyCard(), leavesCard());
+    t("Manage local history and see what is sent when you connect services or share files."),
+    clipboardCard(), awarenessCard(), historyCard(), leavesCard());
   root.classList.add("dash");
   return root;
 }

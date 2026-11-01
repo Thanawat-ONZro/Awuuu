@@ -6,7 +6,7 @@ import type { IslandViewName } from "../core/layout";
 import { MOTION } from "../core/anim";
 
 /** The header tabs, left to right. */
-export const TAB_ORDER = ["overview", "agents", "prompt", "upload"] as const;
+export const TAB_ORDER = ["overview", "agents", "prompt", "upload", "shelf"] as const;
 export type TabId = (typeof TAB_ORDER)[number];
 
 /** The tab that is lit for a view, or null for views no tab owns (alerts, notes…). */
@@ -42,16 +42,17 @@ const reduced = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /** Slides one view in or out. Reduced motion keeps only a short fade. */
-export function animateView(el: HTMLElement, entering: boolean, dir: Direction) {
+export function animateView(el: HTMLElement, entering: boolean, dir: Direction, vertical = false) {
   if (typeof el.animate !== "function") return;
   el.getAnimations().forEach((a) => a.cancel());
-  const { x, y } = offsetFor(reduced() ? "none" : dir);
-  const from = entering ? { opacity: 0, transform: `translate(${x}px, ${y}px) scale(0.985)` } : { opacity: 1, transform: "none" };
-  const to = entering ? { opacity: 1, transform: "none" } : { opacity: 0, transform: `translate(${-x}px, ${-y}px) scale(0.985)` };
+  const offset = offsetFor(reduced() ? "none" : dir, 8);
+  const { x, y } = vertical && (dir === "forward" || dir === "back") ? { x: 0, y: offset.x } : offset;
+  const from = entering ? { opacity: 0, transform: `translate(${x}px, ${y}px)` } : { opacity: 1, transform: "none" };
+  const to = entering ? { opacity: 1, transform: "none" } : { opacity: 0, transform: `translate(${-x}px, ${-y}px)` };
   el.animate([from, to], {
-    duration: reduced() ? MOTION.fast : entering ? MOTION.base : MOTION.fast,
-    delay: entering && !reduced() ? 90 : 0,
-    easing: entering ? MOTION.spring : MOTION.in,
+    duration: reduced() ? 80 : entering ? 180 : 100,
+    delay: 0,
+    easing: MOTION.out,
     fill: entering ? "backwards" : "none",
   });
 }

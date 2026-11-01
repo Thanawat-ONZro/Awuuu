@@ -30,6 +30,10 @@ webpki-roots = "1"
 # SHA-256 and secure random bytes for the sign-in's PKCE — already in the tree
 # (it is rustls' crypto provider, see above), so nothing new is compiled.
 ring = "0.17"
+image = { version = "0.25", default-features = false, features = ["png", "bmp", "jpeg", "webp"] }
+qrcode = { version = "0.14", default-features = false }
+drag = "2.1.1"
+dunce = "1"
 windows_core = { package = "windows-core", version = "=0.61.2" }
 windows = { version = "0.61", features = [
   "Foundation",
@@ -40,6 +44,7 @@ windows = { version = "0.61", features = [
   "UI_Notifications",
   "UI_Notifications_Management",
   "Win32_Foundation",
+  "Win32_Graphics_Gdi",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
   "Win32_Security",
@@ -50,6 +55,8 @@ windows = { version = "0.61", features = [
   "Win32_System_Variant",
   "Win32_System_Registry",
   "Win32_System_Ole",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
   "Win32_Storage_FileSystem",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
@@ -59,4 +66,5 @@ windows = { version = "0.61", features = [
   "Win32_System_Power",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
 ] }

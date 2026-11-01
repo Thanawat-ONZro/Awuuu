@@ -36,7 +36,7 @@ export interface BootInfo {
 export const Bridge = {
   boot: () => call<BootInfo>("boot"),
 
-  saveSettings: (settings: Settings) => call<void>("save_settings", { settings }),
+  saveSettings: (settings: Settings) => IS_TAURI ? callOrThrow<void>("save_settings", { settings }) : Promise.resolve(),
 
   /** Shrink the window down to the invisible wake strip (hidden) or back to full. */
   setCollapsed: (collapsed: boolean) => call<void>("set_collapsed", { collapsed }),
@@ -64,7 +64,7 @@ export const Bridge = {
   islandDockRect: (edge: string, along: number) =>
     call<[[number, number, number, number], IslandLayout]>("island_dock_rect", { edge, along }),
   /** Dock on `edge` at `along` ("" = put it back) and end the overlay. */
-  islandOverlayEnd: (edge: string, along: number) => call<void>("island_overlay_end", { edge, along }),
+  islandOverlayEnd: (edge: string, along: number) => IS_TAURI ? callOrThrow<void>("island_overlay_end", { edge, along }) : Promise.resolve(),
   resetPosition: () => call<void>("reset_position"),
   islandResizeMode: (on: boolean) => call<void>("island_resize_mode", { on }),
 
@@ -287,15 +287,27 @@ export const Bridge = {
 
   /** Shelf: list all files on the shelf, sweeping files older than retentionDays (default 7). */
   shelfList: (retentionDays?: number) => call<ShelfFile[]>("shelf_list", { retentionDays }),
+  shelfPreview: (path: string) => call<string | null>("shelf_preview", { path }),
+  shelfStartDrag: (paths: string[]) => callOrThrow<boolean>("shelf_start_drag", { paths }),
 
   /** Shelf: add a file to the shelf by copying it into %LOCALAPPDATA%\Awuuu\shelf\. */
-  shelfAdd: (source: string) => callOrThrow<ShelfFile>("shelf_add", { source }),
+  shelfAdd: (source: string, originalName?: string) => callOrThrow<ShelfFile>("shelf_add", { source, originalName }),
 
   /** Shelf: remove a file from the shelf. Refuses any file outside the shelf directory. */
   shelfRemove: (path: string) => callOrThrow<boolean>("shelf_remove", { path }),
 
   /** Shelf: clear all files on the shelf. */
   shelfClear: () => callOrThrow<number>("shelf_clear"),
+  clipboardHistory: () => call<ClipboardSnapshot>("clipboard_history_list"),
+  clipboardEnable: (enabled: boolean) => callOrThrow<void>("clipboard_history_enable", { enabled }),
+  clipboardRemove: (id?: number) => callOrThrow<void>("clipboard_history_remove", { id }),
+  clipboardCopy: (id: number) => callOrThrow<void>("clipboard_history_copy", { id }),
+  clipboardWriteText: (text: string) => callOrThrow<void>("clipboard_write_text", { text }),
+  shelfShareStatus: () => call<ShareServiceStatus>("shelf_share_status"),
+  shelfShareCreate: (path: string) => callOrThrow<ShareReceipt>("shelf_share_create", { path }),
+  shelfShareList: () => callOrThrow<ShareReceipt[]>("shelf_share_list"),
+  shelfShareRevoke: (id: string) => callOrThrow<void>("shelf_share_revoke", { id }),
+  checkSavedConnections: () => callOrThrow<ConnectionCheck[]>("check_saved_connections"),
 
   /** Screen time: get today's screen time statistics. */
   screentimeToday: () => call<ScreenTimeDay>("screentime_today"),
@@ -501,6 +513,18 @@ export interface HookStatus {
   hookPath: string;
   hookReady: boolean;
 }
+
+export interface ClipboardEntry {
+  id: number;
+  kind: "text" | "image";
+  text: string | null;
+  preview: string | null;
+  addedAtMs: number;
+}
+export interface ClipboardSnapshot { enabled: boolean; ready: boolean; entries: ClipboardEntry[] }
+export interface ShareServiceStatus { configured: boolean; available: boolean; maxBytes: number }
+export interface ShareReceipt { id: string; name: string; url: string; qr: string; expiresAtMs: number }
+export interface ConnectionCheck { name: string; status: "ok" | "warn" | "fail" | "not-configured"; detail: string }
 
 export interface ComposioStatus {
   configPath: string;

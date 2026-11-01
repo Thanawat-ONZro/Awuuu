@@ -36,6 +36,8 @@ If you already run Hermes Agent on this PC, Awuuu can connect to its local gatew
 | --- | --- | --- |
 | Music controls, volume, notes, to-dos, quick toggles | Open the island; play music in a Windows media app to see its controls | No for Awuuu's local controls |
 | Shelf (temporary files) | Drop a file onto the island or Shelf; copies are kept locally for seven days | No |
+| Clipboard history | Open **Shelf → Clipboard**; automatically collects copied text/images; search, filter, copy or delete | No; up to 50 items, session only; pause in Privacy & history |
+| Encrypted file sharing | Open **Shelf → Files → Share**, then upload and copy a link or scan the QR | Requires the Awuuu-operated sharing service; disabled in builds without a deployed endpoint |
 | Coding agent sessions and approvals | Install a supported agent, then connect its hook once in **Get started → Agents** | The agent may need internet; Awuuu's hook is local |
 | Weather | Enter a city in **Features → Integrations** or **Features → Modules** | Yes; no API key |
 | Calendar | Paste a private iCal link in **Features → Integrations**; account connection is optional | Yes |
@@ -73,6 +75,16 @@ Each provider card includes **Cost & usage limits**. Google OAuth requests consu
 Cloud chat and translation can incur provider API charges. A local Hermes gateway can also call a paid cloud model. Check the selected model and provider plan before entering a key. Connecting a developer service does not remove its existing subscription or usage fees.
 
 Setup forms show whether values are unsaved, saving or saved on this PC. **Saved** confirms storage; use **Test** to check the connection. Illustrated examples contain anonymized screenshots and can be enlarged from their setup panel.
+
+### Clipboard and file sharing
+
+Clipboard history starts automatically by default; pause it in **Privacy & history**. An explicitly saved pause is respected. It uses Windows change notifications, supports text and bitmap/PNG images, and keeps at most 50 entries within a 20 MB budget. Entries expire after 24 hours and are cleared when Awuuu closes. Password-manager exclusion formats are respected. Clipboard history is not uploaded.
+
+Files stay local until you explicitly press **Upload encrypted file**. Sharing encrypts filename and content before upload, accepts files up to 25 MB, and gives a 24-hour link and QR. Receivers only need a browser. Complete links contain the decryption key; keep them private. You can revoke a link from **Active share links**, including after restarting Awuuu. Copies already downloaded remain with the recipient.
+
+Offline use keeps Shelf and Clipboard available and disables uploading. A build without the project service displays an unavailable badge. The service is operated by the project; end users do not install or configure Cloudflare. Operator deployment, budgets and costs are documented in [services/share/README.md](services/share/README.md).
+
+For an actual read-only connection check, open **About & aw → Saved connections → Test saved connections**. Services without saved credentials are skipped. Success means the service answered a real read request, not simply that a key was stored.
 
 ## 🧰 Build from source (contributors)
 

@@ -1055,20 +1055,31 @@ pub async fn test(app: &AppHandle, id: &str) -> Result<String, String> {
         }
         "integration_feeds" => {
             let mut n = 0;
-            for url in &s.rss_feeds {
-                let r = http().get(url).send().await.map_err(|e| format!("{url}: {e}"))?;
+            for url in s.rss_feeds.iter().take(20) {
+                let r = http().get(url).send().await.and_then(reqwest::Response::error_for_status).map_err(|_| "Feed request failed. Check its URL and permissions.".to_string())?;
                 n += feed_items(&r.text().await.unwrap_or_default(), url).len();
             }
             Ok(format!("{n} items from {} feed(s).", s.rss_feeds.len()))
         }
-        "integration_uptime" => Ok(format!("Checking {} site(s) every 5 minutes.", s.uptime_urls.len())),
+        "integration_uptime" => {
+            if s.uptime_urls.is_empty() { return Err("No sites configured".into()); }
+            for url in s.uptime_urls.iter().take(20) { http().get(url).send().await.and_then(reqwest::Response::error_for_status).map_err(|_| "A configured site is unreachable or returned an error".to_string())?; }
+            Ok("Configured sites answered successfully.".into())
+        },
         "integration_weather" => {
-            poll_weather(app.clone()).await;
-            Ok("Updated.".into())
+            let geo: Value=http().get("https://geocoding-api.open-meteo.com/v1/search").query(&[("name",s.weather_city.as_str()),("count","1")]).send().await.map_err(|_|"Weather lookup is unreachable")?.error_for_status().map_err(|_|"Weather lookup failed")?.json().await.map_err(|_|"Invalid weather lookup response")?;
+            let place=geo["results"].get(0).ok_or("City not found")?;
+            let lat=place["latitude"].as_f64().ok_or("Missing weather coordinates")?;let lon=place["longitude"].as_f64().ok_or("Missing weather coordinates")?;
+            let value:Value=http().get("https://api.open-meteo.com/v1/forecast").query(&[("latitude",lat.to_string()),("longitude",lon.to_string()),("current","temperature_2m".into())]).send().await.map_err(|_|"Weather service is unreachable")?.error_for_status().map_err(|_|"Weather service returned an error")?.json().await.map_err(|_|"Invalid weather response")?;
+            value["current"]["temperature_2m"].as_f64().ok_or("Weather service returned no current temperature")?;
+            Ok("Weather service answered successfully.".into())
         }
         "integration_todoist" => {
-            poll_todoist(app.clone()).await;
-            Ok("Updated.".into())
+            let token=secrets::get("todoist-token").ok_or("No Todoist token saved")?;
+            let response=http().get("https://api.todoist.com/api/v1/tasks/filter?query=today%20%7C%20overdue").bearer_auth(token).send().await.map_err(|_|"Todoist is unreachable")?.error_for_status().map_err(|_|"Todoist rejected the request. Check the token and permissions.")?;
+            let value:Value=response.json().await.map_err(|_|"Invalid Todoist response")?;
+            if !value.is_array()&&!value["results"].is_array(){return Err("Unexpected Todoist response".into());}
+            Ok("Todoist answered successfully.".into())
         }
         _ => Err("Unknown integration.".into()),
     }

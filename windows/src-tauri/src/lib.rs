@@ -35,6 +35,9 @@ mod weather;
 mod calendar;
 mod toggles;
 mod shelf;
+mod clipboard_history;
+mod sharing;
+mod connection_checks;
 mod screentime;
 mod translate;
 mod win_notifications;
@@ -94,7 +97,7 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) {
+fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) -> Result<(), String> {
     let (screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
         // Where the desktop dog lives is Rust's to write (desktop_dog.rs); a
@@ -107,12 +110,10 @@ fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) 
             || current.along != settings.along
             || current.panel_size() != settings.panel_size();
         let autostart_changed = current.autostart != settings.autostart;
+        settings::save(&settings).map_err(|error| error.to_string())?;
         *current = settings.clone();
         (screen_changed, autostart_changed)
     };
-    if let Err(err) = settings::save(&settings) {
-        eprintln!("[awuuu] could not save settings: {err}");
-    }
     if autostart_changed {
         let manager = app.autolaunch();
         let result = if settings.autostart { manager.enable() } else { manager.disable() };
@@ -127,6 +128,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, mut settings: Settings) 
     }
     // Keep the other window in step (island ⇄ settings window).
     let _ = app.emit("settings-changed", settings);
+    Ok(())
 }
 
 /// Hidden island → shrink the window to the invisible wake strip and park the
@@ -225,6 +227,8 @@ fn island_overlay_end(app: AppHandle, shared: State<Shared>, edge: String, along
 fn island_resize_mode(app: AppHandle, shared: State<Shared>, on: bool) {
     let mut s = shared.settings.lock().unwrap().clone();
     if on {
+        s.side_width = 520.0;
+        s.side_height = 800.0;
         s.island_width = settings::ISLAND_WIDTH.2;
         s.hub_height = settings::HUB_HEIGHT.2;
     }
@@ -855,6 +859,12 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            #[cfg(debug_assertions)]
+            if argv.iter().any(|arg|arg=="--dev-clipboard-status") { connection_checks::write_clipboard_report(); return; }
+            #[cfg(debug_assertions)]
+            if argv.iter().any(|arg|arg=="--dev-shelf-status") { connection_checks::write_shelf_report(); return; }
+            #[cfg(debug_assertions)]
+            if argv.iter().any(|arg|arg=="--dev-check-connections") { connection_checks::write_dev_report(app.clone()); return; }
             // `aw setup <agent>` starts awuuu.exe --settings=<agent>; when Awuuu
             // already runs, that lands here.
             if let Some(agent) = cli::settings_arg(&argv) {
@@ -972,9 +982,21 @@ pub fn run() {
             toggles::toggle_get,
             toggles::toggle_set,
             shelf::shelf_list,
+            shelf::shelf_preview,
+            shelf::shelf_start_drag,
             shelf::shelf_add,
             shelf::shelf_remove,
             shelf::shelf_clear,
+            clipboard_history::clipboard_history_list,
+            clipboard_history::clipboard_history_enable,
+            clipboard_history::clipboard_history_remove,
+            clipboard_history::clipboard_history_copy,
+            clipboard_history::clipboard_write_text,
+            sharing::shelf_share_status,
+            sharing::shelf_share_create,
+            sharing::shelf_share_list,
+            sharing::shelf_share_revoke,
+            connection_checks::check_saved_connections,
             screentime::screentime_sample,
             screentime::screentime_today,
             translate::translate_text,
@@ -1027,9 +1049,12 @@ pub fn run() {
             }
             pipe::start(handle.clone());
             media::watch(handle.clone());
+            clipboard_history::start(handle.clone(), clipboard_history::capture_enabled(&loaded.modules));
             media::watch_volume(handle.clone());
             integrations::start(handle.clone());
             updater::start(handle.clone());
+            #[cfg(debug_assertions)]
+            if std::env::args().any(|arg|arg=="--dev-check-connections") { connection_checks::write_dev_report(handle.clone()); }
             Ok(())
         })
         .build(context)

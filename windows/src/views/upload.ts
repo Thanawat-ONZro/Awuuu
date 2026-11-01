@@ -165,22 +165,28 @@ export function buildChoose(actions: ViewActions): ViewHost {
   const title = h("div", { class: "title" });
   const chips = h("div", { class: "file-chips" });
   const ask = h("button", { class: "btn primary", onclick: () => actions.setView("prompt") });
+  let shelving = false;
   const putOnShelf = h("button", {
     class: "btn secondary",
     text: t("Put on Shelf"),
     onclick: async () => {
-      for (const f of State.droppedFiles) {
-        if (f.path) {
-          try {
-            await Bridge.shelfAdd(f.path);
-          } catch {
-            /* ignore */
-          }
+      if (shelving) return;
+      shelving = true;
+      putOnShelf.disabled = true;
+      try {
+        for (const f of [...State.droppedFiles]) {
+          if (!f.path) continue;
+          await Bridge.shelfAdd(f.path, f.name);
+          State.droppedFiles = State.droppedFiles.filter(item => item.id !== f.id);
         }
+        State.dropError = null;
+        actions.setView("shelf");
+      } catch (error) {
+        actions.showNote(t(String(error).replace(/^Error:\s*/, "")));
+      } finally {
+        shelving = false;
+        putOnShelf.disabled = false;
       }
-      State.droppedFiles = [];
-      State.dropError = null;
-      actions.setView("overview");
     },
   });
   const cancel = () => {

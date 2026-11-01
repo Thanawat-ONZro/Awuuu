@@ -163,10 +163,14 @@ export class UploadCanvas {
   private drawDropText(ctx: CanvasRenderingContext2D, f: UploadFrame) {
     ctx.save();
     ctx.globalAlpha = f.textAlpha;
-    text(ctx, dropTitle(), USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#E3D4C2");
+    const narrow = USC.W < 520;
+    const title = fitText(ctx, dropTitle(), USC.W - USC.TEXT_X - 20, `500 13px ${FONT}`);
+    text(ctx, title, narrow ? USC.W / 2 : USC.TEXT_X, USC.TEXT_Y - 4, `500 13px ${FONT}`, "#E3D4C2", narrow ? "center" : "left");
 
-    let cx = USC.TEXT_X;
-    for (const chip of ["PDF", "Images", "Code", "Docs"]) {
+    const chips = ["PDF", "Images", "Code", "Docs"];
+    const chipWidth = chips.reduce((sum, chip) => sum + chip.length * 6.5 + 16, 0) + (chips.length - 1) * 6;
+    let cx = narrow ? (USC.W - chipWidth) / 2 : USC.TEXT_X;
+    for (const chip of chips) {
       // The macOS port measures chips the same rough way, so the row lines up.
       const w = chip.length * 6.5 + 16;
       ctx.fillStyle = "rgba(255,255,255,0.07)";

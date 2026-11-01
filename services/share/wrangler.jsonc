@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "awuuu-share",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "r2_buckets": [{ "binding": "SHARES", "bucket_name": "awuuu-share-files" }],
+  "durable_objects": { "bindings": [{ "name": "UPLOAD_BUDGET", "class_name": "UploadBudget" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UploadBudget"] }],
+  "vars": { "MAX_UPLOADS_PER_DAY": "100", "MAX_UPLOADS_PER_MINUTE_PER_IP": "3", "SHARE_TTL_SECONDS": "86400" },
+  "triggers": { "crons": ["0 */6 * * *"] },
+  "observability": { "enabled": false }
+}

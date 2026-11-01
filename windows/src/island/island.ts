@@ -779,7 +779,7 @@ export class Island {
 
   /** HTML5 drag events in the page: WebView2 delivers files dropped on the island. */
   private wireHtmlDrop() {
-    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const hasFiles = (e: DragEvent) => !State.fileDragOut && Array.from(e.dataTransfer?.types ?? []).includes("Files");
     let depth = 0;
     window.addEventListener("dragenter", (e) => {
       if (!hasFiles(e)) return;
@@ -801,6 +801,7 @@ export class Island {
     window.addEventListener("drop", (e) => {
       e.preventDefault();
       depth = 0;
+      if (State.fileDragOut) return;
       this.onDragDrop({ type: "drop", files: Array.from(e.dataTransfer?.files ?? []) });
     });
     // Asking about the files, cancelling, or any other way out of the drop flow
@@ -823,6 +824,7 @@ export class Island {
   }
 
   private onDragDrop(e: { type: string; paths?: string[]; files?: File[] }) {
+    if (State.fileDragOut) return;
     if (e.type !== "over") void Bridge.log(`drag ${e.type} ${(e.paths?.length ?? 0) + (e.files?.length ?? 0)} file(s)`);
     if (State.paused) return;
     switch (e.type) {
@@ -1188,7 +1190,7 @@ export class Island {
       g.setPointerCapture(e.pointerId);
       const chat = State.view === "prompt";
       const agents = State.view === "agents";
-      const h = chat
+      const h = onSide() ? geo.sideH : chat
         ? geo.chatH || chatPromptHeight(State.chatHistory.length)
         : agents
         ? (geo.agentsH > 0 ? geo.agentsH : geo.hubH)
@@ -1218,9 +1220,7 @@ export class Island {
       const clampedH = Math.min(bounds.max.h, Math.max(bounds.min.h, rawH));
       if (onSide()) {
         geo.sideW = clampedW;
-        if (r.chat) geo.chatH = clampedH;
-        else if (r.agents) geo.agentsH = clampedH;
-        else geo.hubH = clampedH;
+        geo.sideH = clampedH;
       } else {
         geo.expandedW = clampedW;
         if (r.chat) geo.chatH = clampedH;
@@ -1237,6 +1237,8 @@ export class Island {
       State.isPinned = State.approvalQueue.length > 0;
       this.fsm.pinned = State.isPinned;
       State.settings.islandWidth = geo.expandedW;
+      State.settings.sideWidth = geo.sideW;
+      State.settings.sideHeight = geo.sideH;
       State.settings.hubHeight = geo.hubH;
       State.settings.chatHeight = geo.chatH;
       State.settings.agentsHeight = geo.agentsH;
@@ -1749,8 +1751,8 @@ export class Island {
         const dir = directionBetween(this.animView, State.view);
         const leaving = this.views.get(this.animView)?.el;
         const entering = this.views.get(State.view)?.el;
-        if (leaving) animateView(leaving, false, dir);
-        if (entering) animateView(entering, true, dir);
+        if (leaving) animateView(leaving, false, dir, onSide());
+        if (entering) animateView(entering, true, dir, onSide());
         this.reactToViewChange(dir);
       }
     }
@@ -1903,6 +1905,8 @@ export class Island {
     this.fsm.petitToHiddenDelay = State.settings.hideAfter ?? 5;
     this.fsm.toastDelay = State.settings.hideAfter ?? 5;
     geo.expandedW = State.settings.islandWidth ?? 1000;
+    geo.sideW = State.settings.sideWidth ?? 380;
+    geo.sideH = State.settings.sideHeight ?? 560;
     geo.hubH = State.settings.hubHeight ?? 360;
     geo.chatH = State.settings.chatHeight ?? 0;
     geo.agentsH = State.settings.agentsHeight ?? 0;

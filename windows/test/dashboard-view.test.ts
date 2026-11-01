@@ -34,10 +34,12 @@ describe("Dashboard Island View & Merged Home Page", () => {
     geo.layout.edge = "left";
     geo.layout.vertical = true;
     geo.sideW = 380;
+    geo.sideH = 560;
+    geo.layout.panelH = 590;
     geo.hubH = 360;
     const size = islandSize("expanded", "dashboard");
     expect(size.w).toBe(380);
-    expect(size.h).toBe(360);
+    expect(size.h).toBe(560);
     geo.layout.edge = "top";
     geo.layout.vertical = false;
   });
@@ -138,7 +140,7 @@ describe("Dashboard Island View & Merged Home Page", () => {
     expect(tabsContainer).toBeDefined();
 
     const tabs = tabsContainer!.querySelectorAll(".tab");
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(5);
 
     // The former Home tab now opens Music.
     const firstTab = tabs[0];
@@ -151,10 +153,13 @@ describe("Dashboard Island View & Merged Home Page", () => {
       t("Agent Sessions"),
       t("Ask"),
       t("Feed Awuuu a file"),
+      t("Shelf"),
     ]);
 
     // No Tools tab in header
     expect(titles).not.toContain(t("Tools"));
+    tabs[4].dispatchEvent(new Event("click"));
+    expect(actions.setView).toHaveBeenCalledWith("shelf");
   });
 
   it("replaces Home with Music and keeps the other views", () => {
@@ -173,6 +178,20 @@ describe("Dashboard Island View & Merged Home Page", () => {
 
     // Standalone dashboard view is retired from buildViews
     expect(views.get("dashboard")).toBeUndefined();
+    const shelf = views.get("shelf");
+    expect(shelf).toBeDefined();
+    expect(shelf!.el.querySelector(".shelf-tabs")).not.toBeNull();
+    expect(shelf!.el.querySelector(".widget-shelf")).not.toBeNull();
+    expect(shelf!.el.querySelector(".card-shell")).toBeNull();
+    const shelfTabs = shelf!.el.querySelector(".shelf-tabs")!;
+    const clipboardTab = shelfTabs.children[0];
+    clipboardTab.dispatchEvent(new Event("click"));
+    expect(shelf!.el.querySelector<HTMLElement>(".shelf-files-panel")!.hidden).toBe(true);
+    expect(shelf!.el.querySelector<HTMLElement>(".clipboard-panel")!.hidden).toBe(false);
+    expect(shelf!.el.querySelector(".shelf-topbar")!.querySelector(".clipboard-controls")).not.toBeNull();
+    shelfTabs.children[1].dispatchEvent(new Event("click"));
+    expect(shelf!.el.querySelector<HTMLElement>(".clipboard-panel")!.hidden).toBe(true);
+    expect(islandSize("expanded", "shelf").h).toBe(geo.hubH);
 
     // Overview (Home) view is registered
     const overviewView = views.get("overview");

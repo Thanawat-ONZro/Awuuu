@@ -23,6 +23,10 @@ pub struct Settings {
     /// Width of the open island, logical px.
     #[serde(default = "default_island_width")]
     pub island_width: f64,
+    #[serde(default = "default_side_width")]
+    pub side_width: f64,
+    #[serde(default = "default_side_height")]
+    pub side_height: f64,
     /// Height of the Agents hub, logical px.
     #[serde(default = "default_hub_height")]
     pub hub_height: f64,
@@ -242,6 +246,8 @@ pub const AGENTS_HEIGHT: (f64, f64) = (320.0, 440.0);
 fn default_island_width() -> f64 {
     ISLAND_WIDTH.1
 }
+fn default_side_width() -> f64 { 380.0 }
+fn default_side_height() -> f64 { 560.0 }
 
 fn default_hub_height() -> f64 {
     HUB_HEIGHT.1
@@ -251,6 +257,9 @@ impl Settings {
     /// Size of the window that holds the open island (logical px): the island
     /// plus room for its shadow, never smaller than the classic 760×340.
     pub fn panel_size(&self) -> (f64, f64) {
+        if matches!(self.position.as_str(), "left" | "right") {
+            return (self.side_width.clamp(320.0, 520.0) + 80.0, self.side_height.clamp(480.0, 800.0) + 30.0);
+        }
         let w = self.island_width.clamp(ISLAND_WIDTH.0, ISLAND_WIDTH.2);
         let hub = self.hub_height.clamp(HUB_HEIGHT.0, HUB_HEIGHT.2);
         let chat = if self.chat_height > 0.0 { self.chat_height.clamp(CHAT_HEIGHT.0, CHAT_HEIGHT.1) } else { 0.0 };
@@ -283,6 +292,8 @@ impl Default for Settings {
             position: default_position(),
             along: 0.5,
             island_width: default_island_width(),
+            side_width: default_side_width(),
+            side_height: default_side_height(),
             hub_height: default_hub_height(),
             providers: Vec::new(),
             mail_host: String::new(),

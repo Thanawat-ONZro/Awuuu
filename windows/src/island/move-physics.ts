@@ -9,6 +9,59 @@ export interface WorkArea {
   wh: number;
 }
 
+/** Bounded squash/stretch: more travel gives a longer, slightly thinner capsule. */
+export function carryShape(edge: Edge, speed: number) {
+  const energy = Number.isFinite(speed) ? Math.min(1, Math.abs(speed) / 1700) : 0;
+  const long = 88 + 44 * energy;
+  const short = 30 - 5 * energy;
+  const vertical = edge === "left" || edge === "right";
+  return { w: vertical ? short : long, h: vertical ? long : short, energy };
+}
+
+/** A stable edge choice: corners do not flap between two equally near edges. */
+export function attachedEdge(x: number, y: number, work: WorkArea, current: Edge, hysteresis = 36): Edge {
+  x = Math.max(work.wx, Math.min(work.wx + work.ww, x));
+  y = Math.max(work.wy, Math.min(work.wy + work.wh, y));
+  const distances = edgeDistances(x, y, work);
+  const nearest = distances.reduce((a, b) => b.d < a.d ? b : a);
+  const previous = distances.find(item => item.edge === current)!;
+  return nearest.d + hysteresis < previous.d ? nearest.edge : current;
+}
+
+/** Clockwise perimeter coordinate; travel is constrained to this track. */
+export function edgeTrackPosition(x: number, y: number, work: WorkArea, edge: Edge): number {
+  const dx = Math.max(0, Math.min(work.ww, x - work.wx));
+  const dy = Math.max(0, Math.min(work.wh, y - work.wy));
+  return edge === "top" ? dx : edge === "right" ? work.ww + dy
+    : edge === "bottom" ? work.ww + work.wh + work.ww - dx : 2 * work.ww + work.wh + work.wh - dy;
+}
+
+export function unwrapEdgeTrack(target: number, current: number, work: WorkArea): number {
+  const length = 2 * (work.ww + work.wh);
+  return current + ((target - current + length / 2) % length + length) % length - length / 2;
+}
+
+export function edgeTrackPoint(distance: number, work: WorkArea): { x: number; y: number; edge: Edge } {
+  const length = 2 * (work.ww + work.wh);
+  let t = ((distance % length) + length) % length;
+  if (t < work.ww) return { x: work.wx + t, y: work.wy, edge: "top" };
+  t -= work.ww;
+  if (t < work.wh) return { x: work.wx + work.ww, y: work.wy + t, edge: "right" };
+  t -= work.wh;
+  if (t < work.ww) return { x: work.wx + work.ww - t, y: work.wy + work.wh, edge: "bottom" };
+  t -= work.ww;
+  return { x: work.wx, y: work.wy + work.wh - t, edge: "left" };
+}
+
+export function attachedCenter(point: { x: number; y: number; edge: Edge }, work: WorkArea, halfW: number, halfH: number) {
+  const x = Math.max(work.wx + halfW, Math.min(work.wx + work.ww - halfW, point.x));
+  const y = Math.max(work.wy + halfH, Math.min(work.wy + work.wh - halfH, point.y));
+  return {
+    x: point.edge === "left" ? work.wx + halfW : point.edge === "right" ? work.wx + work.ww - halfW : x,
+    y: point.edge === "top" ? work.wy + halfH : point.edge === "bottom" ? work.wy + work.wh - halfH : y,
+  };
+}
+
 export interface SettleTargets {
   edge: Edge;
   targetX: number;

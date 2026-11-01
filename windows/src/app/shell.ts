@@ -203,8 +203,8 @@ export async function navigate(id: PageId, anchor?: string) {
       : { opacity: 0, transform: "translateY(8px)" };
     const to = reduced() ? { opacity: 1 } : { opacity: 1, transform: "translateY(0)" };
     pageAnim = el.animate([from, to], {
-      duration: reduced() ? MOTION.fast : MOTION.base,
-      easing: reduced() ? MOTION.out : MOTION.spring,
+      duration: reduced() ? 80 : 180,
+      easing: MOTION.out,
     });
   }
   if (anchor) {
