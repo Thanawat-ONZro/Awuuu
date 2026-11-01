@@ -3,7 +3,7 @@
 import { Bridge } from "../../core/bridge";
 import type { ChatProvider } from "../../core/state";
 import { h, clear } from "../../views/dom";
-import { pageOf, save, select, settings, statusDot, textField } from "../ui";
+import { pageOf, save, select, settings, statusDot, textField, secretField } from "../ui";
 import { t } from "../../i18n/i18n";
 import { serviceCost } from "../service-cost";
 
@@ -125,25 +125,6 @@ function hermesSection(): HTMLElement {
     void save();
   });
 
-  const presetsRow = h("div", { class: "row", style: "gap:6px;flex-wrap:wrap;margin-top:2px" });
-  const presets: [string, string][] = [
-    ["Hermes Agent", "http://127.0.0.1:8642/v1/chat/completions"],
-    ["OpenCode", "http://127.0.0.1:4096/v1/chat/completions"],
-    ["Ollama", "http://127.0.0.1:11434/v1/chat/completions"],
-    ["LM Studio", "http://127.0.0.1:1234/v1/chat/completions"],
-    ["OpenRouter", "https://openrouter.ai/api/v1/chat/completions"],
-  ];
-  presetsRow.append(h("span", { class: "hint", style: "font-size:11px;align-self:center", text: t("Presets:") }));
-  for (const [name, pUrl] of presets) {
-    presetsRow.append(h("button", {
-      text: name,
-      style: "padding:2px 8px;font-size:11px",
-      onclick: () => {
-        url.value = pUrl;
-      },
-    }));
-  }
-
   void refreshKey();
 
   return h(
@@ -153,7 +134,6 @@ function hermesSection(): HTMLElement {
     state,
     h("div", { class: "row" }, h("label", { text: t("Model") }), model),
     h("div", { class: "row" }, h("label", { text: t("Server") }), url, saveUrl),
-    presetsRow,
     h("div", { class: "row" }, h("label", { text: t("API key") }), key, saveKey, clearKey),
     h("div", { class: "row" }, test),
     feedback,
@@ -188,7 +168,7 @@ function providersSection(): HTMLElement {
   function draw() {
     clear(body);
     const active = h("select", {}) as HTMLSelectElement;
-    active.append(h("option", { value: "", text: t("Hermes Agent / Claude (model above)") }));
+    active.append(h("option", { value: "", text: "Hermes Agent / Claude" }));
     for (const p of settings.providers) active.append(h("option", { value: p.id, text: `${p.name} — ${p.model}` }));
     active.value = settings.chatProvider ?? "";
     active.addEventListener("change", () => {
@@ -240,20 +220,7 @@ function providersSection(): HTMLElement {
     const models = h("datalist", { id: `models-${p.id}` });
     const model = field(p.model, "model", (v) => (p.model = v), "180px");
     model.setAttribute("list", `models-${p.id}`);
-    const key = h("input", { type: "password", placeholder: t("API key (optional)"), autocomplete: "off", style: "width:150px" }) as HTMLInputElement;
-    void Bridge.secretPresent(`provider-key:${p.id}`).then((has) => {
-      if (has) key.placeholder = "••••••  (stored)";
-    });
-    key.addEventListener("change", async () => {
-      try {
-        await Bridge.secretSet(`provider-key:${p.id}`, key.value.trim());
-        key.value = "";
-        key.placeholder = "••••••  (stored)";
-        say("ok", t("{name}: key saved in the Credential Manager.", { name: p.name }));
-      } catch (err) {
-        say("err", String(err));
-      }
-    });
+    const key = secretField(`provider-key:${p.id}`, t("API key (optional)"));
     const test = h("button", { text: t("Test") });
     test.addEventListener("click", async () => {
       try {
@@ -273,16 +240,25 @@ function providersSection(): HTMLElement {
       await save();
       draw();
     });
-    return h("div", { class: "row", style: "flex-wrap:wrap;gap:6px" },
-      field(p.name, "name", (v) => (p.name = v || p.name), "110px"),
-      field(p.baseUrl, "https://…/v1", (v) => (p.baseUrl = v), "220px"),
-      model, models, key, test, remove);
+    const labeled = (label: string, control: HTMLElement, wide = false) => {
+      const input = control.matches("input") ? control : control.querySelector("input");
+      input?.setAttribute("aria-label", `${p.name}: ${label}`);
+      return h("div", { class: `provider-field${wide ? " provider-field-wide" : ""}` }, h("span", { class: "hint", text: label }), control);
+    };
+    return h("div", { class: "provider-editor" },
+      h("div", { class: "provider-editor-head" }, h("h3", { text: p.name }), h("div", { class: "row-buttons" }, test, remove)),
+      h("div", { class: "provider-editor-fields" },
+        labeled(t("Name"), field(p.name, "name", (v) => (p.name = v || p.name))),
+        labeled(t("Model"), model), models,
+        labeled(t("Server"), field(p.baseUrl, "https://…/v1", (v) => (p.baseUrl = v)), true),
+        labeled(t("API key"), key, true)));
   }
 
   draw();
   return h("section", {},
     h("h2", {}, h("span", { text: t("Chat providers") })),
     h("div", { class: "hint", text: t("Any OpenAI-compatible server — OpenAI, OpenRouter, Ollama, LM Studio or your own. Keys stay in the Windows Credential Manager. Switch providers from the chat too.") }),
+    serviceCost("Cloud chat"),
     body);
 }
 
@@ -373,5 +349,5 @@ function personalitySection(): HTMLElement {
 export async function page(): Promise<HTMLElement> {
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   return pageOf(t("Chat & models"), t("The island's chat can talk to your local Hermes Agent, to Claude, or to any OpenAI-compatible server."),
-    serviceCost("Cloud chat"), providersSection(), hermesSection(), apiSection(hasKey), personalitySection());
+    providersSection(), hermesSection(), apiSection(hasKey), personalitySection());
 }

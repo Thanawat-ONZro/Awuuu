@@ -233,7 +233,9 @@ function accountTile(id: Account): HTMLElement {
     if (error) body.append(h("div", { class: "notice err", text: error }));
   };
   watch(draw);
-  return tile({ ...def, on: () => live[id].connected }, body, oauthProvider(id));
+  const setup = oauthProvider(id);
+  setup.querySelector(".connection-form")?.append(body);
+  return tile({ ...def, on: () => live[id].connected }, setup);
 }
 
 /** Which account (or fallback) feeds Mail / Calendar right now. */
@@ -447,6 +449,17 @@ function setupSteps(...steps: [string, string, string?][]): HTMLElement {
 }
 
 function setupPanel(id: string, title: string, ...children: HTMLElement[]): HTMLElement {
+  if (id.startsWith("client-")) {
+    const guide = h("div", { class: "connection-guide" });
+    const form = h("div", { class: "connection-form" });
+    for (const child of children) {
+      (child.classList.contains("int-steps") || child.classList.contains("setup-image") ? guide : form).append(child);
+    }
+    const workspace = h("div", { class: "connection-workspace" }, guide, form);
+    return id === "client-github"
+      ? h("details", { class: "connection-setup", id }, h("summary", { text: title }), workspace)
+      : h("section", { class: "connection-setup", id, "aria-label": title }, workspace);
+  }
   return h("details", { class: "int-provider-setup", id }, h("summary", { text: title }), ...children);
 }
 

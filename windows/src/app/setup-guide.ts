@@ -45,23 +45,9 @@ export function serviceGuide(name: string): HTMLElement | null {
     h("button", { text: local("Open provider ↗", "เปิดหน้าผู้ให้บริการ ↗"), onclick: () => void Bridge.openUrl(source[1]) }));
 }
 
-/** Keep each page's primary controls visible and put secondary settings behind a named disclosure. */
+/** Page-specific layout hooks. Primary settings stay visible instead of becoming generic accordions. */
 export function organizeSettingsSections(root: HTMLElement, page: string): void {
-  if (!["agents", "chat", "appearance", "privacy", "about", "stats", "general"].includes(page)) return;
-  const group = root.querySelector(":scope > .settings-groups");
-  if (group) group.replaceWith(...Array.from(group.children));
-  const sections = Array.from(root.children).filter((child): child is HTMLElement => child instanceof HTMLElement && child.tagName === "SECTION");
-  if (sections.length < 2) return;
-  sections.forEach((section, index) => {
-    const heading = section.querySelector(":scope > h2");
-    if (!heading) return;
-    const fold = h("details", { class: "settings-section" });
-    fold.open = index === 0;
-    const summary = h("summary", { text: heading.textContent ?? "" });
-    heading.remove();
-    section.before(fold);
-    fold.append(summary, section);
-  });
+  root.classList.add("settings-page", `settings-page-${page}`);
 }
 
 /** Upgrade legacy selects, including fields populated asynchronously, to the shared dropdown. */
